@@ -1,0 +1,56 @@
+<mujoco model="drone_minimal">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0.0 0.0 0.0" width="512" height="512"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.8 0.8 0.8" rgb2="0.6 0.6 0.6" width="256" height="256"/>
+    <material name="grid_mat" texture="grid" texrepeat="8 8" reflectance="0.1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" diffuse="1 1 1"/>
+    <geom type="plane" size="5 5 0.1" material="grid_mat"/>
+
+    <!-- Camera -->
+    <camera name="overhead_cam" pos="0 -3 3" xyaxes="1 0 0 0 0.7 0.7"/>
+
+    <!-- Drone body with free joint (6-DOF) -->
+    <body name="drone" pos="0 0 1">
+      <freejoint name="drone_joint"/>
+      <geom type="box" size="0.15 0.15 0.03" rgba="0.2 0.2 0.8 1" mass="1.0"/>
+
+      <!-- Four rotor sites (visual reference) -->
+      <site name="rotor_fl" pos="0.12 0.12 0.04" size="0.05" rgba="1 0 0 0.5"/>
+      <site name="rotor_fr" pos="0.12 -0.12 0.04" size="0.05" rgba="0 1 0 0.5"/>
+      <site name="rotor_bl" pos="-0.12 0.12 0.04" size="0.05" rgba="0 0 1 0.5"/>
+      <site name="rotor_br" pos="-0.12 -0.12 0.04" size="0.05" rgba="1 1 0 0.5"/>
+
+      <!-- EE site for ground-truth -->
+      <site name="ee_site" pos="0 0 -0.03" size="0.02"/>
+
+      <!-- Sensors -->
+      <site name="imu_site" pos="0 0 0"/>
+    </body>
+  </worldbody>
+
+  <sensor>
+    <!-- Position (world frame) -->
+    <framepos name="drone_pos" objtype="body" objname="drone"/>
+    <!-- Orientation quaternion (world frame) -->
+    <framequat name="drone_quat" objtype="body" objname="drone"/>
+    <!-- Linear velocity (world frame) -->
+    <framelinvel name="drone_linvel" objtype="body" objname="drone"/>
+    <!-- Angular velocity (body frame) -->
+    <gyro name="drone_gyro" site="imu_site"/>
+  </sensor>
+
+  <!-- Actuators: force/torque on the free joint (fx, fy, fz, tx, ty, tz) -->
+  <actuator>
+    <motor joint="drone_joint" gear="0 0 1 0 0 0" name="thrust_z" ctrlrange="-20 20"/>
+    <motor joint="drone_joint" gear="1 0 0 0 0 0" name="force_x" ctrlrange="-5 5"/>
+    <motor joint="drone_joint" gear="0 1 0 0 0 0" name="force_y" ctrlrange="-5 5"/>
+    <motor joint="drone_joint" gear="0 0 0 1 0 0" name="torque_x" ctrlrange="-2 2"/>
+    <motor joint="drone_joint" gear="0 0 0 0 1 0" name="torque_y" ctrlrange="-2 2"/>
+    <motor joint="drone_joint" gear="0 0 0 0 0 1" name="torque_z" ctrlrange="-2 2"/>
+  </actuator>
+</mujoco>

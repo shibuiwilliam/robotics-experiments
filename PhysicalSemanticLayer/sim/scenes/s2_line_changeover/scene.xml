@@ -1,0 +1,172 @@
+<!--
+  S2 Line Changeover scene for PSL-Bench.
+  Two Panda arms (a_ and b_ prefixed) + shared fixture + target objects.
+  Frame convention: z-up, SI units (metres, radians, kg).
+-->
+<mujoco model="s2_line_changeover">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <compiler angle="radian"/>
+
+  <default>
+    <joint damping="1.0" armature="0.1"/>
+    <geom condim="4" friction="1 0.5 0.01"/>
+  </default>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="3 3 0.1" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Table -->
+    <body name="table" pos="0.5 0 0.4">
+      <geom name="table_top" type="box" size="0.6 0.5 0.02" rgba="0.6 0.4 0.2 1" mass="10"/>
+    </body>
+
+    <!-- Shared fixture (box between the two arms) -->
+    <body name="shared_fixture" pos="0.5 0 0.44">
+      <geom name="fixture_base" type="box" size="0.15 0.08 0.02" rgba="0.5 0.5 0.5 1" mass="2.0"/>
+      <geom name="fixture_clamp_l" type="box" pos="0 0.07 0.03" size="0.15 0.01 0.03" rgba="0.4 0.4 0.4 1" mass="0.5"/>
+      <geom name="fixture_clamp_r" type="box" pos="0 -0.07 0.03" size="0.15 0.01 0.03" rgba="0.4 0.4 0.4 1" mass="0.5"/>
+    </body>
+
+    <!-- Panda A (left) -->
+    <body name="panda_a_link0" pos="0 -0.5 0.42">
+      <geom name="a_link0_geom" type="cylinder" size="0.06 0.05" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+      <body name="panda_a_link1" pos="0 0 0.05">
+        <joint name="a_joint_0" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+        <geom name="a_link1_geom" type="capsule" fromto="0 0 0 0 0 0.333" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+        <body name="panda_a_link2" pos="0 0 0.333">
+          <joint name="a_joint_1" type="hinge" axis="0 1 0" range="-1.7628 1.7628" damping="10"/>
+          <geom name="a_link2_geom" type="capsule" fromto="0 0 0 0 0 0.316" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+          <body name="panda_a_link3" pos="0 0 0.316">
+            <joint name="a_joint_2" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+            <geom name="a_link3_geom" type="capsule" fromto="0 0 0 0.0825 0 0" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+            <body name="panda_a_link4" pos="0.0825 0 0">
+              <joint name="a_joint_3" type="hinge" axis="0 -1 0" range="-3.0718 -0.0698" damping="10"/>
+              <geom name="a_link4_geom" type="capsule" fromto="0 0 0 -0.0825 0 0.384" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+              <body name="panda_a_link5" pos="-0.0825 0 0.384">
+                <joint name="a_joint_4" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+                <geom name="a_link5_geom" type="sphere" size="0.04" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                <body name="panda_a_link6" pos="0 0 0.088">
+                  <joint name="a_joint_5" type="hinge" axis="0 1 0" range="-0.0175 3.7525" damping="5"/>
+                  <geom name="a_link6_geom" type="capsule" fromto="0 0 0 0.088 0 0" size="0.03" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                  <body name="panda_a_link7" pos="0.088 0 0">
+                    <joint name="a_joint_6" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="2"/>
+                    <geom name="a_link7_geom" type="cylinder" size="0.04 0.02" rgba="0.3 0.3 0.3 1" mass="0.5"/>
+                    <site name="a_ee_site" pos="0 0 0.107" size="0.01" rgba="1 0 0 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Panda B (right) -->
+    <body name="panda_b_link0" pos="0 0.5 0.42">
+      <geom name="b_link0_geom" type="cylinder" size="0.06 0.05" rgba="0.7 0.7 1.0 1" mass="2.0"/>
+      <body name="panda_b_link1" pos="0 0 0.05">
+        <joint name="b_joint_0" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+        <geom name="b_link1_geom" type="capsule" fromto="0 0 0 0 0 0.333" size="0.04" rgba="0.7 0.7 1.0 1" mass="2.0"/>
+        <body name="panda_b_link2" pos="0 0 0.333">
+          <joint name="b_joint_1" type="hinge" axis="0 1 0" range="-1.7628 1.7628" damping="10"/>
+          <geom name="b_link2_geom" type="capsule" fromto="0 0 0 0 0 0.316" size="0.04" rgba="0.7 0.7 1.0 1" mass="2.0"/>
+          <body name="panda_b_link3" pos="0 0 0.316">
+            <joint name="b_joint_2" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+            <geom name="b_link3_geom" type="capsule" fromto="0 0 0 0.0825 0 0" size="0.04" rgba="0.7 0.7 1.0 1" mass="2.0"/>
+            <body name="panda_b_link4" pos="0.0825 0 0">
+              <joint name="b_joint_3" type="hinge" axis="0 -1 0" range="-3.0718 -0.0698" damping="10"/>
+              <geom name="b_link4_geom" type="capsule" fromto="0 0 0 -0.0825 0 0.384" size="0.04" rgba="0.7 0.7 1.0 1" mass="2.0"/>
+              <body name="panda_b_link5" pos="-0.0825 0 0.384">
+                <joint name="b_joint_4" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+                <geom name="b_link5_geom" type="sphere" size="0.04" rgba="0.7 0.7 1.0 1" mass="1.0"/>
+                <body name="panda_b_link6" pos="0 0 0.088">
+                  <joint name="b_joint_5" type="hinge" axis="0 1 0" range="-0.0175 3.7525" damping="5"/>
+                  <geom name="b_link6_geom" type="capsule" fromto="0 0 0 0.088 0 0" size="0.03" rgba="0.7 0.7 1.0 1" mass="1.0"/>
+                  <body name="panda_b_link7" pos="0.088 0 0">
+                    <joint name="b_joint_6" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="2"/>
+                    <geom name="b_link7_geom" type="cylinder" size="0.04 0.02" rgba="0.2 0.2 0.5 1" mass="0.5"/>
+                    <site name="b_ee_site" pos="0 0 0.107" size="0.01" rgba="0 0 1 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Target object 1: red peg -->
+    <body name="target_peg" pos="0.5 -0.15 0.47">
+      <freejoint name="peg_free"/>
+      <geom name="peg_geom" type="cylinder" size="0.015 0.04" rgba="0.9 0.2 0.2 1" mass="0.05"/>
+    </body>
+
+    <!-- Target object 2: green block -->
+    <body name="target_block" pos="0.5 0.15 0.47">
+      <freejoint name="block_free"/>
+      <geom name="block_geom" type="box" size="0.02 0.02 0.02" rgba="0.2 0.9 0.2 1" mass="0.05"/>
+    </body>
+
+    <!-- Target object 3: blue cylinder -->
+    <body name="target_cylinder" pos="0.4 0 0.47">
+      <freejoint name="cyl_free"/>
+      <geom name="cyl_geom" type="cylinder" size="0.02 0.025" rgba="0.2 0.3 0.9 1" mass="0.05"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Panda A actuators -->
+    <position name="act_a_joint_0" joint="a_joint_0" kp="1000"/>
+    <position name="act_a_joint_1" joint="a_joint_1" kp="1000"/>
+    <position name="act_a_joint_2" joint="a_joint_2" kp="1000"/>
+    <position name="act_a_joint_3" joint="a_joint_3" kp="1000"/>
+    <position name="act_a_joint_4" joint="a_joint_4" kp="1000"/>
+    <position name="act_a_joint_5" joint="a_joint_5" kp="1000"/>
+    <position name="act_a_joint_6" joint="a_joint_6" kp="1000"/>
+    <!-- Panda B actuators -->
+    <position name="act_b_joint_0" joint="b_joint_0" kp="1000"/>
+    <position name="act_b_joint_1" joint="b_joint_1" kp="1000"/>
+    <position name="act_b_joint_2" joint="b_joint_2" kp="1000"/>
+    <position name="act_b_joint_3" joint="b_joint_3" kp="1000"/>
+    <position name="act_b_joint_4" joint="b_joint_4" kp="1000"/>
+    <position name="act_b_joint_5" joint="b_joint_5" kp="1000"/>
+    <position name="act_b_joint_6" joint="b_joint_6" kp="1000"/>
+  </actuator>
+
+  <sensor>
+    <!-- Panda A sensors -->
+    <jointpos name="a_jpos_0" joint="a_joint_0"/>
+    <jointpos name="a_jpos_1" joint="a_joint_1"/>
+    <jointpos name="a_jpos_2" joint="a_joint_2"/>
+    <jointpos name="a_jpos_3" joint="a_joint_3"/>
+    <jointpos name="a_jpos_4" joint="a_joint_4"/>
+    <jointpos name="a_jpos_5" joint="a_joint_5"/>
+    <jointpos name="a_jpos_6" joint="a_joint_6"/>
+    <jointvel name="a_jvel_0" joint="a_joint_0"/>
+    <jointvel name="a_jvel_1" joint="a_joint_1"/>
+    <jointvel name="a_jvel_2" joint="a_joint_2"/>
+    <jointvel name="a_jvel_3" joint="a_joint_3"/>
+    <jointvel name="a_jvel_4" joint="a_joint_4"/>
+    <jointvel name="a_jvel_5" joint="a_joint_5"/>
+    <jointvel name="a_jvel_6" joint="a_joint_6"/>
+    <framepos name="a_ee_pos" objtype="site" objname="a_ee_site"/>
+    <framequat name="a_ee_quat" objtype="site" objname="a_ee_site"/>
+    <!-- Panda B sensors -->
+    <jointpos name="b_jpos_0" joint="b_joint_0"/>
+    <jointpos name="b_jpos_1" joint="b_joint_1"/>
+    <jointpos name="b_jpos_2" joint="b_joint_2"/>
+    <jointpos name="b_jpos_3" joint="b_joint_3"/>
+    <jointpos name="b_jpos_4" joint="b_joint_4"/>
+    <jointpos name="b_jpos_5" joint="b_joint_5"/>
+    <jointpos name="b_jpos_6" joint="b_joint_6"/>
+    <jointvel name="b_jvel_0" joint="b_joint_0"/>
+    <jointvel name="b_jvel_1" joint="b_joint_1"/>
+    <jointvel name="b_jvel_2" joint="b_joint_2"/>
+    <jointvel name="b_jvel_3" joint="b_joint_3"/>
+    <jointvel name="b_jvel_4" joint="b_joint_4"/>
+    <jointvel name="b_jvel_5" joint="b_joint_5"/>
+    <jointvel name="b_jvel_6" joint="b_joint_6"/>
+    <framepos name="b_ee_pos" objtype="site" objname="b_ee_site"/>
+    <framequat name="b_ee_quat" objtype="site" objname="b_ee_site"/>
+  </sensor>
+</mujoco>

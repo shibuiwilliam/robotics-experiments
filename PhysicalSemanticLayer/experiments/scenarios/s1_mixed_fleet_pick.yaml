@@ -1,0 +1,38 @@
+id: s1_mixed_fleet_pick
+seed: 42
+n_steps: 200
+
+robots:
+  - model: panda
+    entity_id: panda_arm
+    schema_dose: { units: m, frame: z_up, control: position }
+  - model: amr
+    entity_id: amr_transport
+    schema_dose: { units: mm, frame: y_up, control: velocity }
+
+documents:
+  sources: [workorders, sop, inventory]
+
+agents:
+  supervisor: { model: claude-sonnet-4-6, temperature: 0.0 }
+
+breakpoints:
+  - type: lossy_abstraction_uncertainty
+  - type: r2r_frame_unit_mismatch
+
+thresholds:
+  task_success: 0.9
+  calibration_nll_max: 5.0
+  handoff_pose_max: 0.05
+  commutativity_divergence_max: 1.0e-6
+
+metrics:
+  - translation_fidelity
+  - uncertainty_calibration
+  - commutativity_divergence
+
+sweep:
+  axis: schema_dose.units
+  values: [m, cm, mm]
+
+rq_contributions: [RQ1, RQ2/H2, RQ5/H4]

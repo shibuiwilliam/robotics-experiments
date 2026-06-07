@@ -1,0 +1,25 @@
+id: s3_lab_custody
+seed: 42
+n_steps: 200
+
+robots:
+  - model: panda
+    entity_id: liquid_handler
+  - model: panda
+    entity_id: transport_bot
+
+documents:
+  sources: [sop, samples, custody_log]
+
+breakpoints:
+  - type: provenance_chain_break
+  - type: confidence_below_threshold
+
+thresholds:
+  min_confidence: 0.5
+
+metrics:
+  - provenance_chain_intact
+  - confidence_values
+
+rq_contributions: [RQ1]

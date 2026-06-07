@@ -1,0 +1,119 @@
+[project]
+name = "psl-bench"
+version = "0.1.0"
+description = "Physical Semantic Layer verification bench — MuJoCo + Claude Agent SDK"
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco>=3.2.0",
+    "pydantic>=2.9.0",
+    "pint>=0.24",
+    "numpy>=1.26",
+    "scipy>=1.14",
+    "pytransform3d>=3.6",
+    "structlog>=24.4",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "starlette>=0.41",
+    "uvicorn>=0.30",
+    "open-clip-torch>=3.3.0",
+]
+
+[project.optional-dependencies]
+agent = [
+    "claude-agent-sdk>=0.1.0",
+]
+vla = [
+    "open-clip-torch>=2.24",
+    "torch>=2.0",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.112",
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psl", "sim", "eval", "agents", "pseudo_cloud"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "eval"]
+markers = [
+    "unit: fast, no external deps",
+    "oracle: ground-truth-based eval (needs MuJoCo)",
+    "metamorphic: property/invariance tests (hypothesis)",
+    "slow: long-running tests",
+    "api: calls Anthropic API (costs money)",
+]
+addopts = "-ra --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = [
+    "mujoco.*",
+    "pytransform3d.*",
+    "pint.*",
+    "scipy.*",
+    "open_clip.*",
+    "torch.*",
+    "starlette.*",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 99
+src = ["src", "eval", "sim", "agents", "pseudo_cloud", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pyflakes + pycodestyle
+    "I",              # isort
+    "N",              # pep8-naming
+    "UP",             # pyupgrade
+    "B",              # bugbear
+    "SIM",            # simplify
+    "TCH",            # type-checking
+    "RUF",            # ruff-specific
+    "TID",            # tidy-imports (architecture invariant enforcement)
+]
+ignore = [
+    "E501",           # line length handled by formatter
+    "N802", "N803", "N806",  # allow uppercase for SE(3)/SO(3) math convention (T, R, etc.)
+    "RUF001", "RUF002", "RUF003",  # allow unicode in strings/docstrings/comments (×, −, etc.)
+    "TC001", "TC002", "TC003",  # don't force TYPE_CHECKING blocks — imports used at runtime
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["psl", "sim", "eval", "agents", "pseudo_cloud"]
+
+# Architecture invariant: src/psl and agents must NEVER import from eval
+# (ground-truth isolation — CLAUDE.md §5)
+# The TID251 banned-api rule applies globally, so we only ban specific
+# patterns and allow eval/ and tests/ to import freely via per-file-ignores.
+[tool.ruff.lint.per-file-ignores]
+"eval/**" = ["TID251"]    # eval/ can import from itself
+"tests/**" = ["TID251"]   # tests can import from eval/
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"eval.oracle".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"
+"eval.metamorphic".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"
+"eval.metrics".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"
+"eval.runner".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"
+"eval.baselines".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"
+"eval.ablations".msg = "ARCHITECTURE VIOLATION: src/psl and agents must not import from eval/ (ground-truth isolation)"

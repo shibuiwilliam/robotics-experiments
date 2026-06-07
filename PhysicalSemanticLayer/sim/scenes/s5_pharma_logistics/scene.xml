@@ -1,0 +1,128 @@
+<!--
+  S5 Pharma Logistics scene for PSL-Bench.
+  Panda arm + storage shelf (3 slots) + 4 vials (freejoint cylinders with different colors).
+  Frame convention: z-up, SI units (metres, radians, kg).
+-->
+<mujoco model="s5_pharma_logistics">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <compiler angle="radian"/>
+
+  <default>
+    <joint damping="1.0" armature="0.1"/>
+    <geom condim="4" friction="1 0.5 0.01"/>
+  </default>
+
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" type="plane" size="2 2 0.1" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Work table -->
+    <body name="table" pos="0.5 0 0.4">
+      <geom name="table_top" type="box" size="0.5 0.4 0.02" rgba="0.85 0.85 0.9 1" mass="10"/>
+    </body>
+
+    <!-- Panda arm base -->
+    <body name="panda_link0" pos="0 0 0.42">
+      <geom name="link0_geom" type="cylinder" size="0.06 0.05" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+      <body name="panda_link1" pos="0 0 0.05">
+        <joint name="joint_0" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+        <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 0.333" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+        <body name="panda_link2" pos="0 0 0.333">
+          <joint name="joint_1" type="hinge" axis="0 1 0" range="-1.7628 1.7628" damping="10"/>
+          <geom name="link2_geom" type="capsule" fromto="0 0 0 0 0 0.316" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+          <body name="panda_link3" pos="0 0 0.316">
+            <joint name="joint_2" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+            <geom name="link3_geom" type="capsule" fromto="0 0 0 0.0825 0 0" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+            <body name="panda_link4" pos="0.0825 0 0">
+              <joint name="joint_3" type="hinge" axis="0 -1 0" range="-3.0718 -0.0698" damping="10"/>
+              <geom name="link4_geom" type="capsule" fromto="0 0 0 -0.0825 0 0.384" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+              <body name="panda_link5" pos="-0.0825 0 0.384">
+                <joint name="joint_4" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+                <geom name="link5_geom" type="sphere" size="0.04" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                <body name="panda_link6" pos="0 0 0.088">
+                  <joint name="joint_5" type="hinge" axis="0 1 0" range="-0.0175 3.7525" damping="5"/>
+                  <geom name="link6_geom" type="capsule" fromto="0 0 0 0.088 0 0" size="0.03" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                  <body name="panda_link7" pos="0.088 0 0">
+                    <joint name="joint_6" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="2"/>
+                    <geom name="link7_geom" type="cylinder" size="0.04 0.02" rgba="0.3 0.3 0.3 1" mass="0.5"/>
+                    <site name="ee_site" pos="0 0 0.107" size="0.01" rgba="1 0 0 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Storage shelf (3 slots) -->
+    <body name="shelf" pos="0.8 0 0.42">
+      <!-- Shelf base -->
+      <geom name="shelf_base" type="box" size="0.15 0.3 0.005" rgba="0.5 0.5 0.5 1" mass="3.0"/>
+      <!-- Shelf back wall -->
+      <geom name="shelf_back" type="box" pos="0.15 0 0.15" size="0.005 0.3 0.15" rgba="0.5 0.5 0.5 1" mass="1.0"/>
+      <!-- Slot dividers -->
+      <geom name="shelf_div_1" type="box" pos="0 -0.15 0.08" size="0.15 0.005 0.08" rgba="0.45 0.45 0.45 1" mass="0.3"/>
+      <geom name="shelf_div_2" type="box" pos="0 -0.05 0.08" size="0.15 0.005 0.08" rgba="0.45 0.45 0.45 1" mass="0.3"/>
+      <geom name="shelf_div_3" type="box" pos="0 0.05 0.08" size="0.15 0.005 0.08" rgba="0.45 0.45 0.45 1" mass="0.3"/>
+      <geom name="shelf_div_4" type="box" pos="0 0.15 0.08" size="0.15 0.005 0.08" rgba="0.45 0.45 0.45 1" mass="0.3"/>
+    </body>
+
+    <!-- Vial 1 (red label) -->
+    <body name="vial_1" pos="0.5 -0.1 0.46">
+      <freejoint name="vial1_free"/>
+      <geom name="vial1_body" type="cylinder" size="0.01 0.03" rgba="0.95 0.95 0.95 1" mass="0.015"/>
+      <geom name="vial1_cap" type="cylinder" pos="0 0 0.032" size="0.011 0.005" rgba="0.9 0.15 0.15 1" mass="0.003"/>
+    </body>
+
+    <!-- Vial 2 (green label) -->
+    <body name="vial_2" pos="0.5 0 0.46">
+      <freejoint name="vial2_free"/>
+      <geom name="vial2_body" type="cylinder" size="0.01 0.03" rgba="0.95 0.95 0.95 1" mass="0.015"/>
+      <geom name="vial2_cap" type="cylinder" pos="0 0 0.032" size="0.011 0.005" rgba="0.15 0.9 0.15 1" mass="0.003"/>
+    </body>
+
+    <!-- Vial 3 (blue label) -->
+    <body name="vial_3" pos="0.5 0.1 0.46">
+      <freejoint name="vial3_free"/>
+      <geom name="vial3_body" type="cylinder" size="0.01 0.03" rgba="0.95 0.95 0.95 1" mass="0.015"/>
+      <geom name="vial3_cap" type="cylinder" pos="0 0 0.032" size="0.011 0.005" rgba="0.15 0.15 0.9 1" mass="0.003"/>
+    </body>
+
+    <!-- Vial 4 (yellow label) -->
+    <body name="vial_4" pos="0.5 0.2 0.46">
+      <freejoint name="vial4_free"/>
+      <geom name="vial4_body" type="cylinder" size="0.01 0.03" rgba="0.95 0.95 0.95 1" mass="0.015"/>
+      <geom name="vial4_cap" type="cylinder" pos="0 0 0.032" size="0.011 0.005" rgba="0.9 0.9 0.15 1" mass="0.003"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="act_joint_0" joint="joint_0" kp="1000"/>
+    <position name="act_joint_1" joint="joint_1" kp="1000"/>
+    <position name="act_joint_2" joint="joint_2" kp="1000"/>
+    <position name="act_joint_3" joint="joint_3" kp="1000"/>
+    <position name="act_joint_4" joint="joint_4" kp="1000"/>
+    <position name="act_joint_5" joint="joint_5" kp="1000"/>
+    <position name="act_joint_6" joint="joint_6" kp="1000"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="jpos_0" joint="joint_0"/>
+    <jointpos name="jpos_1" joint="joint_1"/>
+    <jointpos name="jpos_2" joint="joint_2"/>
+    <jointpos name="jpos_3" joint="joint_3"/>
+    <jointpos name="jpos_4" joint="joint_4"/>
+    <jointpos name="jpos_5" joint="joint_5"/>
+    <jointpos name="jpos_6" joint="joint_6"/>
+    <jointvel name="jvel_0" joint="joint_0"/>
+    <jointvel name="jvel_1" joint="joint_1"/>
+    <jointvel name="jvel_2" joint="joint_2"/>
+    <jointvel name="jvel_3" joint="joint_3"/>
+    <jointvel name="jvel_4" joint="joint_4"/>
+    <jointvel name="jvel_5" joint="joint_5"/>
+    <jointvel name="jvel_6" joint="joint_6"/>
+    <framepos name="ee_pos" objtype="site" objname="ee_site"/>
+    <framequat name="ee_quat" objtype="site" objname="ee_site"/>
+  </sensor>
+</mujoco>

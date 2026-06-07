@@ -1,0 +1,49 @@
+# PSL-Bench default dose-response sweep configuration
+# All experiments are fully described by their YAML config (config-as-code).
+# CLI args do NOT override — only this file controls the run.
+
+experiment:
+  name: "dose_response_sweep"
+  description: "Standard heterogeneity dose-response curve (6 doses)"
+
+seed: 42
+n_seeds: 5         # Run with seeds 42..46 for statistical power
+n_steps: 200       # Sim steps before measurement
+
+# Heterogeneity doses (references sim.schema_gen.HETEROGENEITY_DOSES)
+# Override individual doses here if needed; null = use defaults
+doses: null
+
+# Evaluation metrics to compute
+metrics:
+  - joint_pos_rmse
+  - joint_pos_max_error
+  - information_loss
+  - commutativity_divergence
+  - contract_info_loss
+
+# Baselines to include (PROJECT.md §9.1)
+baselines:
+  - B0   # N×N hand-written
+  - B1   # raw blackboard
+  - B2   # simulated LLM
+
+# Ablations (PROJECT.md §9.2) — set to true to include
+ablations:
+  remove_covariance: true
+  remove_provenance: true
+  remove_safety_gate: true
+  remove_contracts: true
+
+# Agent settings (only used when agents are invoked)
+agent:
+  model: "claude-sonnet-4-6"
+  temperature: 0.0
+  max_turns: 10
+  max_budget_usd: 0.50
+
+# VLA encoder settings
+vla:
+  mode: auto          # "clip" if available, "hash_fallback" otherwise
+  model: "ViT-B-32"
+  pretrained: "laion2b_s34b_b79k"

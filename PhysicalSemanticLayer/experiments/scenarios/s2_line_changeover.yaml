@@ -1,0 +1,28 @@
+id: s2_line_changeover
+seed: 42
+n_steps: 200
+
+robots:
+  - model: panda
+    entity_id: robot_a
+    schema_dose: { units: m, frame: z_up, control: position }
+  - model: panda_hetero
+    entity_id: robot_b
+    schema_dose: { units: mm, frame: z_up_rotated, control: position }
+
+documents:
+  sources: [recipes, equipment]
+
+breakpoints:
+  - type: impossible_recipe_rejection
+  - type: commutativity_violation
+
+thresholds:
+  commutativity_divergence_max: 1.0e-6
+  safety_false_reject_max: 0.1
+
+metrics:
+  - commutativity_divergence
+  - safety_gate_rejection
+
+rq_contributions: [RQ3/H3, RQ7]
