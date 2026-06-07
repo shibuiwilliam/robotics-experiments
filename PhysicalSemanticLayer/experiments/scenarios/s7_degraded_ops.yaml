@@ -1,0 +1,23 @@
+id: s7_degraded_ops
+seed: 42
+n_steps: 200
+
+robots:
+  - model: panda
+    entity_id: panda_0
+
+breakpoints:
+  - type: clock_skew_causal_violation
+  - type: graceful_degradation
+
+thresholds:
+  causal_violations_max: 0
+  degradation_must_be_monotonic: true
+
+skew_values: [0.0, 0.001, 0.01, 0.1, 0.5, 1.0]
+
+metrics:
+  - causal_ordering_violations
+  - degradation_curve
+
+rq_contributions: [causal_integrity, Phase4]

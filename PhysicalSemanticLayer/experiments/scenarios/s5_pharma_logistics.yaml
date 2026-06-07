@@ -1,0 +1,19 @@
+id: s5_pharma_logistics
+seed: 42
+
+documents:
+  sources: [formulary, expiry, audit_log]
+
+breakpoints:
+  - type: symbol_observation_mismatch
+  - type: provenance_poisoning
+
+thresholds:
+  false_accept_max: 0.05
+  false_reject_max: 0.1
+
+metrics:
+  - neuro_symbolic_false_accept
+  - provenance_poisoning_detection
+
+rq_contributions: [RQ7]

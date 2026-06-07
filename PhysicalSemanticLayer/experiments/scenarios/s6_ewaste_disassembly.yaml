@@ -1,0 +1,23 @@
+id: s6_ewaste_disassembly
+seed: 42
+
+robots:
+  - model: panda
+    entity_id: disassembly_arm
+
+documents:
+  sources: [materials, compliance, manifest]
+
+breakpoints:
+  - type: open_world_ontology_failure
+  - type: affordance_generalization
+
+thresholds:
+  embedding_advantage_min: 0.1
+
+metrics:
+  - symbol_only_rate
+  - embedding_rate
+  - generalization_advantage
+
+rq_contributions: [RQ6/H5]

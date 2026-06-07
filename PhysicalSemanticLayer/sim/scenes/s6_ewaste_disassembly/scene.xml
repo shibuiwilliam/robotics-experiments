@@ -1,0 +1,117 @@
+<!--
+  S6 E-Waste Disassembly scene for PSL-Bench.
+  Panda arm + work surface + 5 different freejoint objects representing e-waste components.
+  Frame convention: z-up, SI units (metres, radians, kg).
+-->
+<mujoco model="s6_ewaste_disassembly">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <compiler angle="radian"/>
+
+  <default>
+    <joint damping="1.0" armature="0.1"/>
+    <geom condim="4" friction="1 0.5 0.01"/>
+  </default>
+
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" type="plane" size="2 2 0.1" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Work surface -->
+    <body name="work_surface" pos="0.5 0 0.4">
+      <geom name="worktop" type="box" size="0.5 0.4 0.02" rgba="0.55 0.55 0.55 1" mass="15"/>
+    </body>
+
+    <!-- Panda arm base -->
+    <body name="panda_link0" pos="0 0 0.42">
+      <geom name="link0_geom" type="cylinder" size="0.06 0.05" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+      <body name="panda_link1" pos="0 0 0.05">
+        <joint name="joint_0" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+        <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 0.333" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+        <body name="panda_link2" pos="0 0 0.333">
+          <joint name="joint_1" type="hinge" axis="0 1 0" range="-1.7628 1.7628" damping="10"/>
+          <geom name="link2_geom" type="capsule" fromto="0 0 0 0 0 0.316" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+          <body name="panda_link3" pos="0 0 0.316">
+            <joint name="joint_2" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+            <geom name="link3_geom" type="capsule" fromto="0 0 0 0.0825 0 0" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+            <body name="panda_link4" pos="0.0825 0 0">
+              <joint name="joint_3" type="hinge" axis="0 -1 0" range="-3.0718 -0.0698" damping="10"/>
+              <geom name="link4_geom" type="capsule" fromto="0 0 0 -0.0825 0 0.384" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+              <body name="panda_link5" pos="-0.0825 0 0.384">
+                <joint name="joint_4" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+                <geom name="link5_geom" type="sphere" size="0.04" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                <body name="panda_link6" pos="0 0 0.088">
+                  <joint name="joint_5" type="hinge" axis="0 1 0" range="-0.0175 3.7525" damping="5"/>
+                  <geom name="link6_geom" type="capsule" fromto="0 0 0 0.088 0 0" size="0.03" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                  <body name="panda_link7" pos="0.088 0 0">
+                    <joint name="joint_6" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="2"/>
+                    <geom name="link7_geom" type="cylinder" size="0.04 0.02" rgba="0.3 0.3 0.3 1" mass="0.5"/>
+                    <site name="ee_site" pos="0 0 0.107" size="0.01" rgba="1 0 0 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- Component 1: PCB board (box) -->
+    <body name="comp_pcb" pos="0.4 -0.15 0.45">
+      <freejoint name="pcb_free"/>
+      <geom name="pcb_geom" type="box" size="0.06 0.04 0.005" rgba="0.1 0.6 0.2 1" mass="0.08"/>
+    </body>
+
+    <!-- Component 2: motor (cylinder) -->
+    <body name="comp_motor" pos="0.5 -0.1 0.45">
+      <freejoint name="motor_free"/>
+      <geom name="motor_geom" type="cylinder" size="0.02 0.03" rgba="0.4 0.4 0.4 1" mass="0.15"/>
+    </body>
+
+    <!-- Component 3: bearing (sphere) -->
+    <body name="comp_bearing" pos="0.5 0.1 0.44">
+      <freejoint name="bearing_free"/>
+      <geom name="bearing_geom" type="sphere" size="0.015" rgba="0.7 0.7 0.7 1" mass="0.05"/>
+    </body>
+
+    <!-- Component 4: cable bundle (capsule) -->
+    <body name="comp_cable" pos="0.6 0 0.45">
+      <freejoint name="cable_free"/>
+      <geom name="cable_geom" type="capsule" size="0.008 0.06" rgba="0.1 0.1 0.1 1" mass="0.03"/>
+    </body>
+
+    <!-- Component 5: heat sink (box) -->
+    <body name="comp_heatsink" pos="0.4 0.15 0.45">
+      <freejoint name="heatsink_free"/>
+      <geom name="heatsink_geom" type="box" size="0.03 0.03 0.015" rgba="0.8 0.6 0.2 1" mass="0.12"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="act_joint_0" joint="joint_0" kp="1000"/>
+    <position name="act_joint_1" joint="joint_1" kp="1000"/>
+    <position name="act_joint_2" joint="joint_2" kp="1000"/>
+    <position name="act_joint_3" joint="joint_3" kp="1000"/>
+    <position name="act_joint_4" joint="joint_4" kp="1000"/>
+    <position name="act_joint_5" joint="joint_5" kp="1000"/>
+    <position name="act_joint_6" joint="joint_6" kp="1000"/>
+  </actuator>
+
+  <sensor>
+    <jointpos name="jpos_0" joint="joint_0"/>
+    <jointpos name="jpos_1" joint="joint_1"/>
+    <jointpos name="jpos_2" joint="joint_2"/>
+    <jointpos name="jpos_3" joint="joint_3"/>
+    <jointpos name="jpos_4" joint="joint_4"/>
+    <jointpos name="jpos_5" joint="joint_5"/>
+    <jointpos name="jpos_6" joint="joint_6"/>
+    <jointvel name="jvel_0" joint="joint_0"/>
+    <jointvel name="jvel_1" joint="joint_1"/>
+    <jointvel name="jvel_2" joint="joint_2"/>
+    <jointvel name="jvel_3" joint="joint_3"/>
+    <jointvel name="jvel_4" joint="joint_4"/>
+    <jointvel name="jvel_5" joint="joint_5"/>
+    <jointvel name="jvel_6" joint="joint_6"/>
+    <framepos name="ee_pos" objtype="site" objname="ee_site"/>
+    <framequat name="ee_quat" objtype="site" objname="ee_site"/>
+  </sensor>
+</mujoco>

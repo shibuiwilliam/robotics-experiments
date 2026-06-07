@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.so
+
+# Virtual environment
+.venv/
+
+# Secrets
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Experiments — large generated artifacts
+experiments/runs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# MuJoCo rendered frames
+*.png
+*.mp4
+
+# uv
+.python-version
+
+# Local overrides
+CLAUDE.local.md

@@ -1,0 +1,168 @@
+<!--
+  S7 Degraded Ops scene for PSL-Bench.
+  Identical to S1 (Mixed Fleet Pick) per SCENARIOS.md 8.4.
+  Panda arm + AMR mobile base (2-DOF planar) + 3 bins + QA tray + isolation tray + blue gear.
+  Frame convention: z-up, SI units (metres, radians, kg).
+-->
+<mujoco model="s7_degraded_ops">
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <compiler angle="radian"/>
+
+  <default>
+    <joint damping="1.0" armature="0.1"/>
+    <geom condim="4" friction="1 0.5 0.01"/>
+  </default>
+
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.8 0.8 0.8 1"/>
+
+    <!-- Table for Panda arm -->
+    <body name="table" pos="0.5 0 0.4">
+      <geom name="table_top" type="box" size="0.4 0.4 0.02" rgba="0.6 0.4 0.2 1" mass="10"/>
+    </body>
+
+    <!-- Panda arm base -->
+    <body name="panda_link0" pos="0 0 0.42">
+      <geom name="link0_geom" type="cylinder" size="0.06 0.05" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+      <body name="panda_link1" pos="0 0 0.05">
+        <joint name="joint_0" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+        <geom name="link1_geom" type="capsule" fromto="0 0 0 0 0 0.333" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+        <body name="panda_link2" pos="0 0 0.333">
+          <joint name="joint_1" type="hinge" axis="0 1 0" range="-1.7628 1.7628" damping="10"/>
+          <geom name="link2_geom" type="capsule" fromto="0 0 0 0 0 0.316" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+          <body name="panda_link3" pos="0 0 0.316">
+            <joint name="joint_2" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+            <geom name="link3_geom" type="capsule" fromto="0 0 0 0.0825 0 0" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+            <body name="panda_link4" pos="0.0825 0 0">
+              <joint name="joint_3" type="hinge" axis="0 -1 0" range="-3.0718 -0.0698" damping="10"/>
+              <geom name="link4_geom" type="capsule" fromto="0 0 0 -0.0825 0 0.384" size="0.04" rgba="0.9 0.9 0.9 1" mass="2.0"/>
+              <body name="panda_link5" pos="-0.0825 0 0.384">
+                <joint name="joint_4" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="10"/>
+                <geom name="link5_geom" type="sphere" size="0.04" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                <body name="panda_link6" pos="0 0 0.088">
+                  <joint name="joint_5" type="hinge" axis="0 1 0" range="-0.0175 3.7525" damping="5"/>
+                  <geom name="link6_geom" type="capsule" fromto="0 0 0 0.088 0 0" size="0.03" rgba="0.9 0.9 0.9 1" mass="1.0"/>
+                  <body name="panda_link7" pos="0.088 0 0">
+                    <joint name="joint_6" type="hinge" axis="0 0 1" range="-2.8973 2.8973" damping="2"/>
+                    <geom name="link7_geom" type="cylinder" size="0.04 0.02" rgba="0.3 0.3 0.3 1" mass="0.5"/>
+                    <site name="ee_site" pos="0 0 0.107" size="0.01" rgba="1 0 0 1"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+    <!-- AMR mobile base (2-DOF planar + yaw) -->
+    <body name="amr_base_x" pos="2.0 0 0.05">
+      <geom type="sphere" size="0.001" mass="1" rgba="0 0 0 0"/>
+      <joint name="amr_slide_x" type="slide" axis="1 0 0" range="-5 5" damping="50"/>
+      <body name="amr_base_y">
+        <geom type="sphere" size="0.001" mass="1" rgba="0 0 0 0"/>
+      <joint name="amr_slide_y" type="slide" axis="0 1 0" range="-5 5" damping="50"/>
+        <body name="amr_base_yaw">
+          <joint name="amr_hinge_yaw" type="hinge" axis="0 0 1" damping="20"/>
+          <geom name="amr_chassis" type="box" size="0.3 0.2 0.05" rgba="0.4 0.6 0.4 1" mass="20"/>
+          <geom name="amr_wheel_fl" type="cylinder" pos="0.2 0.18 -0.04" euler="1.5708 0 0" size="0.04 0.02" rgba="0.2 0.2 0.2 1" mass="0.5"/>
+          <geom name="amr_wheel_fr" type="cylinder" pos="0.2 -0.18 -0.04" euler="1.5708 0 0" size="0.04 0.02" rgba="0.2 0.2 0.2 1" mass="0.5"/>
+          <geom name="amr_wheel_rl" type="cylinder" pos="-0.2 0.18 -0.04" euler="1.5708 0 0" size="0.04 0.02" rgba="0.2 0.2 0.2 1" mass="0.5"/>
+          <geom name="amr_wheel_rr" type="cylinder" pos="-0.2 -0.18 -0.04" euler="1.5708 0 0" size="0.04 0.02" rgba="0.2 0.2 0.2 1" mass="0.5"/>
+          <site name="amr_center" pos="0 0 0.05" size="0.02" rgba="0 1 0 1"/>
+        </body>
+      </body>
+    </body>
+
+    <!-- Bin A -->
+    <body name="bin_a" pos="0.7 -0.4 0.42">
+      <geom name="bin_a_base" type="box" size="0.1 0.1 0.005" rgba="0.8 0.2 0.2 1" mass="0.5"/>
+      <geom name="bin_a_wall_f" type="box" pos="0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.8 0.2 0.2 1" mass="0.1"/>
+      <geom name="bin_a_wall_b" type="box" pos="-0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.8 0.2 0.2 1" mass="0.1"/>
+      <geom name="bin_a_wall_l" type="box" pos="0 0.1 0.04" size="0.1 0.005 0.04" rgba="0.8 0.2 0.2 1" mass="0.1"/>
+      <geom name="bin_a_wall_r" type="box" pos="0 -0.1 0.04" size="0.1 0.005 0.04" rgba="0.8 0.2 0.2 1" mass="0.1"/>
+    </body>
+
+    <!-- Bin B -->
+    <body name="bin_b" pos="0.7 0.0 0.42">
+      <geom name="bin_b_base" type="box" size="0.1 0.1 0.005" rgba="0.2 0.8 0.2 1" mass="0.5"/>
+      <geom name="bin_b_wall_f" type="box" pos="0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.2 0.8 0.2 1" mass="0.1"/>
+      <geom name="bin_b_wall_b" type="box" pos="-0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.2 0.8 0.2 1" mass="0.1"/>
+      <geom name="bin_b_wall_l" type="box" pos="0 0.1 0.04" size="0.1 0.005 0.04" rgba="0.2 0.8 0.2 1" mass="0.1"/>
+      <geom name="bin_b_wall_r" type="box" pos="0 -0.1 0.04" size="0.1 0.005 0.04" rgba="0.2 0.8 0.2 1" mass="0.1"/>
+    </body>
+
+    <!-- Bin C -->
+    <body name="bin_c" pos="0.7 0.4 0.42">
+      <geom name="bin_c_base" type="box" size="0.1 0.1 0.005" rgba="0.2 0.2 0.8 1" mass="0.5"/>
+      <geom name="bin_c_wall_f" type="box" pos="0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.2 0.2 0.8 1" mass="0.1"/>
+      <geom name="bin_c_wall_b" type="box" pos="-0.1 0 0.04" size="0.005 0.1 0.04" rgba="0.2 0.2 0.8 1" mass="0.1"/>
+      <geom name="bin_c_wall_l" type="box" pos="0 0.1 0.04" size="0.1 0.005 0.04" rgba="0.2 0.2 0.8 1" mass="0.1"/>
+      <geom name="bin_c_wall_r" type="box" pos="0 -0.1 0.04" size="0.1 0.005 0.04" rgba="0.2 0.2 0.8 1" mass="0.1"/>
+    </body>
+
+    <!-- QA tray -->
+    <body name="qa_tray" pos="0.3 -0.5 0.42">
+      <geom name="qa_tray_base" type="box" size="0.08 0.06 0.003" rgba="0.9 0.9 0.2 1" mass="0.3"/>
+      <geom name="qa_tray_wall_f" type="box" pos="0.08 0 0.02" size="0.003 0.06 0.02" rgba="0.9 0.9 0.2 1" mass="0.05"/>
+      <geom name="qa_tray_wall_b" type="box" pos="-0.08 0 0.02" size="0.003 0.06 0.02" rgba="0.9 0.9 0.2 1" mass="0.05"/>
+      <geom name="qa_tray_wall_l" type="box" pos="0 0.06 0.02" size="0.08 0.003 0.02" rgba="0.9 0.9 0.2 1" mass="0.05"/>
+      <geom name="qa_tray_wall_r" type="box" pos="0 -0.06 0.02" size="0.08 0.003 0.02" rgba="0.9 0.9 0.2 1" mass="0.05"/>
+    </body>
+
+    <!-- Isolation tray -->
+    <body name="isolation_tray" pos="0.3 0.5 0.42">
+      <geom name="iso_tray_base" type="box" size="0.08 0.06 0.003" rgba="0.9 0.3 0.1 1" mass="0.3"/>
+      <geom name="iso_tray_wall_f" type="box" pos="0.08 0 0.02" size="0.003 0.06 0.02" rgba="0.9 0.3 0.1 1" mass="0.05"/>
+      <geom name="iso_tray_wall_b" type="box" pos="-0.08 0 0.02" size="0.003 0.06 0.02" rgba="0.9 0.3 0.1 1" mass="0.05"/>
+      <geom name="iso_tray_wall_l" type="box" pos="0 0.06 0.02" size="0.08 0.003 0.02" rgba="0.9 0.3 0.1 1" mass="0.05"/>
+      <geom name="iso_tray_wall_r" type="box" pos="0 -0.06 0.02" size="0.08 0.003 0.02" rgba="0.9 0.3 0.1 1" mass="0.05"/>
+    </body>
+
+    <!-- Blue gear (graspable) -->
+    <body name="blue_gear" pos="0.5 0.1 0.45">
+      <freejoint name="gear_free"/>
+      <geom name="gear_geom" type="cylinder" size="0.025 0.015" rgba="0.2 0.3 0.9 1" mass="0.1"/>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- Panda arm actuators -->
+    <position name="act_joint_0" joint="joint_0" kp="1000"/>
+    <position name="act_joint_1" joint="joint_1" kp="1000"/>
+    <position name="act_joint_2" joint="joint_2" kp="1000"/>
+    <position name="act_joint_3" joint="joint_3" kp="1000"/>
+    <position name="act_joint_4" joint="joint_4" kp="1000"/>
+    <position name="act_joint_5" joint="joint_5" kp="1000"/>
+    <position name="act_joint_6" joint="joint_6" kp="1000"/>
+    <!-- AMR actuators -->
+    <position name="act_amr_x" joint="amr_slide_x" kp="500"/>
+    <position name="act_amr_y" joint="amr_slide_y" kp="500"/>
+    <position name="act_amr_yaw" joint="amr_hinge_yaw" kp="200"/>
+  </actuator>
+
+  <sensor>
+    <!-- Panda arm sensors -->
+    <jointpos name="jpos_0" joint="joint_0"/>
+    <jointpos name="jpos_1" joint="joint_1"/>
+    <jointpos name="jpos_2" joint="joint_2"/>
+    <jointpos name="jpos_3" joint="joint_3"/>
+    <jointpos name="jpos_4" joint="joint_4"/>
+    <jointpos name="jpos_5" joint="joint_5"/>
+    <jointpos name="jpos_6" joint="joint_6"/>
+    <jointvel name="jvel_0" joint="joint_0"/>
+    <jointvel name="jvel_1" joint="joint_1"/>
+    <jointvel name="jvel_2" joint="joint_2"/>
+    <jointvel name="jvel_3" joint="joint_3"/>
+    <jointvel name="jvel_4" joint="joint_4"/>
+    <jointvel name="jvel_5" joint="joint_5"/>
+    <jointvel name="jvel_6" joint="joint_6"/>
+    <framepos name="ee_pos" objtype="site" objname="ee_site"/>
+    <framequat name="ee_quat" objtype="site" objname="ee_site"/>
+    <!-- AMR sensors -->
+    <jointpos name="base_x" joint="amr_slide_x"/>
+    <jointpos name="base_y" joint="amr_slide_y"/>
+    <jointpos name="base_yaw" joint="amr_hinge_yaw"/>
+  </sensor>
+</mujoco>

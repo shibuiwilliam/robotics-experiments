@@ -1,0 +1,31 @@
+id: s4_field_inspection
+seed: 42
+n_steps: 200
+
+robots:
+  - model: amr
+    entity_id: overhead_cam
+  - model: amr
+    entity_id: ground_bot
+  - model: panda
+    entity_id: contact_arm
+  - model: drone
+    entity_id: inspection_drone
+    schema_dose:
+      frame: enu
+
+documents:
+  sources: [assets, manuals, workorders]
+
+breakpoints:
+  - type: multi_resolution_fusion
+  - type: bidirectional_anchoring
+
+thresholds:
+  fidelity_max: 0.05
+
+metrics:
+  - translation_fidelity
+  - lod_consistency
+
+rq_contributions: [RQ1]
