@@ -129,6 +129,12 @@ def evaluate_s4(
         "lod_joints": summary.n_joints,
         "trajectory_steps": len(orch.trajectory_readings),
         "mcp_calls_made": len(orch.mcp_results),
+        "baseline_psl_rmse": orch.baseline_results.get("PSL", {}).get("joint_rmse", -1),
+        "baseline_b0_rmse": orch.baseline_results.get("B0", {}).get("joint_rmse", -1),
+        "baseline_b0_info_loss": orch.baseline_results.get("B0", {}).get("info_loss", -1),
+        "baseline_b1_rmse": orch.baseline_results.get("B1", {}).get("joint_rmse", -1),
+        "baseline_b2_rmse": orch.baseline_results.get("B2", {}).get("joint_rmse", -1),
+        "baseline_b2_info_loss": orch.baseline_results.get("B2", {}).get("info_loss", -1),
         "physical_accuracy_ee": orch.physical_accuracy_ee or 0.0,
         "physical_accuracy_object": orch.physical_accuracy_object or 0.0,
         "drone_rt_error": drone_rt_error,
@@ -136,6 +142,8 @@ def evaluate_s4(
         "drone_negotiation_notes": len(neg_result.translation_notes),
         "agent_fallback_used": orch.agent_fallback_used,
         "agent_404_count": orch.agent_404_count,
+        "smolvla_available": orch.smolvla_available,
+        "smolvla_action_confidence": orch.smolvla_action_confidence,
     }
 
     if orch.agent_cost_usd is not None:

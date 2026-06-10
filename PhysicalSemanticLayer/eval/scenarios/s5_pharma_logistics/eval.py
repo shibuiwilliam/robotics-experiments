@@ -110,12 +110,20 @@ def evaluate_s5(
         "gate_caught_poisoning": float(gate_caught),
         "trajectory_steps": len(orch.trajectory_readings),
         "mcp_calls_made": len(orch.mcp_results),
+        "baseline_psl_rmse": orch.baseline_results.get("PSL", {}).get("joint_rmse", -1),
+        "baseline_b0_rmse": orch.baseline_results.get("B0", {}).get("joint_rmse", -1),
+        "baseline_b0_info_loss": orch.baseline_results.get("B0", {}).get("info_loss", -1),
+        "baseline_b1_rmse": orch.baseline_results.get("B1", {}).get("joint_rmse", -1),
+        "baseline_b2_rmse": orch.baseline_results.get("B2", {}).get("joint_rmse", -1),
+        "baseline_b2_info_loss": orch.baseline_results.get("B2", {}).get("info_loss", -1),
         "physical_accuracy_ee": orch.physical_accuracy_ee or 0.0,
         "physical_accuracy_object": orch.physical_accuracy_object or 0.0,
     }
 
     metrics["agent_fallback_used"] = orch.agent_fallback_used
     metrics["agent_404_count"] = orch.agent_404_count
+    metrics["smolvla_available"] = orch.smolvla_available
+    metrics["smolvla_action_confidence"] = orch.smolvla_action_confidence
 
     if orch.agent_cost_usd is not None:
         metrics["agent_cost_usd"] = orch.agent_cost_usd

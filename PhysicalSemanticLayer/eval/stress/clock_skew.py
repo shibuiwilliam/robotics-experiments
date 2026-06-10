@@ -2,8 +2,12 @@
 
 Injects progressively larger clock skew between two simulated
 clock domains and measures causal ordering violations and safety
-gate rejections.  This validates that PSL's time_uncertainty and
-cross-domain causal checks degrade gracefully.
+gate rejections.
+
+The key design: time_uncertainty is a FIXED realistic value (e.g. 5ms
+for NTP-synchronized systems), not proportional to skew. This reveals
+the gate's actual sensitivity curve: accepted when skew < uncertainty,
+rejected when skew >> uncertainty.
 """
 
 from __future__ import annotations
@@ -17,8 +21,11 @@ from psl.phyte.geometry import identity_se3
 from psl.phyte.provenance import Provenance, ProvenanceEntry
 from psl.safety.gate import PhysicsConsistencyGate
 
-# Default skew magnitudes (seconds) to sweep
-DEFAULT_SKEWS: list[float] = [0.0, 0.001, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0]
+# Default skew magnitudes (seconds) — includes values around the 5ms boundary
+DEFAULT_SKEWS: list[float] = [0.0, 0.001, 0.003, 0.005, 0.010, 0.050, 0.100, 0.500, 1.0]
+
+# Default clock uncertainty — 5ms, typical NTP-synchronized system
+DEFAULT_CLOCK_UNCERTAINTY: float = 0.005
 
 
 @dataclass(frozen=True)
@@ -27,17 +34,21 @@ class ClockSkewResult:
 
     Fields:
         skew_seconds: Injected skew magnitude (s).
+        clock_uncertainty: Declared time uncertainty (s).
         causal_violations: Number of causal ordering violations detected.
         gate_rejections: Number of safety gate rejections.
         n_transitions: Total state transitions tested.
         max_time_error: Maximum absolute time error observed.
+        rejection_rate: Fraction of transitions rejected (0.0 to 1.0).
     """
 
     skew_seconds: float
+    clock_uncertainty: float
     causal_violations: int
     gate_rejections: int
     n_transitions: int
     max_time_error: float
+    rejection_rate: float
 
 
 def _make_phyte_pair(
@@ -89,17 +100,20 @@ def test_clock_skew(
     skew_seconds: float,
     seed: int = 42,
     n_transitions: int = 20,
+    clock_uncertainty: float = DEFAULT_CLOCK_UNCERTAINTY,
 ) -> ClockSkewResult:
     """Test PSL behaviour under a specific clock skew.
 
-    Creates state transitions where one clock domain is skewed by
-    *skew_seconds* relative to the other, then checks for causal
-    violations and gate rejections.
+    Uses a FIXED clock_uncertainty (default 5ms) representing realistic
+    NTP synchronization quality. Skew below the uncertainty should be
+    accepted (normal jitter); skew above should be rejected (genuine
+    causal violation).
 
     Args:
         skew_seconds: Clock offset to inject (s).
         seed: Random seed.
         n_transitions: Number of sequential transitions to test.
+        clock_uncertainty: Declared time uncertainty for the remote clock (s).
 
     Returns:
         ClockSkewResult summarising violations at this skew level.
@@ -115,13 +129,10 @@ def test_clock_skew(
 
     for i in range(n_transitions):
         t_base = i * dt
-        # Inject skew: the "remote" clock runs BEHIND by skew_seconds,
-        # so the new reading appears to come from the past — this triggers
-        # causal ordering violations when skew exceeds the uncertainty slack.
+        # Inject skew: remote clock runs BEHIND by skew_seconds
         t_skewed = t_base - skew_seconds
 
-        # Use same clock domain when no skew (no cross-domain issues)
-        # Use different domains when skew > 0 to exercise cross-domain checks
+        # Same domain when no skew; cross-domain otherwise
         if skew_seconds == 0.0:
             domain_prev = "sim"
             domain_new = "sim"
@@ -129,8 +140,8 @@ def test_clock_skew(
         else:
             domain_prev = "sim"
             domain_new = "remote"
-            # Set uncertainty to half the skew — so large skew exceeds the slack
-            uncertainty = abs(skew_seconds) * 0.3
+            # FIXED uncertainty — not proportional to skew
+            uncertainty = clock_uncertainty
 
         time_error = abs(t_skewed - t_base)
         max_time_error = max(max_time_error, time_error)
@@ -155,23 +166,27 @@ def test_clock_skew(
         if not result.accepted:
             gate_rejections += 1
 
-        # Check causal ordering explicitly
         for v in result.violations:
             if "causal" in v.lower():
                 causal_violations += 1
 
+    rejection_rate = gate_rejections / n_transitions if n_transitions > 0 else 0.0
+
     return ClockSkewResult(
         skew_seconds=skew_seconds,
+        clock_uncertainty=clock_uncertainty,
         causal_violations=causal_violations,
         gate_rejections=gate_rejections,
         n_transitions=n_transitions,
         max_time_error=max_time_error,
+        rejection_rate=rejection_rate,
     )
 
 
 def sweep_clock_skew(
     skew_values: list[float] | None = None,
     seed: int = 42,
+    clock_uncertainty: float = DEFAULT_CLOCK_UNCERTAINTY,
 ) -> list[ClockSkewResult]:
     """Sweep across multiple clock skew magnitudes.
 
@@ -179,6 +194,7 @@ def sweep_clock_skew(
         skew_values: List of skew magnitudes to test (s).
             Defaults to DEFAULT_SKEWS.
         seed: Random seed.
+        clock_uncertainty: Fixed time uncertainty for the remote clock (s).
 
     Returns:
         List of ClockSkewResult, one per skew value.
@@ -188,7 +204,7 @@ def sweep_clock_skew(
 
     results: list[ClockSkewResult] = []
     for skew in skew_values:
-        result = test_clock_skew(skew, seed=seed)
+        result = test_clock_skew(skew, seed=seed, clock_uncertainty=clock_uncertainty)
         results.append(result)
 
     return results

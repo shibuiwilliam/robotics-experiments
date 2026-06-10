@@ -48,12 +48,16 @@ def run_stress_suite(seed: int = 42, n_fuzz: int = 50) -> dict[str, object]:
     print(f"  Max info loss: {breaking['max_info_loss']:.6f}")
     print()
 
-    # 2. Clock skew
-    print("[2/3] Clock skew sweep...")
-    skew_results = sweep_clock_skew(seed=seed)
+    # 2. Clock skew (5ms NTP-level uncertainty)
+    print("[2/3] Clock skew sweep (clock_uncertainty=5ms)...")
+    skew_results = sweep_clock_skew(seed=seed, clock_uncertainty=0.005)
     for sr in skew_results:
         status = "OK" if sr.gate_rejections == 0 else "REJECTED"
-        print(f"  skew={sr.skew_seconds:.3f}s -> {status} (violations={sr.causal_violations})")
+        print(
+            f"  skew={sr.skew_seconds:.3f}s -> {status} "
+            f"(rejections={sr.gate_rejections}/{sr.n_transitions}, "
+            f"rate={sr.rejection_rate:.0%})"
+        )
     print()
 
     # 3. Grounding generalization

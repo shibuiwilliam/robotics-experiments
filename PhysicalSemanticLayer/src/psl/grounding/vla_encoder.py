@@ -62,6 +62,28 @@ class AffordancePrediction:
     confidence: float
 
 
+@dataclass(frozen=True)
+class ActionPrediction:
+    """Action prediction from a VLA model.
+
+    Represents a predicted robot action with uncertainty, suitable for
+    wrapping in a Phyte and validating through the safety gate.
+
+    Fields:
+        joint_targets: Predicted target joint positions (n_joints,).
+        ee_delta: End-effector delta [dx, dy, dz, drx, dry, drz] (6,).
+        gripper: Gripper command (0.0=open, 1.0=closed).
+        confidence: Model confidence in the prediction [0, 1].
+        horizon: Number of future timesteps this prediction covers.
+    """
+
+    joint_targets: NDArray[np.float64]
+    ee_delta: NDArray[np.float64]
+    gripper: float
+    confidence: float
+    horizon: int
+
+
 class VLAEncoder:
     """VLA-style encoder: MuJoCo render -> CLIP embedding -> affordance prediction.
 

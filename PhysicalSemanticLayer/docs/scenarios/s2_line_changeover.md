@@ -63,3 +63,77 @@ This scenario tests the two most mathematically rigorous properties of PSL:
 | Config | `experiments/scenarios/s2_line_changeover.yaml` |
 | Pseudo-cloud | `pseudo_cloud/s2_line_changeover/data.py` (recipes, equipment) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS2LineChangeover` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        Recipe["Recipe R-100<br/>joint targets + torque"]
+        Equip["Equipment DB<br/>robot limits"]
+    end
+
+    subgraph Robots["MuJoCo Scene (dual Panda)"]
+        RobotA["Robot A<br/>m, z-up, position"]
+        RobotB["Robot B<br/>mm, z-up rotated, position"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter A"]
+        HPA["HeterogeneousPandaAdapter B"]
+        IR["Canonical IR"]
+        WM["World Model"]
+        Gate["Safety Gate<br/>joint limits check"]
+        Contract["Fidelity Contract<br/>compose A→B"]
+    end
+
+    Agent["Claude Agent"]
+
+    Recipe --> Agent
+    Equip --> Gate
+    Agent -->|resolve_document| Cloud
+    Agent -->|command_robot| PA
+
+    RobotA --> PA -->|to_ir| IR
+    RobotB --> HPA -->|to_ir| IR
+    IR --> WM --> Gate
+    Gate -->|reject impossible| WM
+    Contract -.->|declared loss| IR
+
+    Note1["Commutativity check:<br/>A→IR→B == A→IR→C→IR→B"]
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant PSL as PSL (IR + WorldModel)
+    participant GateS as Safety Gate
+    participant RobotA as Robot A (SI)
+    participant RobotB as Robot B (mm, rotated)
+
+    Agent->>PSL: resolve_document("work_order", "WO-42")
+    PSL-->>Agent: recipe config + bin positions
+
+    Agent->>PSL: query_world_model("panda_arm")
+    PSL-->>Agent: current joint state
+
+    Note over PSL: Apply recipe R-100 targets
+    Agent->>PSL: command_robot_semantic("configure recipe")
+
+    PSL->>GateS: check joint limits vs recipe
+    alt Recipe within limits
+        GateS-->>PSL: accepted
+        PSL->>RobotA: PandaAdapter.from_ir()
+        PSL->>RobotB: HeterogeneousAdapter.from_ir()
+    else Recipe exceeds limits
+        GateS-->>PSL: REJECTED (joint_3: 5.0 > 3.07)
+        PSL-->>Agent: safety gate rejection
+    end
+
+    Note over PSL: Commutativity verification
+    PSL->>PSL: path A→IR→B
+    PSL->>PSL: path A→IR→C→IR→B
+    PSL->>PSL: divergence = 0.0 ✓
+```

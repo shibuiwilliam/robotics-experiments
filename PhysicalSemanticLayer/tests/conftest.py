@@ -9,6 +9,16 @@ from psl.adapters.robots.panda.adapter import PandaAdapter
 from psl.safety.gate import JointLimits, PhysicsConsistencyGate
 from sim.wrapper import MuJoCoSim
 
+
+@pytest.fixture(autouse=True)
+def _reset_server_singletons() -> None:
+    """Reset pseudo-cloud server singletons between tests to prevent cross-contamination."""
+    from pseudo_cloud.server import _reset_db, reset_request_stats
+
+    _reset_db()
+    reset_request_stats()
+
+
 SEED = 42
 
 

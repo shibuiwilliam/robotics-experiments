@@ -72,3 +72,74 @@ than deterministic hashing. See IMPROVEMENT.md §8.5 for the path to real CLIP.
 | Config | `experiments/scenarios/s6_ewaste_disassembly.yaml` |
 | Pseudo-cloud | `pseudo_cloud/s6_ewaste_disassembly/data.py` (materials, compliance) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS6EwasteDisassembly` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        Materials["Material Values<br/>PCB, lithium, copper"]
+        Compliance["Waste Classification<br/>hazard levels"]
+        Manifest["Disassembly Manifest<br/>(generated)"]
+    end
+
+    subgraph Robots["MuJoCo Scene"]
+        Arm["Panda Arm<br/>disassembly tool"]
+        Known["Known Objects<br/>circuit board, battery"]
+        Holdout["Holdout Objects<br/>capacitor, heat sink"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter"]
+        IR["Canonical IR"]
+        WM["World Model"]
+        VLA_E["VLA Encoder<br/>CLIP ViT-B/32"]
+        Aff["Affordance Prediction<br/>graspable? material?"]
+        Neg["Negotiator"]
+    end
+
+    Agent["Claude Agent<br/>material worker"]
+
+    Materials --> Agent
+    Compliance --> Agent
+    Agent -->|generate| Manifest
+
+    Arm --> PA --> IR --> WM
+    VLA_E -->|512-dim embedding| WM
+    VLA_E --> Aff
+
+    Agent -->|query_world_model| WM
+    Agent -->|subscribe_affordances| Aff
+    Agent -->|command_robot| PA
+
+    Known --> VLA_E
+    Holdout --> VLA_E
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant PSL as PSL
+    participant VLA as VLA (CLIP ViT-B/32)
+    participant Panda as Panda Arm
+
+    Agent->>PSL: query_world_model("panda_arm")
+    PSL-->>Agent: arm state
+
+    Note over VLA: Known object
+    Agent->>VLA: subscribe_affordances("circuit_board")
+    VLA->>VLA: CLIP encode → 512-dim embedding
+    VLA->>VLA: zero-shot: "graspable object" > "fixed structure"
+    VLA-->>Agent: graspable=true, material=pcb
+
+    Note over VLA: Holdout object (never seen)
+    Agent->>VLA: subscribe_affordances("capacitor")
+    VLA->>VLA: CLIP encode → embedding (no training needed)
+    VLA-->>Agent: graspable=true, material=metal
+
+    Agent->>Panda: command_robot_semantic("disassemble")
+
+    Note over Agent: Results:<br/>Symbol-only on holdout: 0%<br/>CLIP embedding on holdout: 84%<br/>Advantage: 0.84
+```

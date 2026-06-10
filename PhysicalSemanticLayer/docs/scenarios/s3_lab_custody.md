@@ -61,3 +61,74 @@ provenance is decorative, not functional. This scenario proves it is necessary.
 | Config | `experiments/scenarios/s3_lab_custody.yaml` |
 | Pseudo-cloud | `pseudo_cloud/s3_lab_custody/data.py` (samples, custody_log, SOP) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS3LabCustody` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        SOP["SOP Protocol<br/>5 processing steps"]
+        Samples["Sample Registry<br/>SPL-001, SPL-002"]
+        Custody["Custody Log<br/>(generated)"]
+    end
+
+    subgraph Robots["MuJoCo Scene"]
+        Handler["Liquid Handler<br/>(precision arm)"]
+        Transport["Transport Robot"]
+        Reader["Barcode Reader<br/>position"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter"]
+        IR["Canonical IR"]
+        WM["World Model<br/>with provenance chain"]
+        Gate["Safety Gate"]
+        Prov["Provenance Tracking<br/>confidence: 0.99"]
+    end
+
+    Agent["Claude Agent<br/>compliance worker"]
+
+    SOP --> Agent
+    Samples --> Agent
+    Agent -->|log custody event| Custody
+
+    Handler --> PA --> IR --> WM
+    Transport --> PA
+    WM --> Gate
+    Prov -.->|chain integrity| WM
+
+    Agent -->|query_world_model| WM
+    Agent -->|verify chain| Prov
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant PSL as PSL + Provenance
+    participant Handler as Liquid Handler
+    participant Transport as Transport Robot
+    participant Gate as Safety Gate
+
+    Note over Agent,PSL: Step 1: Pick sample
+    Agent->>PSL: query_world_model("panda_arm")
+    Handler->>PSL: to_ir() → Phyte with provenance
+    PSL->>Gate: write (gate check)
+    Gate-->>PSL: accepted
+
+    Note over Agent,PSL: Step 2: Transfer
+    PSL->>Transport: from_ir() → transport coords
+    Transport->>PSL: to_ir() → new Phyte
+    Note over PSL: Provenance chain extended:<br/>sensor → handler → transport
+
+    Note over Agent,PSL: Step 3: Read at analyzer
+    PSL->>PSL: read("sample") → full provenance chain
+    Agent->>PSL: verify chain integrity
+    PSL-->>Agent: confidence=0.99, chain intact ✓
+
+    Note over Agent: Ablation test: remove provenance
+    Agent->>PSL: strip provenance field
+    PSL-->>Agent: custody chain BROKEN ✗
+    Note over Agent: Proves provenance is necessary,<br/>not decorative
+```

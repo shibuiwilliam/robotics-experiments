@@ -64,3 +64,82 @@ capabilities that distinguish PSL from simple data translation layers.
 | Config | `experiments/scenarios/s4_field_inspection.yaml` |
 | Pseudo-cloud | `pseudo_cloud/s4_field_inspection/data.py` (assets, manuals) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS4FieldInspection` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        Assets["Asset Registry<br/>AST-001 (pump)"]
+        Manuals["Maintenance Manuals<br/>torque specs"]
+        WO_gen["Work Order<br/>(generated)"]
+    end
+
+    subgraph Robots["MuJoCo Scene"]
+        Overhead["Overhead Camera<br/>(low-res LOD)"]
+        Ground["Ground Robot<br/>(medium-res LOD)"]
+        Contact["Contact Arm<br/>(high-res LOD)"]
+        Drone_R["Inspection Drone<br/>ENU, 6-DOF"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter"]
+        DA["DroneAdapter"]
+        IR["Canonical IR"]
+        WM["World Model"]
+        LOD["LOD Subscriber<br/>raw / summary / semantic"]
+        Anchor["Bidirectional Anchoring<br/>physical ↔ asset ID"]
+        Neg["Negotiator<br/>drone ↔ panda"]
+    end
+
+    Agent["Claude Agent"]
+
+    Assets --> Anchor
+    Manuals --> Anchor
+    Anchor --> WM
+    Agent -->|resolve_document| Anchor
+    Agent -->|query_world_model| WM
+
+    Contact --> PA --> IR --> WM
+    Drone_R --> DA --> IR
+    WM --> LOD
+
+    LOD -->|raw: full Phytes| Contact
+    LOD -->|summary: stats| Ground
+    LOD -->|semantic: text| Agent
+
+    Neg -.->|frame: enu vs z_up| IR
+    Anchor -->|reverse: obs → asset ID| WO_gen
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant PSL as PSL (IR + WM)
+    participant Contact as Contact Arm (Panda)
+    participant Drone as Drone (ENU)
+    participant LOD as LOD Subscriber
+    participant Anchor as Anchoring
+
+    Agent->>Anchor: resolve_document("bin", "Bin_A")
+    Anchor-->>Agent: position [0.3, -0.3, 0.45]
+
+    Agent->>PSL: query_world_model("panda_arm")
+    Contact->>PSL: PandaAdapter.to_ir() → 7 joints + EE
+
+    Note over PSL,LOD: Multi-resolution views
+    PSL->>LOD: to_raw() → 15 Phytes
+    PSL->>LOD: to_summary() → 7 joints, mean pos
+    PSL->>LOD: to_semantic() → "Entity has 7 joints, EE at ..."
+
+    Note over Drone,PSL: Drone aerial inspection (N+N proof)
+    Drone->>PSL: DroneAdapter.to_ir() → base_pose + velocity
+    PSL->>PSL: negotiate(drone, panda) → feasible (3 notes)
+    PSL->>Contact: from_ir(drone_ir) → cross-adapter R2R
+
+    Agent->>Anchor: reverse: observation → asset ID
+    Anchor-->>Agent: AST-001 identified
+    Agent->>PSL: generate work order
+```

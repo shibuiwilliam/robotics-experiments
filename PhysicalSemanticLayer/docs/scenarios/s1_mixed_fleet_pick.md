@@ -79,3 +79,80 @@ The breaking point is twofold:
 | Config | `experiments/scenarios/s1_mixed_fleet_pick.yaml` |
 | Pseudo-cloud | `pseudo_cloud/data.py` (WO-42, bins, inventory) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS1MixedFleetPick` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        WO["WO-42<br/>Defective blue gear"]
+        Inv["Inventory<br/>Bin C → [0.3,0.3,0.45]"]
+    end
+
+    subgraph Robots["MuJoCo Scene"]
+        Panda["Panda 7-DOF<br/>m, z-up, position ctrl"]
+        AMR_R["AMR Mobile<br/>mm, y-up, velocity ctrl"]
+        Gear["Blue Gear<br/>(in Bin C)"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter"]
+        AA["AMRAdapter"]
+        IR["Canonical IR"]
+        WM["World Model"]
+        Gate["Safety Gate"]
+        Neg["Negotiator<br/>4 mismatch notes"]
+        VLA_E["VLA Encoder<br/>confidence: 0.64"]
+        Anchor["Anchoring<br/>Bin C → coords"]
+    end
+
+    Agent["Claude Agent<br/>supervisor + worker"]
+
+    WO --> Anchor
+    Inv --> Anchor
+    Anchor --> WM
+    Agent -->|resolve_document| Anchor
+    Agent -->|query_world_model| WM
+    Agent -->|subscribe_affordances| VLA_E
+    Agent -->|command_robot| PA
+
+    Panda --> PA -->|to_ir| IR
+    IR --> WM --> Gate
+    WM -->|read gear pos| AA
+    AA -->|from_ir| AMR_R
+    Neg -.->|frame/unit/ctrl/joints| IR
+    VLA_E -->|embedding + confidence| WM
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant Anchor as Document Anchoring
+    participant PSL as PSL (IR + WorldModel)
+    participant Panda as Panda (m, z-up)
+    participant Gate as Safety Gate
+    participant AMR as AMR (mm, y-up)
+
+    Agent->>Anchor: resolve_document("bin", "C")
+    Anchor-->>Agent: position [0.3, 0.3, 0.45] m
+
+    Agent->>PSL: query_world_model("panda_arm")
+    PSL-->>Agent: joint state + EE pose (Phyte)
+
+    Agent->>PSL: subscribe_affordances("blue_gear")
+    PSL-->>Agent: graspable=true, confidence=0.64
+
+    Note over Panda,PSL: R2R Translation Path
+    Panda->>PSL: PandaAdapter.to_ir() → 7 joint Phytes + EE pose
+    PSL->>Gate: write("panda_arm", phytes)
+    Gate-->>PSL: accepted (limits OK, no teleport)
+
+    PSL->>PSL: read("blue_gear") → gear position
+    PSL->>AMR: AMRAdapter.from_ir() → mm, y-up, deg
+
+    Agent->>PSL: command_robot_semantic("move to QA tray")
+
+    Note over Agent: Route decision: confidence 0.64 > 0.5 → QA tray
+```

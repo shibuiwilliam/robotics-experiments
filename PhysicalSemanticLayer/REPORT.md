@@ -1,302 +1,183 @@
-# PSL-Bench 検証レポート
+# REPORT — PSL-Bench Validation
 
-> **実行日**: 2026-06-07
-> **モード**: ONLINE（Claude Agent SDK + pseudo-cloud HTTP + VLA hash fallback）+ OFFLINE（メトリクス + 5シード統計 + Phase 4 ストレステスト）
-> **シード**: 42（オンライン）/ [42, 123, 456, 789, 1024]（オフライン5シード）
-> **Git commit**: `b5b7b5c`
-> **Platform**: macOS Darwin 25.5.0 (Apple Silicon)
-
----
-
-## 1. エグゼクティブサマリ
-
-7シナリオ全てが **ビジネス成功 + PSL成功** の両レイヤーで PASS。
-全シナリオがオンラインで正常完走（フォールバックゼロ、HTTP 404 ゼロ）。
-5シード×7シナリオ=35ランのマルチシード統計評価でも全 PASS。
-Phase 4 ストレステスト（スキーマファジング・クロックスキュー・接地汎化）を実行し、PSL の限界点を定量的に特定した。
-
-| Scenario | Business | PSL | Wall (online) | Cost | Turns | Tools | 404s |
-|----------|----------|-----|---------------|------|-------|-------|------|
-| S1 Mixed Fleet Pick | PASS | PASS | 61.7s | $0.192 | 10 | 9 | 0 |
-| S2 Line Changeover | PASS | PASS | 39.7s | $0.135 | 5 | 4 | 0 |
-| S3 Lab Custody | PASS | PASS | 94.5s | $0.330 | 18 | 17 | 0 |
-| S4 Field Inspection | PASS | PASS | 34.2s | $0.131 | 6 | 5 | 0 |
-| S5 Pharma Logistics | PASS | PASS | 55.1s | $0.136 | 5 | 4 | 0 |
-| S6 E-Waste Disassembly | PASS | PASS | 31.3s | $0.138 | 6 | 5 | 0 |
-| S7 Degraded Ops | PASS | PASS | 58.0s | $0.149 | 6 | 5 | 0 |
-| **合計** | **7/7** | **7/7** | **374.4s** | **$1.211** | — | **49** | **0** |
+> **Date**: 2026-06-10 · **Branch**: `feat/b2-live` (working tree; manifests record base commit `939d1c9`)
+> **Scope**: (A) full online end-to-end of all 7 scenarios with real Claude agents (`make scenarios-all`),
+> (B) real-LLM translation baseline (`make baseline-llm`, B2-Live).
+> **Raw data**: `experiments/runs/<ts>-<scenario>/manifest.json`, `experiments/runs/b2_live_results.json`.
+> **Data/instrumentation gaps found during this run are filed in [`IMPROVEMENT.md`](IMPROVEMENT.md) §10.**
 
 ---
 
-## 2. シナリオ別ブレークポイント結果
+## 1. Executive summary
 
-### S1: Mixed Fleet Pick
+- **All 7 scenarios passed online** (real Claude agents via MCP + MuJoCo + CLIP/SmolVLA + pseudo-cloud HTTP):
+  `business=True, psl=True, pass=True` for s1–s7.
+- **PSL translation fidelity** holds: PSL joint-RMSE = **1.08×10⁻⁵** (unit+noise dose) or **0.0** (identity),
+  vs the raw-blackboard baseline **B1 ≈ 576–672** (≈7 orders of magnitude worse). Commutativity divergence = **0.0**.
+- **Safety gate works**: S2 rejected an impossible state (`gate_rejected_impossible=1.0`, `false_reject=0.0`);
+  S5 caught provenance poisoning at **100%** (`ns_detection_rate=1.0`).
+- **Provenance / custody**: S3 chain intact (`chain_intact=1.0`, `min_confidence=0.99`).
+- **Grounding generalization (RQ6/H5)**: S6 embedding advantage = **0.667** (VLA exact-match 0.667 vs symbol-only 0.167),
+  action validity 100% on 3 held-out objects.
+- **Causal consistency under clock skew (S7)**: `causal_violations=0.0`, degradation monotonic.
+- **Cost**: the 7 online scenario runs cost **~$0.73** total (agent calls only). Latency was dominated by
+  agent "thinking" (second-order), as designed.
+- **Real-LLM baseline (B2-Live)**: a real Claude Haiku translation is numerically accurate but **~2000× slower**
+  than PSL and propagates **no** uncertainty/provenance (see §4).
 
-異種ロボット間（Panda m/z-up ↔ AMR mm/y-up）の R2R ハンドオフ精度。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| calibration_nll | -0.745 | < 5.0 | PASS |
-| r2r_handoff_error | 0.0 | < 0.05 m | PASS |
-| negotiation_feasible | 1.0 | > 0.5 | PASS |
-
-- Joint RMSE: 0.0、Commutativity: 0.0、Baseline B1 RMSE: 576.3
-- Negotiation notes: 4（frame, unit, control_mode, joint count の差異検出）
-- エージェント: resolve_document ×2 → 200 OK（Bin C, QA_TRAY 即時解決）
-
-### S2: Line Changeover
-
-マルチホップ翻訳の可換性と安全ゲートによる不可能操作拒否。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| commutativity_divergence | 0.0 | < 1e-6 | PASS |
-| safety_gate_rejection | 0.0 | < 0.5 | PASS |
-
-- Gate rejected impossible: 1.0、False reject: 0.0
-
-### S3: Lab Custody
-
-プロヴェナンスチェーン完全性。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| provenance_chain_intact | 0.99 | > 0.5 | PASS |
-| provenance_ablation_breaks | 1.0 | > 0.5 | PASS |
-
-- エージェント: 17 MCP 呼び出し（query_world_model ×7 でカストディチェーン全段階確認）
-- 最多ツール呼び出し・最高コストのシナリオ（$0.330, 18 turns）
-
-### S4: Field Inspection + Drone 空中検査
-
-LOD マルチ解像度整合 + **Drone R2R ハンドオフ（N+N 実証）**。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| lod_consistency | 15.0 | > 1.0 | PASS |
-| fusion_fidelity | 0.0 | < 0.05 | PASS |
-| bidirectional_anchoring | 1.0 | > 0.5 | PASS |
-| **drone_r2r_handoff** | **0.0** | **< 1e-6** | **PASS** |
-
-- Drone round-trip error: 0.0（ENU ↔ world 完全可逆）
-- Drone-Panda negotiation: feasible（3 translation notes）
-
-### S5: Pharma Logistics
-
-ニューロ・シンボリック束縛 + プロヴェナンス汚染検出。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| neuro_symbolic_false_accept | 0.0 | < 0.05 | PASS |
-| provenance_poisoning_detected | 1.0 | > 0.5 | PASS |
-
-### S6: E-Waste Disassembly
-
-オープンワールド・アフォーダンス接地。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| embedding_generalization_advantage | 0.84 | > 0.1 | PASS |
-
-- Embedding 84% vs symbol-only 0%
-
-### S7: Degraded Ops
-
-クロックスキュー下の因果整合性。
-
-| Breakpoint | Value | Threshold | Passed |
-|------------|-------|-----------|--------|
-| causal_ordering_violations | 0.0 | < 0.5 | PASS |
-| graceful_degradation | 1.0 | > 0.5 | PASS |
-
-- LOD staleness: 2.0s、全オンライン完走（前々回はタイムアウト→フォールバック）
+**Caveat up front (honest):** three metrics in the online manifests are not yet meaningful measurements —
+`physical_accuracy_ee/object` is identically 0.0, `smolvla_action_confidence` is a hardcoded 0.8, and
+`agent_num_turns/agent_tool_calls` are only recorded for S1. These are detailed in §5 and filed in IMPROVEMENT.md.
 
 ---
 
-## 3. 仮説評価
+## 2. Online scenario results (`make scenarios-all`, PSL_MODE=online, seed=42)
 
-| H | Statement | Evidence (5-seed) | Assessment |
-|---|-----------|-------------------|------------|
-| H1 | PSL が異種性増大に耐性 | B1=576.319±0.003 vs PSL=1.1e-5±2e-6 | **支持** |
-| H2 | 忠実度契約が較正 | NLL=-0.532±0.191 (CI [-0.769, -0.294]) | **支持** |
-| H3 | 可換性が閾値内 | divergence=0.0±0.0 全シード | **支持** |
-| H4 | N+N スケーリング | Drone 追加で既存コード変更ゼロ、S4 handoff=0.0 | **支持** |
-| H5 | 埋め込み優位 | 0.789±0.030 (CI [0.752, 0.827]) vs 0.0 | **支持** |
+Each scenario ran the orchestrator in **online** mode — a real Claude supervisor/worker calling PSL MCP tools
+(`query_world_model`, `command_robot_semantic`, `resolve_document_to_physical`, `subscribe_affordances`),
+over real MuJoCo physics, with CLIP/SmolVLA grounding and the pseudo-cloud as a local HTTP service.
 
----
+| Scenario | Pass | Key PSL evidence (measured) | Agent cost | RQ/H |
+|---|---|---|---|---|
+| **s1** mixed-fleet pick | ✅ | PSL rmse 1.08e-5 vs B2 1.19e-4 vs B1 576; calibration NLL **−0.745**; commutativity 0.0; R2R handoff err 0.0; 10 turns / 9 tool calls / 3 MCP | $0.132 | RQ1, RQ2/H2, RQ5/H4 |
+| **s2** line changeover | ✅ | PSL rmse **0.0**; **gate rejected impossible state** (1.0), false-reject 0.0; commutativity 0.0 | $0.068 | RQ3/H3, RQ7 |
+| **s3** lab custody | ✅ | **chain_intact 1.0**, min provenance confidence **0.99**; PSL rmse 1.08e-5 | $0.211 | RQ2, provenance |
+| **s4** field inspection | ✅ | drone R2R round-trip err **0.0**, negotiation feasible; LOD 7 joints | $0.065 | RQ1, RQ5/H4, LOD |
+| **s5** pharma logistics | ✅ | **gate caught poisoning 1.0**, neuro-symbolic detection rate **1.0** | $0.071 | RQ7, neuro-symbolic |
+| **s6** e-waste disassembly | ✅ | **embedding advantage 0.667** (VLA 0.667 vs symbol 0.167 exact match), embedding rate 0.833, action validity **1.0** on 3 holdouts | $0.072 | RQ6/H5 |
+| **s7** degraded ops | ✅ | **causal_violations 0.0**, degradation monotonic, LOD staleness 2.0 | $0.109 | RQ4, causal consistency |
 
-## 4. 用量反応曲線
+**Total agent cost (7 runs): ~$0.73.** All runs: `agent_fallback_used=False`, `agent_404_count=0`,
+`smolvla_available=True`, VLA mode = real CLIP.
 
-| Dose | Unit Scale | Frame Rot | Noise σ | RMSE | Info Loss |
-|------|-----------|-----------|---------|------|-----------|
-| 0 | 1.0 | 0.0 | 0.0 | 0.0 | 0.0 |
-| 1 | 1000.0 | 0.0 | 0.0 | 0.0 | 0.0 |
-| 2 | 1.0 | π/4 | 0.0 | 0.0 | 0.0 |
-| 3 | 1.0 | 0.0 | 0.01 | 1.08e-2 | 0.438 |
-| 4 | 1000.0 | π/4 | 0.01 | 7.28e-6 | 2.96e-4 |
-| 5 | 1000.0 | π/2 | 0.05 | 3.79e-5 | 1.54e-3 |
+### 2.1 Translation fidelity & baselines (RQ1, H1) — per-scenario, seed 42
 
-単位変換・フレーム回転は完全可逆。**ノイズのみが不可逆的劣化源**。
+The orchestrator runs B0/B1/B2/PSL on the identical heterogeneous state (`unit_scale=1000`, `sensor_noise_std=0.01`):
 
----
+| Scenario | PSL rmse | B0 rmse | B2 (sim) rmse | B1 (raw) rmse |
+|---|---|---|---|---|
+| s1 | 1.078e-5 | 1.078e-5 | 1.186e-4 | 576.3 |
+| s2 | 0.0 | 0.0 | 1.078e-4 | 668.3 |
+| s3 | 1.078e-5 | 1.078e-5 | 1.186e-4 | 603.9 |
+| s4 | 1.078e-5 | 1.078e-5 | 1.186e-4 | 604.3 |
+| s5 | 1.078e-5 | 1.078e-5 | 1.186e-4 | 671.5 |
+| s6 | 1.078e-5 | 1.078e-5 | 1.186e-4 | — |
+| s7 | 1.078e-5 | 1.078e-5 | 1.186e-4 | 576.3 |
 
-## 5. エージェント行動分析
+**Reading:** PSL matches the hand-written oracle B0 to the last digit while requiring only N+N adapters; the raw
+blackboard B1 (no translation) is ~7 orders of magnitude worse; the simulated-LLM B2 carries ~10× the residual
+of PSL and — critically — **no covariance or provenance**. The PSL non-zero residual (1.08e-5) is the irreversible
+sensor noise (σ=0.01 scaled), i.e. the information-theoretic floor, not a translation defect (s2 has no joint
+noise in its dose → exactly 0.0).
 
-### MCP ツール利用（オンライン）
+### 2.2 Calibration (RQ2/H2)
 
-| Tool | S1 | S2 | S3 | S4 | S5 | S6 | S7 | Total |
-|------|----|----|----|----|----|----|-----|-------|
-| resolve_document | 2 | 1 | 3 | 1 | 1 | 0 | 2 | 10 |
-| query_world_model | 1 | 1 | 7 | 1 | 1 | 1 | 1 | 13 |
-| subscribe_affordances | 1 | 0 | 2 | 1 | 1 | 1 | 0 | 6 |
-| command_robot_semantic | 4 | 1 | 4 | 1 | 0 | 2 | 1 | 13 |
-| ToolSearch | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 7 |
-| **Total** | **9** | **4** | **17** | **5** | **4** | **5** | **5** | **49** |
+S1 calibration NLL = **−0.745** (below the configured `calibration_nll_max`). A negative Gaussian NLL indicates the
+declared covariance comfortably covers the realized error — the uncertainty PSL attaches is *safe-side calibrated*,
+which is the deliverable only obtainable with ground truth (PROJECT.md §8).
 
-- HTTP 404: **0件**（全シナリオ）
-- フォールバック: **0件**
-- S3 がツール最多（17 calls, $0.330）— カストディチェーン各段階で WorldModel を逐次確認
+### 2.3 Commutativity (RQ3/H3)
 
----
+`commutativity_divergence = 0.0` (s1, s2). Direct vs multi-hop translation paths agree exactly, as expected for
+arithmetically-exact symbolic transforms — within the H3 tolerance.
 
-## 6. N+N スケーリング
+### 2.4 Safety (RQ7)
 
-| Adapter | Type | Frame | Unit |
-|---------|------|-------|------|
-| PandaAdapter (7-DOF) | Robot | z_up | SI |
-| AMRAdapter (mobile) | Robot | y_up | mm, deg |
-| DroneAdapter (6-DOF) | Robot | ENU | SI |
-| ClaudeAgentAdapter | Agent | z_up | dimensionless |
-| CloudDataAdapter | Cloud | world | m |
+- **s2**: one impossible state generated and **rejected** by the consistency gate; **0 false rejections**.
+- **s5**: provenance-poisoning attack **detected at 100%** (`gate_caught_poisoning=1.0`, `ns_detection_rate=1.0`).
 
-5 adapters → N+N = 10 paths vs N×N = 20 paths (50% reduction)。
-Drone 追加で PandaAdapter/AMRAdapter **変更ゼロ**。
+### 2.5 Grounding generalization (RQ6/H5) — S6
 
----
+| Held-out object | Ground truth (grasp/detach) | Symbol-only acc | VLA (CLIP) acc |
+|---|---|---|---|
+| capacitor | T / T | 0.0 | 0.5 |
+| heat_sink | T / T | 0.0 | 1.0 |
+| ribbon_cable | F / T | 0.5 | 1.0 |
 
-## 7. Phase 4 ストレステスト
+Embedding **advantage = 0.667** (object-level exact match: VLA 0.667 vs symbol 0.167). All 3 SmolVLA actions were
+geometrically valid (`action_validity_rate=1.0`, distinct `ee_delta` norms 0.54 / 0.45 / 0.46 — i.e. real,
+object-dependent actions, not a constant).
 
-### 7.1 スキーマファジング（50ランダム変換）
+### 2.6 Causal consistency under clock skew (RQ4) — S7
 
-| Metric | Value |
-|--------|-------|
-| Gate 通過率 | 42/50 (84%) |
-| 最大 RMSE | 7.546 |
-| 最大情報損失 | 1.0 |
-
-- 単位スケール 0.01〜10000、フレーム回転 0〜2π、ノイズ 0〜0.1 をランダム組合せ
-- **ノイズなし変換は全て RMSE=0**（PSL の単位/フレーム変換は完全可逆）
-- ゲート拒否 8件は全て極端なノイズ + スケール変換の組合せ
-
-### 7.2 クロックスキュー注入
-
-| Skew (s) | Violations | Rejections | Status |
-|----------|------------|------------|--------|
-| 0.000 | 0 | 0 | OK |
-| 0.001 | 20 | 20 | REJECTED |
-| 0.010 | 20 | 20 | REJECTED |
-| 0.050 | 20 | 20 | REJECTED |
-| 0.100 | 20 | 20 | REJECTED |
-| 0.500 | 20 | 20 | REJECTED |
-| 1.000 | 20 | 20 | REJECTED |
-| 5.000 | 20 | 20 | REJECTED |
-
-- **ゲート感度**: 1ms の負方向スキューでも因果違反を検出・拒否
-- uncertainty slack が skew の 30% に設定されており、skew > slack で全遷移が違反
-
-### 7.3 接地汎化（20ホールドアウト物体）
-
-| Metric | Value |
-|--------|-------|
-| Embedding coverage | 100% (20/20) |
-| Affordance coverage | 100% (20/20) |
-| Material diversity | 5 classes |
-| Mean nearest cosine | 0.068 |
-| Max nearest cosine | 0.164 |
-
-- 20個の未知物体全てにエンベディングとアフォーダンス予測を生成
-- 既知物体との平均コサイン類似度 0.068 — **十分に区別可能**
-- 5種のマテリアルクラス（pcb, metal, plastic, glass, composite）に分類
+`causal_violations=0.0`, `degradation_monotonic=1.0`, `lod_staleness=2.0`. PSL's clock-domain handling produced no
+causal-order violations across the injected skew sweep. **However**, `fidelity_by_skew` was identically 0.0 at every
+skew level — see §5.4 (the curve carries no degradation signal and should be verified).
 
 ---
 
-## 8. マルチシード統計評価（5シード）
+## 3. Reproducibility
 
-全7シナリオ × 5シード = 35ラン、**全 PASS**。
-
-| Scenario | Key Metric | Mean ± Std |
-|----------|-----------|------------|
-| S1 | baseline_b1_rmse | 576.319 ± 0.003 |
-| S1 | calibration_nll | -0.532 ± 0.191 |
-| S1 | defect_confidence | 0.611 ± 0.104 |
-| S2 | gate_rejected_impossible | 1.0 ± 0.0 |
-| S3 | chain_intact | 1.0 ± 0.0 |
-| S4 | drone_negotiation_notes | 3.0 ± 0.0 |
-| S5 | ns_detection_rate | 1.0 ± 0.0 |
-| S6 | advantage | 0.789 ± 0.030 |
-| S7 | degradation_monotonic | 1.0 ± 0.0 |
-
-決定論的メトリクスはシード間ばらつきゼロ。確率的メトリクス（NLL, confidence, embedding rate）は適度な変動。
+- Command: `make scenarios-all` (auto-detects online when `ANTHROPIC_API_KEY` + SDK present).
+- Per-run manifests under `experiments/runs/<UTC-ts>-<scenario>/manifest.json` include config, seed, dependency
+  versions, VLA mode, full metrics, and (where captured) the agent tool-call trace.
+- Determinism: seed 42; PSL metrics are bit-reproducible across repeat runs (verified — duplicate manifests from a
+  concurrent run produced identical PSL numbers; only agent cost varied, as expected for the non-deterministic API).
 
 ---
 
-## 9. 物理精度
+## 4. Real-LLM translation baseline (B2-Live)
 
-全シナリオで EE sensor vs ground truth = **0.0 m**、WM object vs ground truth = **0.0 m**。
-全シナリオで agent_fallback = false、agent_404_count = 0。
+`BaselineB2Live` calls real Claude (`claude-haiku-4-5`) to perform the joint unit conversion, with the conversion
+method stated explicitly (most-favorable condition). Measured (`make baseline-llm`, 12 calls, $0.094):
 
----
+| Dose | B2-Live (real) | B2 (sim) | PSL | B2-Live latency |
+|---|---|---|---|---|
+| identity | 3.21e-07 | 1.08e-04 | 0.0 | 2490 ms |
+| unit ×1000 | **3.15e-10** | 1.08e-04 | 0.0 | 2391 ms |
+| frame rot 45° | 3.21e-07 | 1.08e-04 | 0.0 | 2206 ms |
+| noise σ=0.01 | 1.08e-02 | 1.09e-02 | 1.08e-02 | 2046 ms |
+| unit+frame+noise | 1.08e-05 | 1.19e-04 | 1.08e-05 | 2701 ms |
+| everything+offset | 5.39e-05 | 1.62e-04 | 5.39e-05 | 2409 ms |
 
-## 10. テストスイート
+- **Accuracy**: real Haiku is *more* numerically accurate than the B2 simulation assumed; on noise-dominated doses
+  it tracks PSL exactly (irreversible noise dominates).
+- **Latency**: mean **2374 ms** vs PSL **~1.2 ms** (≈**2000×**; core canonicalization ~125 µs).
+- **Determinism**: identical across 5 repeats for this simple task (`max_spread=0`); SDK exposes no temperature knob.
+- **Structural gap**: B2-Live propagates **no** covariance/provenance — the dimensions where PSL is unique.
+- **Failure modes**: 0 parse failures, 0 unit-confusion over 12 calls (parser hardened with fallback regardless).
 
-| Category | Count | Status |
-|----------|-------|--------|
-| Unit | 160 | PASS |
-| Oracle | 50 | PASS |
-| Metamorphic | 24 | PASS |
-| Scenario | 40 | PASS |
-| Stress (fuzz/skew/grounding) | 14 | PASS |
-| CLIP integration | 4 | SKIPPED |
-| **Total** | **262 passed, 4 skipped** | **ALL PASS** |
-
----
-
-## 11. 再現情報
-
-| Item | Value |
-|------|-------|
-| Git commit | `b5b7b5c` |
-| Python | 3.12.9 |
-| MuJoCo | 3.9.0 |
-| Pydantic | 2.13.4 |
-| pint | 0.25.3 |
-| NumPy | 2.4.6 |
-| SciPy | 1.17.1 |
-| pytransform3d | 3.15.0 |
-| hypothesis | 6.155.1 |
-| VLA mode | hash_fallback |
-| Agent model | claude-sonnet-4-6 |
-| Agent temperature | 0.0 |
-| Run manifests | `experiments/runs/` |
-| Multi-seed report | `experiments/runs/multi_seed_report.json` |
-| Stress report | `experiments/runs/stress_report.json` |
+**Conclusion**: "just let the LLM translate" is not free — the cost is structural (latency, $, lost uncertainty),
+not point-estimate accuracy on simple specified conversions.
 
 ---
 
-## 12. 結論
+## 5. Data & instrumentation gaps (filed in IMPROVEMENT.md §10)
 
-PSL-Bench は PROJECT.md の5つの成功基準全てを満たす（5シード統計評価 + Phase 4 ストレステストで確認）:
+These do **not** affect the pass/fail conclusions above (which rest on the green metrics), but they limit how much
+can be concluded and must be fixed for the metrics to be trustworthy as research deliverables.
 
-1. **H1**: B1 RMSE=576.3 vs PSL=0.0 — PSL は異種性増大に耐性を示す
-2. **H2**: calibration NLL=-0.532±0.191 — 不確実性が較正されている
-3. **H3**: commutativity=0.0 全シード — 完全可換
-4. **H4**: Drone 追加で既存コード変更ゼロ、S4 handoff=0.0 — N+N
-5. **H5**: embedding 0.789±0.030 vs symbol 0.0 — 統計的に有意
+### 5.1 `make test` bills the real API (cost/CI hazard) — **high**
+The scenario oracle tests are not marked `@pytest.mark.api`; `detect_mode()` auto-selects **online** whenever
+`ANTHROPIC_API_KEY` is set. Running `make test` (which only excludes `-m api`) therefore made **real agent calls**:
+during this session it billed **~$0.98 across 11 scenario runs** concurrently with `make scenarios-all`. CI / local
+test runs with a key present will silently incur cost.
 
-Phase 4 ストレステストにより限界点も特定:
-- 単位/フレーム変換は**完全可逆**（ノイズなしでRMSE=0）
-- ノイズが唯一の不可逆劣化源（max RMSE 7.55 at extreme noise）
-- 安全ゲートは**1ms の因果違反を検出可能**
-- 20個の未知物体に**100% のエンベディング・アフォーダンス生成**
+### 5.2 `smolvla_action_confidence` is a hardcoded constant — **medium**
+`src/psl/grounding/smolvla_encoder.py:190` returns `confidence=0.8` for every successful prediction. The 6-DOF
+`ee_delta` is genuinely model-derived (varies per object in S6), but the reported confidence is a placeholder, so any
+metric or safety margin keyed on action confidence is non-informative.
 
-**PSL は「検証可能にスムーズ」であると主張できる。**
+### 5.3 `physical_accuracy_ee` / `physical_accuracy_object` are identically 0.0 — **medium**
+In all 7 scenarios both are 0.0. They compare `ee_position` against the EE ground-truth *site* (orchestrator.py
+:258/:268), but the compared quantities are derived from the same reading, so the metric is trivially zero and does
+**not** measure real physical task accuracy (e.g. whether a grasp reached the target). No genuine end-effector/object
+accuracy signal is currently captured.
+
+### 5.4 S7 `fidelity_by_skew` is flat 0.0 across all skews — **medium**
+Every skew level (0.0 … 1.0 s) yields fidelity 0.0, so the "degradation curve" has no signal and the monotonicity
+check passes trivially. Either PSL is genuinely skew-invariant on this path (plausible) or the metric isn't
+exercising the degradation it claims to — needs an oracle check.
+
+### 5.5 Agent turn/tool-call counts only captured for S1 — **low**
+Only `s1/eval.py` records `agent_num_turns` and `agent_tool_calls`; s2–s7 record only `agent_cost_usd`. Per-scenario
+agent efficiency (RQ5 extension-cost story) cannot be compared across scenarios.
+
+### 5.6 No consolidated online-run summary artifact — **low**
+`scenarios-all` emits only stdout one-liners plus 7 separate manifests. There is no single combined results JSON for
+the online run, which made post-hoc analysis fragile (worsened by §5.1 pollution). A `scenarios_all_results.json`
+(scenario → {pass, metrics, cost}) would make the run self-describing.
+
+### 5.7 Manifest commit vs working tree — **low**
+Manifests record `git_commit=939d1c9` (HEAD) while the run used uncommitted `feat/b2-live` working-tree code. Commit
+the branch before authoritative runs so results link to exact code (CLAUDE.md §10).
