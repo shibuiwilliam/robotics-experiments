@@ -46,6 +46,12 @@ def _get_db() -> Any:
     return _db_conn
 
 
+def _reset_db() -> None:
+    """Reset the DB connection (for test isolation)."""
+    global _db_conn
+    _db_conn = None
+
+
 # ---------------------------------------------------------------------------
 # Request stats
 # ---------------------------------------------------------------------------

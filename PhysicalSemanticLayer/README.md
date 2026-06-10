@@ -40,33 +40,78 @@ make pseudo-cloud-health  # check it's running
 
 Each scenario loads its own **MuJoCo scene**, drives the sim through a **task-specific trajectory** (grasp, handoff, inspect), translates data through the PSL pipeline using **real cross-adapter R2R** (Panda→IR→WorldModel→IR→AMR), calls **MCP tools offline**, and runs **baselines (B0/B1/B2)** for comparison. The pseudo-cloud runs as a **local HTTP service** with REST endpoints, and the **VLA encoder** produces CLIP-style embeddings for affordance grounding.
 
-```
-                         Pseudo-Cloud HTTP Service (FastAPI on :8042)
-                         GET /api/v1/workorders/WO-42
-                         GET /api/v1/bins/C  → position [0.3, 0.3, 0.45]
-                                |
-                      [Document Anchoring]  ← mechanism 10
-                                |
-     Claude Agent SDK           |         MuJoCo (7 scenario scenes)
-     supervisor + workers       |         Panda arm + AMR mobile base
-     (via MCP tools)            |         + bins, vials, e-waste, etc.
-            |                   |                  |
-            v                   v                  v
-     +--------------------------------------------------------+
-     |              Physical Semantic Layer (PSL)              |
-     |                                                        |
-     |  Phyte ──── Canonical IR ──── World Model ──── Safety  |
-     |  (unit,     (N+N)             (scene graph     Gate    |
-     |   frame,                       + gate check)           |
-     |   cov,      Fidelity    LOD   Negotiation    VLA       |
-     |   prov)     Contracts   Views  Handshake     Encoder   |
-     +--------------------------------------------------------+
-                                |
-                    [Eval Harness — ground truth here only]
-                    Task Controller → sensor readings
-                    Orchestrator → cross-adapter R2R
-                    Oracle + Metamorphic tests
-                    Dose-response sweeps + Baselines
+## Overall Architecture
+
+```mermaid
+graph TB
+    subgraph External["External Systems"]
+        Cloud["Pseudo-Cloud HTTP<br/>(FastAPI :8042)<br/>WMS / ERP / LIMS"]
+        Agent["Claude Agent SDK<br/>Supervisor + Workers"]
+    end
+
+    subgraph Sim["MuJoCo Simulation"]
+        Panda["Panda 7-DOF<br/>m, z-up, position"]
+        AMR["AMR Mobile<br/>mm, y-up, velocity"]
+        Drone["Drone 6-DOF<br/>ENU, velocity"]
+        Scene["Scene Objects<br/>bins, gears, vials"]
+    end
+
+    subgraph PSL["Physical Semantic Layer"]
+        Phyte["Phyte<br/>unit + frame + cov + prov"]
+        IR["Canonical IR<br/>N+N translation"]
+        WM["World Model<br/>shared scene graph"]
+        Gate["Safety Gate<br/>limits / teleport / causal"]
+        Contract["Fidelity Contracts"]
+        LOD["LOD Views<br/>raw / summary / semantic"]
+        Neg["Negotiation<br/>capability handshake"]
+        VLA["VLA Encoder<br/>CLIP ViT-B/32"]
+        Anchor["Document Anchoring<br/>bin → physical coords"]
+        CmdCh["Command Channel<br/>agent → robot"]
+    end
+
+    subgraph Adapters["Adapters (N+N)"]
+        PA["PandaAdapter"]
+        AA["AMRAdapter"]
+        DA["DroneAdapter"]
+        AgA["ClaudeAgentAdapter"]
+        CA["CloudDataAdapter"]
+    end
+
+    subgraph Eval["Eval Harness (ground truth only here)"]
+        Oracle["Oracle Tests<br/>round-trip fidelity"]
+        Meta["Metamorphic Tests<br/>equivariance / invariance"]
+        Baseline["Baselines<br/>B0 / B1 / B2"]
+        Stress["Stress Tests<br/>fuzz / skew / grounding"]
+    end
+
+    Cloud -->|REST API| Anchor
+    Cloud -->|resolve bin/WO| CA
+    Agent -->|MCP tools| AgA
+    Agent -->|query / command| WM
+
+    Panda -->|sensor data| PA
+    AMR -->|sensor data| AA
+    Drone -->|sensor data| DA
+
+    PA -->|to_ir / from_ir| IR
+    AA -->|to_ir / from_ir| IR
+    DA -->|to_ir / from_ir| IR
+    AgA -->|to_ir / from_ir| IR
+    CA -->|to_ir / from_ir| IR
+
+    IR -->|Phyte| WM
+    WM -->|gate check| Gate
+    Gate -->|accept/reject| WM
+    WM -->|subscribe| LOD
+    LOD -->|semantic view| Agent
+    Contract -.->|declares loss| IR
+    Neg -.->|capability match| IR
+    VLA -->|embedding| Phyte
+    Anchor -->|position Phyte| WM
+    CmdCh -->|command Phyte| WM
+
+    Sim -.->|ground truth| Eval
+    WM -.->|translated state| Eval
 ```
 
 ## The 7 verification scenarios
@@ -170,7 +215,8 @@ eval/
   metrics/          SE(3) distance, calibration ECE/NLL, contract accuracy
   oracle/           Ground-truth-based round-trip fidelity
   metamorphic/      Frame equivariance, unit invariance, compositionality
-  baselines.py      B0 (N*N), B1 (raw), B2 (simulated LLM)
+  baselines.py      B0 (N*N), B1 (raw), B2 (simulated LLM), B2-Live (real Claude API)
+  b2_live.py        B2-Live driver: dose-response + non-determinism (make baseline-llm)
   ablations.py      Remove covariance/provenance/gate/contracts one at a time
   runner/           Dose-response sweep + run manifest generation
 

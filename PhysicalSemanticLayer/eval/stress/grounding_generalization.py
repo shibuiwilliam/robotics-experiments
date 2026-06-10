@@ -104,7 +104,7 @@ def run_generalization(
     Returns:
         List of GeneralizationResult, one per holdout object.
     """
-    encoder = VLAEncoder(use_real_clip=False, seed=seed)
+    encoder = VLAEncoder(use_real_clip=True, seed=seed)
 
     # Encode known objects
     known_embeddings: dict[str, NDArray[np.float64]] = {}

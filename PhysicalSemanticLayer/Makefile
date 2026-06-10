@@ -94,6 +94,10 @@ test-slow: ## Run slow tests (CLIP model loading etc.)
 # Simulation
 # ──────────────────────────────────────────────
 
+.PHONY: vla-smoke
+vla-smoke: ## Test SmolVLA action prediction (requires lerobot)
+	$(PYTHON) -c "from psl.grounding.smolvla_encoder import SmolVLAEncoder; import numpy as np; e=SmolVLAEncoder(); a=e.predict_action(np.zeros((224,224,3),dtype=np.uint8),'pick up gear',{'joint_positions':np.zeros(7)}); print(f'model={e.model_name} action_dim={len(a.ee_delta)} confidence={a.confidence:.2f} gripper={a.gripper:.2f}')"
+
 .PHONY: sim-smoke
 sim-smoke: ## MuJoCo smoke test — load Panda, step 100, print qpos
 	$(PYTHON) -m sim.smoke
@@ -169,7 +173,7 @@ stress-fuzz: ## Run schema fuzzing stress test (50 random transforms)
 
 .PHONY: stress-skew
 stress-skew: ## Run clock skew stress test
-	$(PYTHON) -c "from eval.stress.clock_skew import sweep_clock_skew; r=sweep_clock_skew([0,0.001,0.01,0.05,0.1,0.5,1.0,5.0], 42); [print(f'skew={x.skew_seconds:.3f}s violations={x.causal_violations} rejections={x.gate_rejections}') for x in r]"
+	$(PYTHON) -c "from eval.stress.clock_skew import sweep_clock_skew; r=sweep_clock_skew(clock_uncertainty=0.005); [print(f'skew={x.skew_seconds:.3f}s unc={x.clock_uncertainty:.3f}s rejections={x.gate_rejections}/{x.n_transitions} rate={x.rejection_rate:.0%}') for x in r]"
 
 .PHONY: stress-grounding
 stress-grounding: ## Run grounding generalization test (20 holdout objects)
@@ -186,6 +190,14 @@ stress-all: ## Run full Phase 4 stress test suite
 .PHONY: agent-smoke
 agent-smoke: ## [$$] SDK 1-shot query (costs money!)
 	$(PYTHON) -m agents.smoke
+
+.PHONY: baseline-llm-smoke
+baseline-llm-smoke: ## [$$] B2-Live single real translation call (~$$0.001)
+	$(PYTHON) -m eval.b2_live smoke
+
+.PHONY: baseline-llm
+baseline-llm: ## [$$] B2-Live real Claude translation baseline (dose + non-det, ~$$0.01)
+	$(PYTHON) -m eval.b2_live
 
 # ──────────────────────────────────────────────
 # Pseudo-Cloud HTTP Service

@@ -82,6 +82,9 @@ class OrchestratorResult:
     agent_fallback_used: bool = False
     agent_404_count: int = 0
     vla_mode: str = "hash_fallback"
+    smolvla_available: bool = False
+    smolvla_action_confidence: float = 0.0
+    smolvla_ee_delta: list[float] = field(default_factory=list)
 
 
 def run_orchestrator(
@@ -269,7 +272,7 @@ def run_orchestrator(
     # ── 4b. VLA encoding (both modes — hash fallback is free) ──
     from psl.grounding.vla_encoder import VLAEncoder
 
-    vla = VLAEncoder(use_real_clip=False, seed=seed)
+    vla = VLAEncoder(use_real_clip=True, seed=seed)
     vla_mode = "clip" if vla._use_real_clip else "hash_fallback"
     import contextlib
 
@@ -277,6 +280,29 @@ def run_orchestrator(
         embedding_phyte = vla.encode_object(entity_id, timestamp=current_time)
         with contextlib.suppress(Exception):
             wm.write(entity_id, {f"embedding:{entity_id}": embedding_phyte})
+
+    # ── 4c. SmolVLA action prediction (optional, medium-frequency tier) ──
+    smolvla_available = False
+    smolvla_action_confidence = 0.0
+    smolvla_ee_delta: list[float] = []
+    try:
+        from psl.grounding.smolvla_encoder import SmolVLAEncoder
+
+        smolvla = SmolVLAEncoder(use_smolvla=True, seed=seed)
+        if smolvla.has_action_model:
+            smolvla_available = True
+            scene_image = sim.render(256, 256)
+            robot_state_for_vla: dict[str, object] = {
+                "joint_positions": np.asarray(final_reading["joint_positions"]),
+            }
+            action = smolvla.predict_action(scene_image, "pick up the object", robot_state_for_vla)
+            smolvla_action_confidence = action.confidence
+            smolvla_ee_delta = action.ee_delta.tolist()
+            action_phyte = smolvla.action_to_phyte(action, timestamp=current_time)
+            with contextlib.suppress(Exception):
+                wm.write("panda_arm", {"predicted_action": action_phyte})
+    except ImportError:
+        pass
 
     # ── 5. MCP tool calls + optional agent SDK ──
     db = init_db()
@@ -349,7 +375,7 @@ def run_orchestrator(
     baseline_results: dict[str, dict[str, float]] = {}
     if run_baselines:
         dose = schema_dose or SchemaTransform(unit_scale=1000.0, sensor_noise_std=0.01)
-        baseline_results = run_baseline_comparison(panda_native, dose, rng)
+        baseline_results = run_baseline_comparison(panda_native, dose, rng, seed=seed)
 
     wall_time = time.time() - start
     logger.info(
@@ -388,6 +414,9 @@ def run_orchestrator(
         agent_fallback_used=agent_fallback,
         agent_404_count=agent_404s,
         vla_mode=vla_mode,
+        smolvla_available=smolvla_available,
+        smolvla_action_confidence=smolvla_action_confidence,
+        smolvla_ee_delta=smolvla_ee_delta,
     )
 
 

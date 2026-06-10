@@ -198,6 +198,17 @@ class TestS6EwasteDisassembly:
             "Embedding should outperform symbol-only on holdout"
         )
 
+    def test_uses_real_vla_predictions(self) -> None:
+        """Verify S6 uses actual VLA predict_affordances, not synthetic simulation."""
+        result = evaluate_s6(seed=SEED)
+        assert "vla_mode" in result.metrics, "S6 must report which VLA mode was used"
+        assert "per_object_results" in result.metrics, "S6 must report per-object VLA predictions"
+        per_obj = result.metrics["per_object_results"]
+        assert isinstance(per_obj, list)
+        assert len(per_obj) > 0
+        for obj in per_obj:
+            assert "vla_pred" in obj, f"Missing VLA prediction for {obj.get('object')}"
+
 
 @pytest.mark.oracle
 class TestS7DegradedOps:

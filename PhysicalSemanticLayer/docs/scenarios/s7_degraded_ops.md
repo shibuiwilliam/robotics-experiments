@@ -76,3 +76,80 @@ clock skew injection.
 | Config | `experiments/scenarios/s7_degraded_ops.yaml` |
 | Pseudo-cloud | `pseudo_cloud/s7_degraded_ops/data.py` (floorplan, degradation profiles) |
 | Tests | `tests/scenarios/test_all_scenarios.py::TestS7DegradedOps` |
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph Cloud["Pseudo-Cloud"]
+        Floor["Floorplan<br/>POI positions"]
+        Degrad["Degradation Profiles<br/>delay / jitter / skew"]
+    end
+
+    subgraph Robots["MuJoCo Scene (reuses S1)"]
+        Panda["Panda Arm"]
+        AMR_R["AMR Transport"]
+    end
+
+    subgraph PSL_Core["PSL"]
+        PA["PandaAdapter"]
+        AA["AMRAdapter"]
+        IR["Canonical IR"]
+        WM["World Model"]
+        Gate["Safety Gate<br/>causal ordering check"]
+        LOD["LOD Subscriber<br/>staleness tracking"]
+        Contract["Fidelity Contract<br/>graceful degradation"]
+    end
+
+    Skew["Clock Skew Injection<br/>0s → 1.0s"]
+
+    Agent["Claude Agent"]
+
+    Floor --> Agent
+    Degrad --> Skew
+    Skew -->|offset timestamps| PA
+    Skew -->|offset timestamps| AA
+
+    Panda --> PA --> IR --> WM --> Gate
+    AMR_R --> AA --> IR
+    WM --> LOD
+    LOD -->|staleness: 2.0s| Agent
+    Contract -.->|monotonic degradation| WM
+
+    Agent -->|resolve_document| Cloud
+    Agent -->|query_world_model| WM
+```
+
+## Process Workflow
+
+```mermaid
+sequenceDiagram
+    participant Agent as Claude Agent
+    participant PSL as PSL
+    participant Gate as Safety Gate
+    participant LOD as LOD Subscriber
+    participant Skew as Clock Skew Injector
+
+    Agent->>PSL: resolve_document("bin", "Bin_C")
+    PSL-->>Agent: position (normal latency)
+
+    Agent->>PSL: resolve_document("bin", "QA_TRAY")
+    PSL-->>Agent: position (normal latency)
+
+    Note over Skew,PSL: Inject clock skew
+    loop For each skew level: 0s, 0.01s, 0.1s, 0.5s, 1.0s
+        Skew->>PSL: offset sensor timestamps by -skew
+        PSL->>Gate: causal ordering check
+        alt skew = 0
+            Gate-->>PSL: accepted (no violation)
+        else skew > 0
+            Gate-->>PSL: REJECTED (causal violation)
+        end
+    end
+
+    Agent->>PSL: query_world_model("panda_arm")
+    PSL->>LOD: check staleness
+    LOD-->>Agent: staleness = 2.0s (degraded but readable)
+
+    Note over Agent: Results:<br/>Causal violations: 0<br/>Degradation: monotonic ✓<br/>No crashes under any skew level
+```

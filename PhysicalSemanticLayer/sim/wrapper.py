@@ -186,6 +186,32 @@ class MuJoCoSim:
                 upper[i] = np.inf
         return lower, upper
 
+    def render(
+        self, width: int = 256, height: int = 256, camera: str | None = None
+    ) -> NDArray[np.uint8]:
+        """Render an RGB image from a MuJoCo camera.
+
+        Args:
+            width: Image width in pixels.
+            height: Image height in pixels.
+            camera: Camera name. If None, renders without a named camera.
+
+        Returns:
+            (height, width, 3) uint8 RGB array.
+        """
+        renderer = mujoco.Renderer(self._model, height, width)
+        if camera is not None:
+            cam_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_CAMERA, camera)
+            if cam_id >= 0:
+                renderer.update_scene(self._data, camera=cam_id)
+            else:
+                renderer.update_scene(self._data)
+        else:
+            renderer.update_scene(self._data)
+        image = renderer.render()
+        renderer.close()
+        return np.array(image, dtype=np.uint8)
+
     # ── Ground truth (for eval/ ONLY — never call from src/psl or agents) ──
 
     def ground_truth_qpos(self) -> NDArray[np.float64]:

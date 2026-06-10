@@ -42,8 +42,9 @@ class TestBaselines:
         # B1 (raw) doesn't translate → high error for scaled data
         assert results["B1"]["joint_rmse"] > 0.1
 
-        # B2 (simulated LLM) also knows the transform
-        assert results["B2"]["joint_rmse"] < 1e-10
+        # B2 (realistic LLM sim) has small imprecision noise
+        assert results["B2"]["joint_rmse"] < 0.01, "B2 should be close but not perfect"
+        assert results["B2"]["joint_rmse"] > 0, "B2 should have non-zero error (realistic noise)"
 
     def test_noisy_baselines(self) -> None:
         """With noisy transform, all methods should degrade, but B1 worst."""
@@ -67,5 +68,8 @@ class TestBaselines:
         rng = np.random.default_rng(SEED)
 
         results = run_baseline_comparison(state, t, rng)
-        for name in ["B0", "B1", "B2", "PSL"]:
+        # B0, B1, PSL are deterministic → perfect on identity
+        for name in ["B0", "B1", "PSL"]:
             assert results[name]["joint_rmse"] < 1e-10, f"{name} failed on identity"
+        # B2 has small numerical noise even on identity transform
+        assert results["B2"]["joint_rmse"] < 0.01, "B2 should be close on identity"
