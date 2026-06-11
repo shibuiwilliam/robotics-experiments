@@ -1,0 +1,12 @@
+# Scenario 2 — Physical vs Record Reconciliation (H4 freshness, H9 fusion)
+#
+# These are experiment inputs, not conclusions. Observed counts are drawn from
+# ground_truth_count + N(0, sigma) per observer; the H9 verdict (does
+# inverse-variance fusion beat the best single observer?) is measured by a
+# Monte-Carlo over n_fusion_trials seeded draws. Change sigma_a/sigma_b or make
+# them symmetric and the verdict can flip.
+ground_truth_count: 30.0   # true item count on shelf_A
+wms_drifted_count: 50.0    # stale WMS record (drift the scenario must detect)
+sigma_a: 1.0               # robot_A sensor noise std (higher-precision sensor)
+sigma_b: 2.0               # robot_B sensor noise std (standard sensor)
+n_fusion_trials: 1024      # seeded draws for the statistical H9 verdict

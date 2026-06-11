@@ -1,0 +1,9 @@
+# Scenario 3 — Collective Weak Signal Discovery (H5 consolidation, H2 stigmergy)
+#
+# lot_L carries 3 correlated micro-defects (the true supplier pattern). On top
+# of that, n_noise_defects uncorrelated defects are scattered across lot_M/lot_N.
+# Discovery succeeds only if lot_L STRICTLY dominates the noise floor and clears
+# alert_threshold; signal_purity = lot_L / all-defects drops as noise rises.
+# Raise n_noise_defects to 6 and lot_M/lot_N tie lot_L → discovery fails.
+n_noise_defects: 2      # uncorrelated competing-lot noise defects (0..6)
+alert_threshold: 2      # min lot_L count to qualify as a discovered pattern

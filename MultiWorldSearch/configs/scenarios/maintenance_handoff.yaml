@@ -1,0 +1,23 @@
+# Scenario 1: Maintenance multi-actor handoff
+scenario:
+  name: maintenance_handoff
+  description: >
+    Anomaly detection -> observation + manual + CMMS + inventory + shift
+    fused recall -> instruction generation -> heterogeneous robot skill
+    recall for execution. Full audit trail.
+  seed: 0
+  world_config: "configs/worlds/warehouse.yaml"
+
+phases:
+  - name: anomaly_detection
+    description: "Sensors detect anomaly on conveyor motor"
+    steps: 50
+  - name: cross_modal_retrieval
+    description: "Fused retrieval: CMMS history + SOP + sensor data + inventory"
+    top_k: 10
+  - name: instruction_generation
+    description: "Agent generates maintenance instructions from retrieved context"
+  - name: skill_recall_execution
+    description: "VLA retrieves similar past repairs, executes maintenance skill"
+  - name: audit_log
+    description: "Write complete audit trail of the handoff"

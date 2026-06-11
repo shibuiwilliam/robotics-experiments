@@ -1,0 +1,68 @@
+[project]
+name = "mws"
+version = "0.1.0"
+description = "Multi-World Search — collective memory for embodied AI swarms"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "pyyaml>=6.0,<7",
+    "numpy>=1.26,<3",
+    "mujoco>=3.1,<4",
+    "lancedb>=0.6,<1",
+    "pyarrow>=16,<20",
+    "duckdb>=1.0,<2",
+    "networkx>=3.3,<4",
+    "scipy>=1.13,<2",
+    "structlog>=24.1,<26",
+    "click>=8.1,<9",
+    "xxhash>=3.4,<4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-cov>=5,<7",
+    "ruff>=0.4,<1",
+    "pyright>=1.1,<2",
+]
+live = [
+    "google-genai>=1.0,<2",
+    "google-adk>=1.0,<2",
+]
+# H7 student path: real on-device embedder (EmbeddingGemma via
+# sentence-transformers). Isolated so the default install stays light.
+student = [
+    "sentence-transformers>=3.0,<7",
+]
+
+[project.scripts]
+mws = "mws.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501", "B027"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+include = ["mws"]
+exclude = ["tests"]
+reportAttributeAccessIssue = "warning"  # MuJoCo / LanceDB stubs are incomplete
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: tests requiring live cloud access (deselect by default)",
+    "student: tests requiring the local student model download (deselect by default)",
+]
+addopts = "-m 'not live and not student' --tb=short -q"

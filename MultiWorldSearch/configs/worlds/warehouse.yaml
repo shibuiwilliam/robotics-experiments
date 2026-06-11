@@ -1,0 +1,25 @@
+# Warehouse world configuration for Scenario 1
+world:
+  name: warehouse
+  description: "Simple warehouse with conveyor, shelves, and maintenance zone"
+  mujoco_xml: "mws/sim/assets/warehouse.xml"
+  seed: 0
+  timestep: 0.002
+  steps_per_observation: 50  # observe every 100ms at 0.002s timestep
+
+sensors:
+  - name: rgb_camera
+    type: camera
+    position: [3.0, 0.0, 3.0]
+  - name: joint_encoder
+    type: joint
+  - name: contact_sensor
+    type: contact
+
+agents:
+  - name: maintenance_robot
+    type: agent
+    role: maintenance
+  - name: inspection_drone
+    type: agent
+    role: inspection

@@ -1,0 +1,15 @@
+# Scenario 4 — New SKU Rampup via Swarm Transfer (H1)
+#
+# Success is gated on EXECUTION, not on retrieval alone: a swarm member that
+# recalls the skill demo replays its calibrated grip force (demo force minus
+# safety margin) plus execution noise, and the pick succeeds only if that force
+# stays within the product-master limit AND the replayed trajectory matches.
+# Tighten force_limit_n below the demo's calibrated force and the recalled demo
+# over-grips and fails — transfer gain vanishes (H1 disconfirmed).
+with_demo: true            # A/B independent variable (demo present vs absent)
+exec_noise_sigma: 0.3      # execution noise on replayed grip force (N)
+demo_safety_margin: 1.0    # demo executes this far below its calibrated force
+exploration_force_mean: 8.0   # uncontrolled force when no skill is recalled (N)
+exploration_force_sigma: 2.0
+sim_threshold: 0.5         # min trajectory similarity for a usable replay
+# force_limit_n: 5.0       # optional override of the product-master grip limit
