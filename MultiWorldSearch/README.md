@@ -191,7 +191,7 @@ uv run python -m mws.cli eval run --run-id maintenance_handoff-0-XXXXXXXX
 uv run ruff format mws/ tests/    # Format
 uv run ruff check mws/ tests/     # Lint
 uv run pyright mws/               # Type check
-uv run pytest                     # Test (255 tests, mock, deterministic, <10s)
+uv run pytest                     # Test (263 tests, mock, deterministic, <25s)
 uv run pytest -m student          # Local student model tests (needs --extra student)
 uv run pytest -m live             # Test with live cloud (requires key)
 ```

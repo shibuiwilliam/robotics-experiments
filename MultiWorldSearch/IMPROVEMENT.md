@@ -96,6 +96,19 @@ PROJECT.md §2.1 の4目的と、ブログ（blog.ja.md）の中心主張に照�
 
 > live 実走（run IDs は REPORT.md 冒頭）は 7/7 PASS・$0.00456・**突き合わせ監査ゼロ差分**（embedding 123/123・実LLM 18/18・全件実測トークン）。検証の過程で、**まだ取れていない/再現できないデータ**が4点判明した。
 
+### ✅ P10 実施状況（2026-06-12 完了）
+
+**M15–M18 を実装・live で全受け入れ確認済み。** mock スイート **263 passed**（両シェル）、ruff clean、pyright 0 errors、mock scenario-all 7/7。live `make scenario-all` 7/7（$0.00454）→ `mws eval reconcile` **ゼロ差分（embedding_requests 64/64・実LLM 17/17）**。詳細は REPORT.md。
+
+| ID | 実装の要点 / 受け入れ確認 |
+|----|---------------------------|
+| M15 | `create_manifest` に **model_ids**（embedding/llm/student — 各定義元から取得・文字列重複なし）・**embedding_batch_size**・**git_dirty / git_untracked_tree**（`git status --porcelain -- .`）・**主要依存バージョン**を追加（必須フィールド網羅テスト＋git 状態4ケースのテスト付き）。**MWS ツリーを親リポジトリへコミット**（215ファイル・`git check-ignore` で .env/runs/data 除外確認・シークレットスキャン clean）→ 本走 manifest は `git_sha=57fd3ee9050b, dirty=false, untracked=false` で**SHA が実コードを一意に特定** |
+| M16 | `mws/core/llm_log.py`（LLMCallRecorder — agents は eval に依存できないため core 配置）。BaseScenario が生成し S1/S5/S7 のエージェント factory へ注入。実 ADK 呼び出しごとに `runs/<RUN_ID>/llm_calls.jsonl` へ1行（agent/purpose/プロンプト/応答本文/実測トークン/レイテンシ）。**live で 17/17 記録**（S1 の計画本文も記録 → 計画長変動 7↔8 が今後説明可能）。ファイルは遅延作成で **mock では生成されない**（テスト＋mock scenario-all で確認）。fake-runner によるユニットテスト＋応答抽出の共通化（`_extract_text`） |
+| M17 | S2/S3/S4/S5/S6/S7 の inject/perceive の per-atom ループを **`_ingest_atoms`（バッチ埋め込み）経由に統一**（S3 は federated 個別取込を埋め込み付与後に実行）。**live perceive: S3 5.6s→0.44s (-92%)・S5 3.7s→0.41s (-89%)・S7 4.8s→0.81s (-83%)、リクエスト総数 123→64 (-48%)**。mock スイート・ゴールデン不変、reconcile ゼロ差分維持 |
+| M18 | `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live` を **v2 スキームで再実行**（seeds 0–2）: 知覚税 **0.100 [0.100,0.100]**・H9 **0.717 [0.687,0.746] < 0.807 [0.764,0.850]**（等重み対照 0.879）・転移 1.000±0・prefetch 3.0±0・R@10 全 CI 幅 0。**v1 時代の全結論が v2 で保持**。REPORT の CI 引用を v2 値へ更新 |
+
+**残（既知・任意）**: `MWS_LLM_REPLAY`（記録応答の決定的リプレイ）は未実装 — 記録のみで M16 の受け入れ基準（事後検証可能）は満たすため任意項目として残す。S2 の perceive はロボット観測3件が単発埋め込みのため他より長い（by-design・注記済み）。
+
 ### M15 — manifest が再現に不十分（**Medium・CLAUDE §9 不適合**）
 
 - **現状**: `runs/<RUN_ID>/manifest.json` は run_id/scenario/timestamp/git_sha/seed/cloud_mode/embedding_space/dims/python_version のみ。**(a) モデル ID**（gemini-embedding-2 / gemini-3.5-flash / student モデル名）、**(b) `MWS_EMBEDDING_BATCH_SIZE`**（リクエスト数を左右する設定）、**(c) git の dirty/untracked 状態**が無い。特に (c) は深刻で、**MWS ツリー全体が親リポジトリで未追跡（`?? ./`）のため、記録された `git_sha=48d2026c72e3` では実行時のコード状態を一切再現できない**。CLAUDE §9「使用設定・git SHA・依存バージョン・モデル ID・埋め込み空間・seed・クラウドモードを記録」に不適合。
