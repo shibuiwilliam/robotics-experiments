@@ -1,0 +1,13 @@
+# Scenario 6 — Counterfactual Safety (H6)
+#
+# Risk is COMPUTED by the rule engine (mws/scenarios/safety_rules.py) from how
+# far an observed hazard exceeds its SOP limit; the AVOID/PROCEED decision
+# follows from risk vs risk_threshold. These are inputs, not conclusions:
+# raise a limit above the observed value (e.g. max_stack_height: 5) and the
+# risk falls below threshold and the agent PROCEEDs.
+max_stack_height: 2        # SOP cargo stack limit (boxes)
+max_pressure_psi: 100      # SOP valve pressure limit (PSI)
+current_stack_height: 3    # observed hazard: stack height
+current_pressure_psi: 120  # observed hazard: valve pressure
+risk_threshold: 0.5        # AVOID when computed risk >= threshold
+risk_sensitivity: 8.0      # how sharply risk rises past the limit

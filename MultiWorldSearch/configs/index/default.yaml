@@ -1,0 +1,18 @@
+# Default index configuration
+index:
+  embedding_space: "mock-128-v1"
+  embedding_dims: 128
+  vector_backend: "lancedb"
+  graph_backend: "networkx"
+  timeseries_backend: "duckdb"
+  spatial_backend: "kdtree"
+
+fusion:
+  method: "rrf"  # reciprocal rank fusion
+  weights:
+    semantic: 0.4
+    spatial: 0.2
+    temporal: 0.2
+    symbolic: 0.1
+    structured: 0.1
+  top_k: 10
