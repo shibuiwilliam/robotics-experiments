@@ -31,7 +31,12 @@ FUNCTIONAL_PREDICATES = frozenset(
     }
 )
 
-_TBOX_FILES = ("upper.ttl", "domains/spacetime.ttl", "domains/agency.ttl")
+_TBOX_FILES = (
+    "upper.ttl",
+    "domains/spacetime.ttl",
+    "domains/agency.ttl",
+    "domains/business.ttl",
+)
 
 
 def _to_ox_term(term: Term) -> ox.NamedNode | ox.Literal:
