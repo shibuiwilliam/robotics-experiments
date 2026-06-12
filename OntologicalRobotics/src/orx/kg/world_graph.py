@@ -28,6 +28,8 @@ FUNCTIONAL_PREDICATES = frozenset(
         iri.st("posY"),
         iri.st("posZ"),
         iri.upper("anchoredTo"),
+        iri.cap("trials"),
+        iri.cap("successes"),
     }
 )
 

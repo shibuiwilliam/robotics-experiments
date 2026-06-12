@@ -1,0 +1,13 @@
+# T3/T6 能力考慮計画・エピソード較正実験 (H3)
+# 完全オフライン（LLM不要 — 計画器は能力台帳の決定的argmax）
+name: t3-capability
+task: t3
+world_config: configs/world/t3_capability.yaml
+conditions: [capability, round-robin]
+seeds: [401, 402, 403, 404, 405]
+duration_s: 6.0      # 知覚記録（グラフ構築用）
+claim_ttl_s: 10.0
+t3:
+  n_episodes: 30
+  epsilon: 0.10      # 学習中の探索率
+  dest_zone: dock

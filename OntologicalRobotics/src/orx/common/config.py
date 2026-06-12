@@ -59,12 +59,33 @@ class BoxConfig(StrictModel):
     size: float = 0.06  # 立方体半辺 [m]
     rgba: tuple[float, float, float, float] = (0.8, 0.6, 0.3, 1.0)
     barcode: str | None = None  # 記号識別子（無しはID無し個体）
+    weight_kg: float = 0.5  # 把持の成否に効く（T3/T6, H3）
+    material: str = "cardboard"  # 素材タグ（reflective/glass等は把持difficulty）
 
 
 class CameraConfig(StrictModel):
     pos: Vec3
     lookat: Vec3
     fovy: float = 60.0
+
+
+class SkillTruthProfile(StrictModel):
+    """故障注入の真値パラメータ（C2のみが解釈。台帳推定の正解, T6）。"""
+
+    max_payload_kg: float = 5.0  # 超過時は把持がほぼ失敗する
+    reach_m: float = 3.0  # ベース（カメラ位置）からの到達半径
+    base_success: float = 0.95
+    material_success: dict[str, float] = Field(default_factory=dict)  # 素材別成功率
+    overload_success: float = 0.10  # 重量超過時の成功率
+
+
+class CapabilityDeclaration(StrictModel):
+    """ロボットが宣言する能力契約（身体化APIスキーマ）。真値と乖離しうる。"""
+
+    skills: list[str] = Field(default_factory=lambda: ["pick", "place"])
+    declared_payload_kg: float = 5.0
+    declared_reach_m: float = 3.0
+    prior_success: float = 0.9  # 経験前の宣言成功率（台帳が較正していく）
 
 
 class RobotConfig(StrictModel):
@@ -74,6 +95,8 @@ class RobotConfig(StrictModel):
     detection_range: float = 4.0
     barcode_read_range: float = 2.5  # 0.0 = 記号ID読取不可（擬似LiDAR等）
     visual_embedding: bool = True  # False = 埋め込み無し（LiDAR系センサ）
+    skill_truth: SkillTruthProfile | None = None  # None = 操作スキル無し
+    capability: CapabilityDeclaration | None = None
 
 
 class ScriptedMove(StrictModel):
