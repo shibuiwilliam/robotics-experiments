@@ -71,11 +71,13 @@ def sense(
     knobs: DegradationConfig,
     rng: np.random.Generator,
 ) -> list[SensedObject]:
-    """ロボットのカメラから見える箱を検出する（劣化ノブ適用済み）。"""
-    if knobs.observation_delay_s > 0 or knobs.contradiction_rate > 0:
-        raise NotImplementedError(
-            "observation_delay_s / contradiction_rate は P4 で実装する (T4)。"
-        )
+    """ロボットのカメラから見える箱を検出する（劣化ノブ適用済み）。
+
+    contradiction_rate: 確率pで検出位置が「初期配置のステイルキャッシュ」に
+    化ける（品質スコアは低下する — 現実のセンサ異常は品質指標と相関する）。
+    observation_delay_s はセンサではなく配信の遅延なので、パイプライン側
+    （orx.exp.episode の遅延キュー）で適用される。
+    """
     view = world.camera_view(robot.name)
     robot_body_id = world.model.body(f"robot_{robot.name}").id
     sensed: list[SensedObject] = []
@@ -102,7 +104,45 @@ def sense(
                 confidence=round(confidence, 4),
             )
         )
+    if knobs.contradiction_rate > 0:
+        sensed.extend(_stale_cache_ghosts(world, robot, knobs, rng, sensed))
     return sensed
+
+
+def _stale_cache_ghosts(
+    world: SimWorld,
+    robot: RobotConfig,
+    knobs: DegradationConfig,
+    rng: np.random.Generator,
+    sensed: list[SensedObject],
+) -> list[SensedObject]:
+    """矛盾観測: ステイルなトラックキャッシュの再送出。
+
+    かつて読めた（初期位置がID読取圏内の）バーコード箱が現在見えていないとき、
+    確率pで初期位置＋バーコードの「古い記録」を低品質スコアで再送出する。
+    同一個体（バーコードで束ねられる）に対する矛盾主張が生まれ、来歴・確信度
+    ベースの信念調停の被験条件になる（H5）。
+    """
+    visible_ids = {s.true_object_id for s in sensed}
+    view = world.camera_view(robot.name)
+    ghosts: list[SensedObject] = []
+    for box in world.config.boxes:
+        if box.barcode is None or box.name in visible_ids:
+            continue
+        initial = world.initial_position(box.name)
+        dist0 = float(np.linalg.norm(np.array(initial) - view.pos))
+        if dist0 > robot.barcode_read_range:
+            continue  # そもそも記録に無い箱は再送出しない
+        if rng.random() < knobs.contradiction_rate:
+            ghosts.append(
+                SensedObject(
+                    true_object_id=box.name,
+                    position=initial,
+                    barcode=box.barcode,
+                    confidence=0.60,  # 異常データは品質スコアが下がる
+                )
+            )
+    return ghosts
 
 
 # ----------------------------------------------------- vendor schema emitters

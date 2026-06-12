@@ -169,3 +169,4 @@ class RunConfig(StrictModel):
     duration_s: float = 20.0
     root_seed: int = 7
     claim_ttl_s: float = 5.0  # 観測由来主張の有効期間
+    belief_enabled: bool = True  # False = OR−belief アブレーション (H5)

@@ -438,7 +438,8 @@ def prepare_graph(
     _apply_condition(config, pipeline_condition)
     stage = _Pipeline(config, SeedTree(config.root_seed))
     for event in reader.events():
-        stage.consume_event(event, writer=None)
+        stage.feed(event, writer=None)
+    stage.drain_all(writer=None)
     for claim in wms_claims(wms, SeedTree(config.root_seed)):
         stage.graph.assert_claim(claim)
     stage.graph.refresh_current_graph(at_time)

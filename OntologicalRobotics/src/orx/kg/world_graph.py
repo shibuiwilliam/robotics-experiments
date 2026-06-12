@@ -54,9 +54,23 @@ def _double(value: float) -> ox.Literal:
 
 
 class WorldGraph:
-    """共有世界グラフ。書込は `assert_claim` のみ。"""
+    """共有世界グラフ。書込は `assert_claim` のみ。
 
-    def __init__(self, tbox: bool = True, tbox_root: Path | None = None) -> None:
+    belief_enabled=True（既定）: 来歴・確信度・時刻に基づく信念調停 —
+    失効主張の除外＋「確信度×新しさ」スコアによる矛盾解消。
+    belief_enabled=False（OR−beliefアブレーション）: メタデータの意味論を
+    無効化 — 失効なし・到着順（最後に主張したものが勝つ）。
+    """
+
+    def __init__(
+        self,
+        tbox: bool = True,
+        tbox_root: Path | None = None,
+        belief_enabled: bool = True,
+        recency_tau_s: float = 3.0,
+    ) -> None:
+        self.belief_enabled = belief_enabled
+        self.recency_tau_s = recency_tau_s
         self._store = ox.Store()
         self._claims: list[Claim] = []
         if tbox:
@@ -121,27 +135,38 @@ class WorldGraph:
             return (claim.subject, claim.predicate)
         return (claim.subject, claim.predicate, claim.object.canonical())
 
-    def current_claims(self, at_time: float) -> list[Claim]:
-        """時点 at_time の現在信念（失効除外＋関数的述語の調停: 最新優先）。
+    def _belief_score(self, claim: Claim, at_time: float) -> float:
+        """信念調停スコア: 確信度 × 新しさの指数減衰（P4, H5）。"""
+        import math
 
-        P0の調停は「最新観測優先、同時刻なら高確信度」。来歴ベースの本格調停は
-        P4 (H5) で拡張する。
+        age = max(0.0, at_time - claim.observed_at)
+        return claim.confidence * math.exp(-age / self.recency_tau_s)
+
+    def current_claims(self, at_time: float) -> list[Claim]:
+        """時点 at_time の現在信念。
+
+        belief有効: 失効除外＋関数的述語は「確信度×新しさ」最大の主張が勝つ
+        （低品質な矛盾観測は新しくても高品質な直近観測に負ける）。
+        belief無効（OR−belief）: 失効なし・到着順（後勝ち）— メタデータの
+        意味論を使わないベースライン。
         """
-        groups: dict[tuple[str, ...], Claim] = {}
-        for c in self._claims:
+        groups: dict[tuple[str, ...], tuple[float, int, Claim]] = {}
+        for index, c in enumerate(self._claims):
             if c.observed_at > at_time + 1e-9:
                 continue
-            if c.valid_until is not None and c.valid_until < at_time - 1e-9:
+            if self.belief_enabled and c.valid_until is not None and (
+                c.valid_until < at_time - 1e-9
+            ):
                 continue
             key = self._group_key(c)
+            if self.belief_enabled:
+                rank = (self._belief_score(c, at_time), index)
+            else:
+                rank = (0.0, index)  # 到着順のみ
             cur = groups.get(key)
-            if cur is None or (c.observed_at, c.confidence, c.claim_id) > (
-                cur.observed_at,
-                cur.confidence,
-                cur.claim_id,
-            ):
-                groups[key] = c
-        return [groups[k] for k in sorted(groups)]
+            if cur is None or rank > (cur[0], cur[1]):
+                groups[key] = (rank[0], rank[1], c)
+        return [groups[k][2] for k in sorted(groups)]
 
     def snapshot(self, at_time: float) -> StateSnapshot:
         """評価用スナップショット（現在信念のトリプル＋位置）。"""

@@ -39,9 +39,14 @@ class T3RunParams(StrictModel):
     dest_zone: str = "dock"
 
 
+class T4RunParams(StrictModel):
+    knob: str  # DegradationConfig のフィールド名
+    values: list[float]
+
+
 class ExperimentConfig(StrictModel):
     name: str
-    task: Literal["t1", "t2", "t3", "t7"]
+    task: Literal["t1", "t2", "t3", "t4", "t7"]
     world_config: str  # リポジトリルート相対
     conditions: list[str]
     seeds: list[int]
@@ -50,6 +55,7 @@ class ExperimentConfig(StrictModel):
     t1: t1_suite.T1Params | None = None
     t2: T2RunParams | None = None
     t3: T3RunParams | None = None
+    t4: T4RunParams | None = None
     t7: T2RunParams | None = None  # providerのみ（T2と同形）
 
 
@@ -94,6 +100,7 @@ _VALID_CONDITIONS = {
     "t1": set(CONDITIONS),
     "t2": set(T2_CONDITIONS),
     "t3": {"capability", "round-robin"},
+    "t4": set(CONDITIONS),
     "t7": set(T7_CONDITIONS),
 }
 
@@ -106,9 +113,18 @@ def load_experiment(path: Path) -> ExperimentConfig:
         raise ValueError(f"未知の条件 {unknown}（対応: {sorted(valid)}）")
     if len(config.conditions) < 2:
         raise ValueError("条件は2つ以上必要です（対比較のため）")
-    for task_name in ("t1", "t2", "t3", "t7"):
+    for task_name in ("t1", "t2", "t3", "t4", "t7"):
         if config.task == task_name and getattr(config, task_name) is None:
             raise ValueError(f"task={task_name} には {task_name}: セクションが必要です")
+    if config.task == "t4":
+        assert config.t4 is not None
+        from orx.common.config import DegradationConfig
+
+        if config.t4.knob not in DegradationConfig.model_fields:
+            raise ValueError(
+                f"未知の劣化ノブ {config.t4.knob!r}"
+                f"（対応: {sorted(DegradationConfig.model_fields)}）"
+            )
     return config
 
 
@@ -128,9 +144,104 @@ def run_experiment(
         return _run_t2(config, exp_dir, base_world, notify)
     if config.task == "t3":
         return _run_t3(config, exp_dir, base_world, notify)
+    if config.task == "t4":
+        return _run_t4(config, exp_dir, base_world, notify)
     if config.task == "t7":
         return _run_t7(config, exp_dir, base_world, notify)
     return _run_t1(config, exp_dir, base_world, notify)
+
+
+class T4ExperimentResult(StrictModel):
+    task: Literal["t4"] = "t4"
+    exp_id: str
+    name: str
+    config_hash: str
+    seeds: list[int]
+    conditions: list[str]
+    knob: str
+    values: list[float]
+    fidelity_curves: dict[str, list[float]]  # 条件 → ノブ値毎の平均トリプルF1
+    identity_curves: dict[str, list[float]]
+    diff_ci: list[tuple[float, float]]  # (baseline−other) F1差のCI95（ノブ値毎）
+    divergence_values: list[float]  # CIが0を跨がないノブ値（乖離領域）
+
+
+def _run_t4(
+    config: ExperimentConfig, exp_dir: Path, base_world: WorldConfig, notify: object
+) -> tuple[Path, T4ExperimentResult]:
+    """劣化ノブ掃引: 各ノブ値で記録1回→全条件リプレイ→忠実度曲線（H5）。"""
+    assert config.t4 is not None and callable(notify)
+    import numpy as np
+
+    from orx.exp.episode import replay_episode
+
+    params = config.t4
+    baseline, other = config.conditions[0], config.conditions[1]
+    f1: dict[str, dict[float, list[float]]] = {
+        c: {v: [] for v in params.values} for c in config.conditions
+    }
+    idf1: dict[str, dict[float, list[float]]] = {
+        c: {v: [] for v in params.values} for c in config.conditions
+    }
+
+    for value in params.values:
+        degradation = base_world.degradation.model_copy(update={params.knob: value})
+        world = base_world.model_copy(update={"degradation": degradation})
+        for seed in config.seeds:
+            run_config = RunConfig(
+                world=world,
+                duration_s=config.duration_s,
+                root_seed=seed,
+                claim_ttl_s=config.claim_ttl_s,
+            )
+            run_id, _ = record_episode(
+                run_config, exp_dir / "episodes",
+                run_id=f"{params.knob}-{value}-seed{seed}",
+            )
+            run_dir = exp_dir / "episodes" / run_id
+            for condition in config.conditions:
+                report = replay_episode(run_dir, condition=condition)
+                f1[condition][value].append(report.triple_f1)
+                idf1[condition][value].append(report.identity_f1)
+        means = {c: sum(f1[c][value]) / len(f1[c][value]) for c in config.conditions}
+        notify(
+            f"  {params.knob}={value}: "
+            + " ".join(f"{c}={means[c]:.3f}" for c in config.conditions)
+        )
+
+    rng = SeedTree(config.seeds[0]).child("bootstrap").rng()
+    diff_ci: list[tuple[float, float]] = []
+    divergence: list[float] = []
+    for value in params.values:
+        diffs = np.array(f1[baseline][value]) - np.array(f1[other][value])
+        idx = rng.integers(0, len(diffs), size=(10_000, len(diffs)))
+        samples = diffs[idx].mean(axis=1)
+        lo, hi = float(np.quantile(samples, 0.025)), float(np.quantile(samples, 0.975))
+        diff_ci.append((round(lo, 6), round(hi, 6)))
+        if lo > 0:
+            divergence.append(value)
+
+    result = T4ExperimentResult(
+        exp_id=exp_dir.name,
+        name=config.name,
+        config_hash=config_hash(config),
+        seeds=list(config.seeds),
+        conditions=list(config.conditions),
+        knob=params.knob,
+        values=list(params.values),
+        fidelity_curves={
+            c: [round(sum(f1[c][v]) / len(f1[c][v]), 6) for v in params.values]
+            for c in config.conditions
+        },
+        identity_curves={
+            c: [round(sum(idf1[c][v]) / len(idf1[c][v]), 6) for v in params.values]
+            for c in config.conditions
+        },
+        diff_ci=diff_ci,
+        divergence_values=divergence,
+    )
+    (exp_dir / RESULTS).write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return exp_dir, result
 
 
 class T3ExperimentResult(StrictModel):
@@ -572,12 +683,28 @@ def render_t2_report(result: T2ExperimentResult) -> str:
     return "\n".join(lines)
 
 
-def summarize(
-    result: ExperimentResult | T2ExperimentResult | T3ExperimentResult | T7ExperimentResult,
-) -> list[str]:
+AnyResult = (
+    ExperimentResult
+    | T2ExperimentResult
+    | T3ExperimentResult
+    | T4ExperimentResult
+    | T7ExperimentResult
+)
+
+
+def summarize(result: AnyResult) -> list[str]:
     """CLI表示用の要約行。"""
     lines: list[str] = []
-    if isinstance(result, T7ExperimentResult):
+    if isinstance(result, T4ExperimentResult):
+        lines.append(f"劣化掃引 ({result.knob}) — トリプルF1:")
+        for c in result.conditions:
+            curve = " ".join(f"{v:.3f}" for v in result.fidelity_curves[c])
+            lines.append(f"  {c:<14} {curve}")
+        lines.append(
+            "乖離領域（CI95が0を跨がないノブ値）: "
+            + (", ".join(str(v) for v in result.divergence_values) or "なし")
+        )
+    elif isinstance(result, T7ExperimentResult):
         lines.append("条件別検索正答率:")
         for c in result.conditions:
             lines.append(f"  {c:<14} {result.accuracies[c]:.3f}")
@@ -608,7 +735,7 @@ def summarize(
         lines.append("条件別タスク成功率:")
         for c, rate in result.success_rates.items():
             lines.append(f"  {c:<18} {rate:.3f}")
-    for cmp in result.comparisons:
+    for cmp in getattr(result, "comparisons", []):
         lines.append(
             f"McNemar ({cmp.condition_a} vs {cmp.condition_b}): p = {cmp.mcnemar_p:.2e}"
         )
@@ -620,6 +747,54 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
 
     data = json.loads((exp_dir / RESULTS).read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    if data.get("task") == "t4":
+        t4_result = T4ExperimentResult.model_validate(data)
+        out_path = out_dir / f"{t4_result.exp_id}.md"
+        baseline, other = t4_result.conditions[0], t4_result.conditions[1]
+        lines = [
+            f"# ORX Experiment Report — `{t4_result.exp_id}`",
+            "",
+            f"- タスク: t4（劣化頑健性, H5） / ノブ: **{t4_result.knob}** / "
+            f"シード数: {len(t4_result.seeds)} / 構成ハッシュ: `{t4_result.config_hash}`",
+            "",
+            "## 頑健性曲線（平均トリプルF1）",
+            "",
+            f"| {t4_result.knob} | " + " | ".join(t4_result.conditions)
+            + f" | 差({baseline}−{other}) CI95 |",
+            "|------|" + "------|" * (len(t4_result.conditions) + 1),
+        ]
+        for i, v in enumerate(t4_result.values):
+            cells = " | ".join(
+                f"{t4_result.fidelity_curves[c][i]:.3f}" for c in t4_result.conditions
+            )
+            lo, hi = t4_result.diff_ci[i]
+            lines.append(f"| {v} | {cells} | [{lo:.3f}, {hi:.3f}] |")
+        lines += [
+            "",
+            "## 乖離領域",
+            "",
+            "OR-full と "
+            + other
+            + " の忠実度差のCI95が0を上回るノブ値: "
+            + (", ".join(str(v) for v in t4_result.divergence_values) or "なし"),
+            "",
+            "## 同一性F1曲線",
+            "",
+            f"| {t4_result.knob} | " + " | ".join(t4_result.conditions) + " |",
+            "|------|" + "------|" * len(t4_result.conditions),
+            *[
+                f"| {v} | "
+                + " | ".join(
+                    f"{t4_result.identity_curves[c][i]:.3f}"
+                    for c in t4_result.conditions
+                )
+                + " |"
+                for i, v in enumerate(t4_result.values)
+            ],
+            "",
+        ]
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        return out_path
     if data.get("task") == "t3":
         t3_result = T3ExperimentResult.model_validate(data)
         out_path = out_dir / f"{t3_result.exp_id}.md"
