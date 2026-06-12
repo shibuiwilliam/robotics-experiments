@@ -1,0 +1,11 @@
+schema: vendor_fuzz_000
+detections_path: detections
+sensor_id: fuzzed
+fields:
+  position:
+    x: loc_x
+    y: py
+    z: pz
+    units: mm
+  symbol_id: tag_id
+  confidence: conf

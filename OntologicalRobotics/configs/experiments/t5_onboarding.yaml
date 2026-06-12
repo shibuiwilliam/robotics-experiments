@@ -1,0 +1,14 @@
+# T5 オンボーディング統合コスト実験 (H1)
+# heuristic（規則ベース支援）はオフラインで本計測。llm 支援の本計測は
+# provider.mode=openai（要コスト承認・キャッシュ記録）。
+name: t5-onboarding
+task: t5
+world_config: configs/world/demo_tiny.yaml   # T5は世界を使わない（必須項目のため）
+conditions: [heuristic, handwritten]
+seeds: [601, 602, 603, 604, 605]
+duration_s: 0.0
+t5:
+  n_schemas_per_seed: 4    # 5シード × 4 = 20 合成スキーマ
+  provider:
+    mode: stub
+    llm_model: gpt-4o-2024-08-06

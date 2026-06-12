@@ -44,9 +44,14 @@ class T4RunParams(StrictModel):
     values: list[float]
 
 
+class T5RunParams(StrictModel):
+    n_schemas_per_seed: int = 4
+    provider: ProviderConfig = ProviderConfig()
+
+
 class ExperimentConfig(StrictModel):
     name: str
-    task: Literal["t1", "t2", "t3", "t4", "t7"]
+    task: Literal["t1", "t2", "t3", "t4", "t5", "t7"]
     world_config: str  # リポジトリルート相対
     conditions: list[str]
     seeds: list[int]
@@ -56,6 +61,7 @@ class ExperimentConfig(StrictModel):
     t2: T2RunParams | None = None
     t3: T3RunParams | None = None
     t4: T4RunParams | None = None
+    t5: T5RunParams | None = None
     t7: T2RunParams | None = None  # providerのみ（T2と同形）
 
 
@@ -101,6 +107,7 @@ _VALID_CONDITIONS = {
     "t2": set(T2_CONDITIONS),
     "t3": {"capability", "round-robin"},
     "t4": set(CONDITIONS),
+    "t5": {"heuristic", "llm", "handwritten"},
     "t7": set(T7_CONDITIONS),
 }
 
@@ -113,7 +120,7 @@ def load_experiment(path: Path) -> ExperimentConfig:
         raise ValueError(f"未知の条件 {unknown}（対応: {sorted(valid)}）")
     if len(config.conditions) < 2:
         raise ValueError("条件は2つ以上必要です（対比較のため）")
-    for task_name in ("t1", "t2", "t3", "t4", "t7"):
+    for task_name in ("t1", "t2", "t3", "t4", "t5", "t7"):
         if config.task == task_name and getattr(config, task_name) is None:
             raise ValueError(f"task={task_name} には {task_name}: セクションが必要です")
     if config.task == "t4":
@@ -146,9 +153,85 @@ def run_experiment(
         return _run_t3(config, exp_dir, base_world, notify)
     if config.task == "t4":
         return _run_t4(config, exp_dir, base_world, notify)
+    if config.task == "t5":
+        return _run_t5(config, exp_dir, notify)
     if config.task == "t7":
         return _run_t7(config, exp_dir, base_world, notify)
     return _run_t1(config, exp_dir, base_world, notify)
+
+
+class T5ExperimentResult(StrictModel):
+    task: Literal["t5"] = "t5"
+    exp_id: str
+    name: str
+    config_hash: str
+    seeds: list[int]
+    conditions: list[str]
+    n_schemas: int
+    mean_field_accuracy: dict[str, float]
+    mean_hand_fix_lines: dict[str, float]
+    valid_rate: dict[str, float]
+    mean_handwritten_lines: float  # 手書きベースラインのコスト（全行）
+    mean_elapsed_s: dict[str, float]
+    llm_mode: str
+
+
+def _run_t5(
+    config: ExperimentConfig, exp_dir: Path, notify: object
+) -> tuple[Path, T5ExperimentResult]:
+    """T5: ファズスキーマ群に対する支援マッピング生成の統合コスト測定。"""
+    assert config.t5 is not None and callable(notify)
+    from orx.exp.suites import t5 as t5_suite
+    from orx.sim.fuzz import generate_fuzz_spec, make_samples
+
+    params = config.t5
+    modes = [c for c in config.conditions if c != "handwritten"]
+    results: dict[str, list[t5_suite.OnboardResult]] = {m: [] for m in modes}
+    n_schemas = 0
+    for seed in config.seeds:
+        rng = SeedTree(seed).child("fuzz").rng()
+        for index in range(params.n_schemas_per_seed):
+            spec = generate_fuzz_spec(rng, index + seed * 100)
+            samples = make_samples(spec, rng)
+            n_schemas += 1
+            for mode in modes:
+                llm = make_llm_client(params.provider) if mode == "llm" else None
+                outcome = t5_suite.onboard(spec, samples, mode, llm)
+                results[mode].append(outcome)
+        notify(f"  seed={seed}: {params.n_schemas_per_seed} スキーマ処理完了")
+
+    handwritten_lines = [
+        r.handwritten_lines for m in modes for r in results[m]
+    ]
+    result = T5ExperimentResult(
+        exp_id=exp_dir.name,
+        name=config.name,
+        config_hash=config_hash(config),
+        seeds=list(config.seeds),
+        conditions=list(config.conditions),
+        n_schemas=n_schemas,
+        mean_field_accuracy={
+            m: round(sum(r.field_accuracy for r in rs) / len(rs), 4)
+            for m, rs in results.items()
+        },
+        mean_hand_fix_lines={
+            m: round(sum(r.hand_fix_lines for r in rs) / len(rs), 3)
+            for m, rs in results.items()
+        },
+        valid_rate={
+            m: round(sum(r.valid for r in rs) / len(rs), 4) for m, rs in results.items()
+        },
+        mean_handwritten_lines=round(
+            sum(handwritten_lines) / len(handwritten_lines), 3
+        ),
+        mean_elapsed_s={
+            m: round(sum(r.elapsed_s for r in rs) / len(rs), 4)
+            for m, rs in results.items()
+        },
+        llm_mode=params.provider.mode,
+    )
+    (exp_dir / RESULTS).write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return exp_dir, result
 
 
 class T4ExperimentResult(StrictModel):
@@ -688,6 +771,7 @@ AnyResult = (
     | T2ExperimentResult
     | T3ExperimentResult
     | T4ExperimentResult
+    | T5ExperimentResult
     | T7ExperimentResult
 )
 
@@ -695,7 +779,19 @@ AnyResult = (
 def summarize(result: AnyResult) -> list[str]:
     """CLI表示用の要約行。"""
     lines: list[str] = []
-    if isinstance(result, T4ExperimentResult):
+    if isinstance(result, T5ExperimentResult):
+        lines.append(
+            f"統合コスト比較（{result.n_schemas} 合成スキーマ、"
+            f"手書き={result.mean_handwritten_lines:.1f}行）:"
+        )
+        for m in result.mean_field_accuracy:
+            lines.append(
+                f"  {m:<10} 精度={result.mean_field_accuracy[m]:.3f} "
+                f"修正行={result.mean_hand_fix_lines[m]:.1f} "
+                f"検証合格率={result.valid_rate[m]:.2f} "
+                f"所要={result.mean_elapsed_s[m]*1000:.0f}ms"
+            )
+    elif isinstance(result, T4ExperimentResult):
         lines.append(f"劣化掃引 ({result.knob}) — トリプルF1:")
         for c in result.conditions:
             curve = " ".join(f"{v:.3f}" for v in result.fidelity_curves[c])
@@ -747,6 +843,42 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
 
     data = json.loads((exp_dir / RESULTS).read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    if data.get("task") == "t5":
+        t5_result = T5ExperimentResult.model_validate(data)
+        out_path = out_dir / f"{t5_result.exp_id}.md"
+        modes = list(t5_result.mean_field_accuracy)
+        lines = [
+            f"# ORX Experiment Report — `{t5_result.exp_id}`",
+            "",
+            f"- タスク: t5（オンボーディング統合コスト, H1） / 合成スキーマ数: "
+            f"{t5_result.n_schemas} / LLM: {t5_result.llm_mode} / "
+            f"構成ハッシュ: `{t5_result.config_hash}`",
+            "",
+            "## 統合コスト比較",
+            "",
+            "| 方式 | フィールド精度 | 人手修正行数 | 検証合格率 | 所要 [ms] |",
+            "|------|---------------|--------------|-----------|-----------|",
+            f"| 手書き（ベースライン） | 1.000 | {t5_result.mean_handwritten_lines:.1f}"
+            "（全行を書く） | 1.00 | - |",
+            *[
+                f"| {m} | {t5_result.mean_field_accuracy[m]:.3f} | "
+                f"{t5_result.mean_hand_fix_lines[m]:.1f} | "
+                f"{t5_result.valid_rate[m]:.2f} | "
+                f"{t5_result.mean_elapsed_s[m] * 1000:.0f} |"
+                for m in modes
+            ],
+            "",
+            "ハブ&スポーク統合のコスト = 共通オントロジーへのマッピング記述行数。"
+            "支援生成は人手記述を「修正行数」まで圧縮する（H1）。",
+            "",
+        ]
+        if t5_result.llm_mode == "stub" and "llm" in modes:
+            lines.append(
+                "> **注**: stubモードのため llm 行はハーネス検証のみ。"
+                "本計測は provider.mode=openai で行う。"
+            )
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        return out_path
     if data.get("task") == "t4":
         t4_result = T4ExperimentResult.model_validate(data)
         out_path = out_dir / f"{t4_result.exp_id}.md"

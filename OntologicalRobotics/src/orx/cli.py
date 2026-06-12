@@ -199,6 +199,69 @@ def report(
 
 
 @app.command()
+def onboard(
+    vendor_schema: Path = typer.Argument(
+        ..., help="ベンダースキーマ定義 (configs/robots/*.yaml: schema名＋サンプル)"
+    ),
+    mode: str = typer.Option("heuristic", help="マッピング生成: heuristic / llm"),
+    out_dir: Path | None = typer.Option(
+        None, help="マッピング案の出力先（既定: ontology/mappings/proposals/）"
+    ),
+) -> None:
+    """新ロボットのオンボーディング: マッピング案の生成→検証→レビュー差分（T5）。
+
+    生成された案は人手レビュー用に保存され、承認後に ontology/mappings/ へ
+    移して統合が完了する。llm モードは OPENAI_API_KEY と事前のコスト承認が必要。
+    """
+    import json as _json
+
+    import yaml as _yaml
+
+    from orx.common.providers import make_llm_client
+    from orx.exp.suites.t5 import (
+        heuristic_infer,
+        llm_infer,
+        mapping_to_yaml,
+        validate_mapping,
+    )
+
+    try:
+        data = _yaml.safe_load(vendor_schema.read_text(encoding="utf-8"))
+        schema_name = data["schema"]
+        samples = data["samples"]
+        if mode == "heuristic":
+            mapping = heuristic_infer(schema_name, samples)
+        elif mode == "llm":
+            from orx.common.providers import ProviderConfig
+
+            provider = ProviderConfig(mode="openai", **data.get("provider", {}))
+            mapping = llm_infer(schema_name, samples, make_llm_client(provider))
+        else:
+            _fail(f"未知のモード {mode!r}（heuristic / llm）")
+            return
+        errors = validate_mapping(mapping, schema_name, samples)
+        proposal = mapping_to_yaml(mapping)
+    except (KeyError, ValueError, OSError, _json.JSONDecodeError) as exc:
+        _fail(str(exc))
+        return
+    target = (out_dir or (repo_root() / "ontology" / "mappings" / "proposals"))
+    target.mkdir(parents=True, exist_ok=True)
+    out_path = target / f"{schema_name}.yaml"
+    out_path.write_text(proposal, encoding="utf-8")
+    typer.echo(f"マッピング案: {out_path}")
+    typer.echo(proposal)
+    if errors:
+        typer.secho("検証エラー（人手修正が必要）:", fg=typer.colors.YELLOW)
+        for e in errors:
+            typer.echo(f"  - {e}")
+        raise typer.Exit(code=1)
+    typer.secho(
+        "検証OK。レビュー後 ontology/mappings/ へ移動して統合完了。",
+        fg=typer.colors.GREEN,
+    )
+
+
+@app.command()
 def cq(
     run_id: str | None = typer.Option(
         None, help="評価対象 run（省略時は正準デモ世界を新規記録して評価）"
