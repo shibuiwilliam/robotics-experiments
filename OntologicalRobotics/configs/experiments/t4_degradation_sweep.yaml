@@ -1,0 +1,12 @@
+# T4 劣化頑健性掃引 (H5): 矛盾観測率の掃引で OR-full と OR−belief の乖離領域を特定
+# 完全オフライン。他ノブの掃引は knob/values を変えた別コンフィグで実行する。
+name: t4-contradiction
+task: t4
+world_config: configs/world/t2_warehouse.yaml
+conditions: [OR-full, OR-no-belief]
+seeds: [501, 502, 503, 504, 505]
+duration_s: 20.0
+claim_ttl_s: 5.0
+t4:
+  knob: contradiction_rate
+  values: [0.0, 0.1, 0.2, 0.3, 0.45]

@@ -86,7 +86,8 @@ def graph_from_run(run_dir: Path) -> tuple[WorldGraph, TruthState]:
     config: RunConfig = reader.config()
     stage = _Pipeline(config, SeedTree(config.root_seed))
     for event in reader.events():
-        stage.consume_event(event, writer=None)
+        stage.feed(event, writer=None)
+    stage.drain_all(writer=None)
     truth_states = list(reader.truth_states())
     if not truth_states:
         raise ValueError(f"truth ストリームが空です: {run_dir}")

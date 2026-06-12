@@ -158,14 +158,16 @@ def evaluate_condition(
     for truth in truth_states:
         while event_idx < len(events) and events[event_idx].sim_time <= truth.sim_time + 1e-9:
             maybe_decide(events[event_idx].sim_time)
-            stage.consume_event(events[event_idx], writer=None)
+            stage.feed(events[event_idx], writer=None)
             event_idx += 1
+        stage.drain(truth.sim_time, writer=None)
         maybe_decide(truth.sim_time + 1e-9)
         stage.snapshot(truth.sim_time, writer=None)
     while event_idx < len(events):
         end_time = max(end_time, events[event_idx].sim_time)
-        stage.consume_event(events[event_idx], writer=None)
+        stage.feed(events[event_idx], writer=None)
         event_idx += 1
+    stage.drain_all(writer=None)
     maybe_decide(end_time + 1.0)
 
     decision_truth = min(

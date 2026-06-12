@@ -30,10 +30,10 @@ from orx.replay.io import RunReader, RunWriter, next_available_run_dir
 from orx.sim.sensors import observe
 from orx.sim.world import SimWorld
 
-# P0 のリプレイ条件。アブレーション条件の本格化は P1（OR−identity 等）。
 CONDITIONS: dict[str, dict[str, object]] = {
     "OR-full": {},
     "OR-no-identity": {"anchoring_enabled": False},
+    "OR-no-belief": {"belief_enabled": False},  # 来歴・確信度・失効の意味論オフ (H5)
 }
 
 
@@ -71,15 +71,46 @@ def _timeline(
 
 
 class _Pipeline:
-    """1条件分の知覚後段パイプライン（anchoring→kg）。記録とリプレイで共用。"""
+    """1条件分の知覚後段パイプライン（anchoring→kg）。記録とリプレイで共用。
+
+    observation_delay_s（劣化ノブ）: 配信遅延。LiDAR系（visual_embedding=False）
+    ロボットのイベントは capture+delay まで処理を保留する（観測時刻は capture のまま
+    — 来歴付き信念管理が遅延到着を正しく順序付けられるかの被験条件, H5）。
+    """
 
     def __init__(self, config: RunConfig, seeds: SeedTree) -> None:
         self.anchorer = Anchorer(
             config.anchoring, config.world.zones, config.claim_ttl_s, seeds
         )
-        self.graph = WorldGraph()
+        self.graph = WorldGraph(belief_enabled=config.belief_enabled)
         self.anchor_observations: list[AnchorObservation] = []
         self.world_snapshots: list[StateSnapshot] = []
+        self._delay_s = config.world.degradation.observation_delay_s
+        self._delayed_robots = {
+            r.name for r in config.world.robots if not r.visual_embedding
+        }
+        self._pending: list[PerceptionEvent] = []
+
+    def feed(self, event: PerceptionEvent, writer: RunWriter | None) -> None:
+        """遅延対象なら保留、それ以外は即時処理。"""
+        if self._delay_s > 0 and event.robot_id in self._delayed_robots:
+            self._pending.append(event)
+        else:
+            self.consume_event(event, writer)
+
+    def drain(self, now: float, writer: RunWriter | None) -> None:
+        """配信期限が来た保留イベントを処理する。"""
+        due = [e for e in self._pending if e.sim_time + self._delay_s <= now + 1e-9]
+        self._pending = [
+            e for e in self._pending if e.sim_time + self._delay_s > now + 1e-9
+        ]
+        for event in due:
+            self.consume_event(event, writer)
+
+    def drain_all(self, writer: RunWriter | None) -> None:
+        for event in self._pending:
+            self.consume_event(event, writer)
+        self._pending = []
 
     def consume_event(self, event: PerceptionEvent, writer: RunWriter | None) -> None:
         result = self.anchorer.process(event)
@@ -191,12 +222,14 @@ def record_episode(
                         image, view = None, None  # LiDAR系: 描画・埋め込み不要
                     event = pipelines[robot.name].process(obs, image, view)
                     writer.append_event(event)
-                    stage.consume_event(event, writer)
+                    stage.feed(event, writer)
+            stage.drain(t, writer)
             if do_eval:
                 truth = world.truth()
                 writer.append_truth(truth)
                 truth_snaps.append(truth_snapshot(truth))
                 stage.snapshot(t, writer)
+        stage.drain_all(writer)
         world.close()
 
         report = stage.fidelity(truth_snaps, end_time)
@@ -221,18 +254,30 @@ def replay_episode(run_dir: Path, condition: str = "OR-full") -> FidelityReport:
     events = list(reader.events())
     truth_snaps = [truth_snapshot(s) for s in truth_states]
 
+    # 記録時は「各ティックの全フィード後に drain(そのティック)」の順序。
+    # リプレイも同一順序を再現する（同時刻グループ毎に drain — リプレイ同一性）。
     event_idx = 0
     end_time = truth_states[-1].sim_time if truth_states else 0.0
+
+    def feed_group_until(limit: float) -> None:
+        nonlocal event_idx, end_time
+        while event_idx < len(events) and events[event_idx].sim_time <= limit + 1e-9:
+            group_time = events[event_idx].sim_time
+            while (
+                event_idx < len(events)
+                and abs(events[event_idx].sim_time - group_time) <= 1e-9
+            ):
+                stage.feed(events[event_idx], writer=None)
+                event_idx += 1
+            end_time = max(end_time, group_time)
+            stage.drain(group_time, writer=None)
+
     for truth in truth_states:
-        while event_idx < len(events) and events[event_idx].sim_time <= truth.sim_time + 1e-9:
-            stage.consume_event(events[event_idx], writer=None)
-            event_idx += 1
+        feed_group_until(truth.sim_time)
+        stage.drain(truth.sim_time, writer=None)
         stage.snapshot(truth.sim_time, writer=None)
-    # 最終評価ティック後の残イベントも処理する（陳腐化率の整合）
-    while event_idx < len(events):
-        end_time = max(end_time, events[event_idx].sim_time)
-        stage.consume_event(events[event_idx], writer=None)
-        event_idx += 1
+    feed_group_until(float("inf"))
+    stage.drain_all(writer=None)
 
     report = stage.fidelity(truth_snaps, end_time)
     out_dir = run_dir / "replays" / condition
@@ -251,6 +296,8 @@ def _apply_condition(config: RunConfig, condition: str) -> None:
     overrides = CONDITIONS[condition]
     if overrides.get("anchoring_enabled") is False:
         config.anchoring.enabled = False
+    if overrides.get("belief_enabled") is False:
+        config.belief_enabled = False
 
 
 def _orx_version() -> str:

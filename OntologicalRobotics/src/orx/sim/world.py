@@ -43,6 +43,14 @@ class SimWorld:
             tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]
         ] = []
         self._zones = {z.name: z for z in config.zones}
+        self._initial_positions: dict[str, Vec3] = {
+            b.name: tuple(float(v) for v in self.data.body(body_name(b.name)).xpos)
+            for b in config.boxes
+        }
+
+    def initial_position(self, box_name: str) -> Vec3:
+        """初期配置位置（contradiction ノブの「ステイルキャッシュ」値）。"""
+        return self._initial_positions[box_name]
 
     # ------------------------------------------------------------------ time
 

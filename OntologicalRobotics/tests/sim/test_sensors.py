@@ -63,11 +63,21 @@ def test_occlusion_knob_drops_all(settled_world: SimWorld) -> None:
     assert sense(settled_world, robot, knobs, rng) == []
 
 
-def test_p4_knobs_explicitly_unimplemented(settled_world: SimWorld) -> None:
-    robot = settled_world.config.robots[0]
+def test_contradiction_knob_stale_cache_ghosts() -> None:
+    """contradiction: 視界から消えた既知箱が初期位置＋バーコードで再送出される。"""
+    config = load_config(repo_root() / "configs" / "world" / "t2_warehouse.yaml", WorldConfig)
+    world = SimWorld(config, SeedTree(7))
+    world.step_to(12.0)  # b2 (BC-102) は handoff へ搬送済み = A視界外
+    robot = config.robots[0]  # arm_a
+    knobs = DegradationConfig(contradiction_rate=1.0)
     rng = SeedTree(7).child("sense").rng()
-    with pytest.raises(NotImplementedError):
-        sense(settled_world, robot, DegradationConfig(observation_delay_s=0.5), rng)
+    sensed = sense(world, robot, knobs, rng)
+    ghosts = [s for s in sensed if s.confidence == 0.60]
+    assert any(g.true_object_id == "b2" for g in ghosts), [g.true_object_id for g in ghosts]
+    g = next(g for g in ghosts if g.true_object_id == "b2")
+    assert g.barcode == "BC-102"
+    initial = world.initial_position("b2")
+    assert max(abs(a - b) for a, b in zip(g.position, initial, strict=True)) < 1e-9
 
 
 def test_unknown_vendor_schema_rejected(settled_world: SimWorld) -> None:
