@@ -11,4 +11,4 @@ t5:
   n_schemas_per_seed: 4    # 5シード × 4 = 20 合成スキーマ
   provider:
     mode: stub
-    llm_model: gpt-4o-2024-08-06
+    # llm_model を省略 → ORX_LLM_MODEL または既定 gpt-5.4-mini を使用。
