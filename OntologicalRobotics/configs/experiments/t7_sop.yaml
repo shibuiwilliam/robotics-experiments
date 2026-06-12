@@ -10,4 +10,5 @@ duration_s: 0.0   # T7は物理記録不要
 t7:
   provider:
     mode: stub
-    text_embedding_model: text-embedding-3-small
+    # text_embedding_model を省略 → ORX_TEXT_EMBEDDING_MODEL または
+    # 既定 text-embedding-3-small を使用（ピン留めはここに明記）。

@@ -14,5 +14,6 @@ claim_ttl_s: 5.0
 t2:
   provider:
     mode: stub
-    llm_model: gpt-4o-2024-08-06   # スナップショット固定（mode=openai時に使用）
-    text_embedding_model: text-embedding-3-small
+    # llm_model を省略 → 環境変数 ORX_LLM_MODEL または既定 gpt-5.4-mini を使用。
+    # 特定モデルにピン留めしたい場合のみここに `llm_model: <id>` を明記する。
+    # 解決後のモデル名は構成ハッシュ・マニフェストに記録される。

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -21,13 +22,35 @@ from orx.common.schemas import StrictModel
 
 ProviderMode = Literal["openai", "cache", "stub"]
 
+# 既定モデル（OpenAIモデルIDは https://developers.openai.com/api/docs/models）。
+# 解決順序: 実験コンフィグの明示値 > 環境変数 > ここの既定値。
+# 解決後の値は ProviderConfig に格納され、構成ハッシュとマニフェストに焼き込まれる
+# （PROJECT.md §8.3 の再現性: 何が使われたかは常に記録される）。
+DEFAULT_LLM_MODEL = "gpt-5.4-mini"
+DEFAULT_TEXT_EMBEDDING_MODEL = "text-embedding-3-small"
+LLM_MODEL_ENV = "ORX_LLM_MODEL"
+TEXT_EMBEDDING_MODEL_ENV = "ORX_TEXT_EMBEDDING_MODEL"
+
+
+def _default_llm_model() -> str:
+    return os.environ.get(LLM_MODEL_ENV, DEFAULT_LLM_MODEL)
+
+
+def _default_text_embedding_model() -> str:
+    return os.environ.get(TEXT_EMBEDDING_MODEL_ENV, DEFAULT_TEXT_EMBEDDING_MODEL)
+
 
 class ProviderConfig(StrictModel):
-    """プロバイダ設定。実験コンフィグから注入される。"""
+    """プロバイダ設定。実験コンフィグから注入される。
+
+    `llm_model` / `text_embedding_model` を省略すると、環境変数
+    （ORX_LLM_MODEL / ORX_TEXT_EMBEDDING_MODEL）→ 既定値 の順で解決される。
+    コンフィグで明示すればそれが優先される（per-experimentのピン留め）。
+    """
 
     mode: ProviderMode = "stub"
-    llm_model: str = "stub-model"
-    text_embedding_model: str = "stub-embedding"
+    llm_model: str = Field(default_factory=_default_llm_model)
+    text_embedding_model: str = Field(default_factory=_default_text_embedding_model)
     cache_dir: Path = Path("data/cache/llm")
     embedding_cache_dir: Path = Path("data/cache/embeddings")
     text_embedding_dim: int = 64
