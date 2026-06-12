@@ -1,15 +1,15 @@
-"""C5 アンカリング骨格（P0）— 個体化と同一性解決。
+"""C5 アンカリング — 個体化と同一性解決（P1: D1スコア融合版）。
 
-P0の解決規則:
-  1. 記号ID（バーコード）一致 → 決定的に同一個体へ束ねる
-  2. ID無し → 既知個体への空間最近傍ゲート（gate_radius 内）で確率的マッチ
-  3. どちらも不成立 → 新規個体を発行
+解決規則（D1: ゲート付きスコア融合、重み・閾値はコンフィグ）:
+  1. 記号ID（バーコード）一致 → 決定的に同一個体（登録簿）。
+     既知個体が**別の**識別子を持つ場合は分裂（新規個体を発行）。
+  2. ID無し検出 → 動きを考慮した時空間ゲート（gate = gate_radius + v_max·Δt）を
+     通過した候補に対し、空間スコアと埋め込みコサイン類似の重み付き和。
+     最良スコアが theta_merge 以上ならマッチ、未満なら新規個体。
+  3. 同一イベント内で同じ個体に2検出はマッチさせない（排他）。
 
 同一性は `orx-upper:anchoredTo`（確信度付き）の改訂可能な主張として出力する。
-owl:sameAs は使わない（PROJECT.md §5.2-3）。本格的なスコア融合・マージ/分裂は
-P1 (D1) で拡張する。
-
-このモジュールは event.oracle_truth_ids を**読まない**（真値はoracle専用）。
+このモジュールは event の真値フィールドを読まない（採点は oracle/exp の仕事）。
 """
 
 from __future__ import annotations
@@ -19,14 +19,55 @@ import math
 from orx.common import iri
 from orx.common.config import AnchoringParams, ZoneConfig
 from orx.common.geometry import zone_of
-from orx.common.schemas import AnchorRecord, Claim, PerceptionEvent, StrictModel, Term, Vec3
+from orx.common.schemas import (
+    AnchorRecord,
+    Claim,
+    Detection,
+    PerceptionEvent,
+    StrictModel,
+    Term,
+    Vec3,
+)
 from orx.common.seeding import SeedTree, deterministic_id
 
 
 class AnchorResult(StrictModel):
     claims: list[Claim]
     records: list[AnchorRecord]
-    assignments: list[str]  # 検出添字 → 個体IRI（oracle採点の対応付けに使う）
+    assignments: list[str]  # 検出添字 → 個体IRI
+
+
+class _EntityState:
+    """個体の最終観測状態（マッチング材料）。等速モデルの速度推定を持つ。"""
+
+    def __init__(
+        self,
+        position: Vec3,
+        last_seen: float,
+        embedding: list[float] | None,
+        symbol: str | None,
+        velocity: Vec3 = (0.0, 0.0, 0.0),
+    ) -> None:
+        self.position = position
+        self.last_seen = last_seen
+        self.embedding = embedding
+        self.symbol = symbol
+        self.velocity = velocity
+
+    def predicted_position(self, now: float) -> Vec3:
+        dt = max(0.0, now - self.last_seen)
+        return (
+            self.position[0] + self.velocity[0] * dt,
+            self.position[1] + self.velocity[1] * dt,
+            self.position[2] + self.velocity[2] * dt,
+        )
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    return max(-1.0, min(1.0, dot))  # 埋め込みは単位ノルム前提
 
 
 class Anchorer:
@@ -42,10 +83,10 @@ class Anchorer:
         self.claim_ttl_s = claim_ttl_s
         self._rng = seeds.child("anchoring").rng()
         self._symbol_to_entity: dict[str, str] = {}
-        self._entity_pos: dict[str, Vec3] = {}
+        self._entities: dict[str, _EntityState] = {}
         self._typed_entities: set[str] = set()
         self._identified_entities: set[str] = set()
-        self._tracks: dict[tuple[str, str], str] = {}  # (robot, entity) -> track IRI
+        self._tracks: dict[tuple[str, str], str] = {}
         self._track_seq: dict[str, int] = {}
         self._anchored_tracks: set[str] = set()
 
@@ -54,15 +95,20 @@ class Anchorer:
     def process(self, event: PerceptionEvent) -> AnchorResult:
         claims: list[Claim] = []
         records: list[AnchorRecord] = []
-        assignments: list[str] = []
         agent = iri.entity("agent", f"anchoring-{event.robot_id}")
-        used_entities: set[str] = set()
+        resolution = self._assign_event(event)
 
         for det in event.detections:
-            entity, score, decision = self._resolve(det.symbol_id, det.position, used_entities)
-            used_entities.add(entity)
-            assignments.append(entity)
-            self._entity_pos[entity] = det.position
+            entity, score, decision = resolution[det.index]
+            state = self._entities.get(entity)
+            new_embedding = det.embedding if det.embedding is not None else (
+                state.embedding if state else None
+            )
+            symbol = det.symbol_id or (state.symbol if state else None)
+            velocity = self._update_velocity(state, det.position, event.sim_time)
+            self._entities[entity] = _EntityState(
+                det.position, event.sim_time, new_embedding, symbol, velocity
+            )
 
             track = self._track_for(event.robot_id, entity)
             records.append(
@@ -74,79 +120,200 @@ class Anchorer:
                     decision=decision,
                 )
             )
-
-            if track not in self._anchored_tracks:
-                self._anchored_tracks.add(track)
-                anchor_conf = self.params.id_confidence if det.symbol_id else max(
-                    0.5, round(0.9 * score, 6)
-                )
-                claims.append(
-                    self._claim(track, iri.upper("anchoredTo"), Term(kind="iri", value=entity),
-                                agent, anchor_conf, event.sim_time, ttl=None)
-                )
-            if entity not in self._typed_entities:
-                self._typed_entities.add(entity)
-                claims.append(
-                    self._claim(entity, iri.RDF_TYPE, Term(kind="iri", value=iri.upper("Box")),
-                                agent, det.confidence, event.sim_time, ttl=None)
-                )
-            if det.symbol_id and entity not in self._identified_entities:
-                self._identified_entities.add(entity)
-                claims.append(
-                    self._claim(entity, iri.upper("hasIdentifier"),
-                                Term(kind="literal", value=det.symbol_id),
-                                agent, self.params.id_confidence, event.sim_time, ttl=None)
-                )
-
-            for pred, value in (
-                ("posX", det.position[0]),
-                ("posY", det.position[1]),
-                ("posZ", det.position[2]),
-            ):
-                claims.append(
-                    self._claim(entity, iri.st(pred),
-                                Term(kind="literal", value=repr(float(value)),
-                                     datatype=iri.XSD_DOUBLE),
-                                agent, det.confidence, event.sim_time, ttl=self.claim_ttl_s)
-                )
-            zone = zone_of(self.zones, det.position)
-            if zone is not None:
-                claims.append(
-                    self._claim(entity, iri.st("inZone"),
-                                Term(kind="iri", value=iri.entity("zone", zone)),
-                                agent, det.confidence, event.sim_time, ttl=self.claim_ttl_s)
-                )
-
+            claims.extend(
+                self._emit_claims(det, entity, track, agent, event.sim_time, score)
+            )
+        assignments = [resolution[det.index][0] for det in event.detections]
         return AnchorResult(claims=claims, records=records, assignments=assignments)
 
-    # ---------------------------------------------------------------- private
+    # ------------------------------------------------------------- resolution
 
-    def _resolve(
-        self, symbol_id: str | None, position: Vec3, used: set[str]
-    ) -> tuple[str, float, str]:
+    def _assign_event(
+        self, event: PerceptionEvent
+    ) -> dict[int, tuple[str, float, str]]:
+        """イベント内の全検出を一括解決する。
+
+        記号ID検出を先に（登録簿は決定的）、残りのID無し検出は全 (検出, 候補)
+        ペアのスコア降順で大域貪欲割当（添字順の偏りを排除）。
+        """
+        now = event.sim_time
+        resolution: dict[int, tuple[str, float, str]] = {}
+        used: set[str] = set()
+
         if not self.params.enabled:
-            return self._new_entity(), 1.0, "new"
-        if symbol_id is not None:
-            known = self._symbol_to_entity.get(symbol_id)
-            if known is not None:
-                return known, 1.0, "match"
-            entity = self._new_entity()
-            self._symbol_to_entity[symbol_id] = entity
-            return entity, 1.0, "new"
-        best: tuple[float, str] | None = None
-        for entity, pos in sorted(self._entity_pos.items()):
-            if entity in used or entity in self._identified_entities:
-                # 識別子付き個体への無ID空間マッチは保守的に避ける（P0）
+            for det in event.detections:
+                resolution[det.index] = (self._new_entity(), 1.0, "new")
+            return resolution
+
+        idless: list[Detection] = []
+        for det in event.detections:
+            if det.symbol_id is None:
+                idless.append(det)
                 continue
-            d = math.dist(position, pos)
-            if d > self.params.gate_radius:
+            known = self._symbol_to_entity.get(det.symbol_id)
+            if known is not None and known not in used:
+                resolution[det.index] = (known, 1.0, "match")
+                used.add(known)
                 continue
-            score = math.exp(-(d * d) / (2 * self.params.spatial_sigma**2))
-            if best is None or score > best[0]:
-                best = (score, entity)
-        if best is not None:
-            return best[1], best[0], "match"
-        return self._new_entity(), 1.0, "new"
+            if known is None:
+                # 空間候補が未識別ならそれを識別子で確定、識別子衝突なら分裂
+                candidate = self._best_spatial(det.position, det.embedding, now, used)
+                if candidate is not None and candidate[1] not in self._identified_entities:
+                    score, entity = candidate
+                    self._symbol_to_entity[det.symbol_id] = entity
+                    resolution[det.index] = (entity, score, "match")
+                    used.add(entity)
+                    continue
+                entity = self._new_entity()
+                self._symbol_to_entity[det.symbol_id] = entity
+            else:
+                # 登録簿の個体が同イベントで使用済み → 重複検出。新規扱い。
+                entity = self._new_entity()
+            resolution[det.index] = (entity, 1.0, "new")
+            used.add(entity)
+
+        pairs: list[tuple[float, int, str]] = []
+        for det in idless:
+            for score, entity in self._candidates(det.position, det.embedding, now, used):
+                pairs.append((score, det.index, entity))
+        pairs.sort(key=lambda p: (-p[0], p[1], p[2]))
+        assigned: set[int] = set()
+        for score, det_index, entity in pairs:
+            if det_index in assigned or entity in used:
+                continue
+            resolution[det_index] = (entity, score, "match")
+            assigned.add(det_index)
+            used.add(entity)
+        for det in idless:
+            if det.index not in assigned:
+                entity = self._new_entity()
+                resolution[det.index] = (entity, 1.0, "new")
+                used.add(entity)
+        return resolution
+
+    def _candidates(
+        self,
+        position: Vec3,
+        embedding: list[float] | None,
+        now: float,
+        used: set[str],
+    ) -> list[tuple[float, str]]:
+        """θ以上の全候補 (score, entity)。"""
+        out: list[tuple[float, str]] = []
+        for entity in sorted(self._entities):
+            if entity in used:
+                continue
+            state = self._entities[entity]
+            score = self._spatial_score(position, state, now)
+            if embedding is not None and state.embedding is not None:
+                cos = max(0.0, _cosine(embedding, state.embedding))
+                score *= (1.0 - self.params.w_embedding) + self.params.w_embedding * cos
+            if score >= self.params.theta_merge:
+                out.append((score, entity))
+        return out
+
+    def _update_velocity(
+        self, state: _EntityState | None, position: Vec3, now: float
+    ) -> Vec3:
+        """等速モデルの速度推定（EMA、v_max でクランプ）。"""
+        if state is None:
+            return (0.0, 0.0, 0.0)
+        dt = now - state.last_seen
+        if dt <= 1e-6:
+            return state.velocity
+        ema = self.params.velocity_ema
+        raw = tuple((p - q) / dt for p, q in zip(position, state.position, strict=True))
+        blended = tuple(
+            (1.0 - ema) * v + ema * r for v, r in zip(state.velocity, raw, strict=True)
+        )
+        speed = math.sqrt(sum(v * v for v in blended))
+        if speed > self.params.v_max:
+            blended = tuple(v * self.params.v_max / speed for v in blended)
+        return (blended[0], blended[1], blended[2])
+
+    def _spatial_score(self, position: Vec3, state: _EntityState, now: float) -> float:
+        """静止仮説と搬送仮説（等速予測）の最大スコア（D1）。"""
+        p = self.params
+        dt = max(0.0, now - state.last_seen)
+        # 静止仮説: 最終観測位置周りの時間成長ガウス。密度正規化で大σにペナルティ
+        d_static = math.dist(position, state.position)
+        sigma_eff = p.spatial_sigma * (1.0 + dt / p.sigma_growth_tau)
+        s_stationary = math.exp(-(d_static**2) / (2 * sigma_eff**2)) * (
+            p.spatial_sigma / sigma_eff
+        )
+        # 搬送仮説: 等速予測位置周りのガウス（予測誤差は時間と共に成長）
+        d_transit = math.dist(position, state.predicted_position(now))
+        sigma_tr = p.transit_sigma_base + p.transit_sigma_rate * dt
+        s_transit = p.transit_score * math.exp(-(d_transit**2) / (2 * sigma_tr**2))
+        return max(s_stationary, s_transit)
+
+    def _best_spatial(
+        self,
+        position: Vec3,
+        embedding: list[float] | None,
+        now: float,
+        used: set[str],
+    ) -> tuple[float, str] | None:
+        candidates = self._candidates(position, embedding, now, used)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda c: (c[0], c[1]))
+
+    # ----------------------------------------------------------------- claims
+
+    def _emit_claims(
+        self,
+        det: Detection,
+        entity: str,
+        track: str,
+        agent: str,
+        now: float,
+        score: float,
+    ) -> list[Claim]:
+        claims: list[Claim] = []
+        if track not in self._anchored_tracks:
+            self._anchored_tracks.add(track)
+            conf = self.params.id_confidence if det.symbol_id else max(
+                0.5, round(0.9 * score, 6)
+            )
+            claims.append(
+                self._claim(track, iri.upper("anchoredTo"), Term(kind="iri", value=entity),
+                            agent, conf, now, ttl=None)
+            )
+        if entity not in self._typed_entities:
+            self._typed_entities.add(entity)
+            claims.append(
+                self._claim(entity, iri.RDF_TYPE, Term(kind="iri", value=iri.upper("Box")),
+                            agent, det.confidence, now, ttl=None)
+            )
+        if det.symbol_id and entity not in self._identified_entities:
+            self._identified_entities.add(entity)
+            claims.append(
+                self._claim(entity, iri.upper("hasIdentifier"),
+                            Term(kind="literal", value=det.symbol_id),
+                            agent, self.params.id_confidence, now, ttl=None)
+            )
+        for pred, value in (
+            ("posX", det.position[0]),
+            ("posY", det.position[1]),
+            ("posZ", det.position[2]),
+        ):
+            claims.append(
+                self._claim(entity, iri.st(pred),
+                            Term(kind="literal", value=repr(float(value)),
+                                 datatype=iri.XSD_DOUBLE),
+                            agent, det.confidence, now, ttl=self.claim_ttl_s)
+            )
+        zone = zone_of(self.zones, det.position)
+        if zone is not None:
+            claims.append(
+                self._claim(entity, iri.st("inZone"),
+                            Term(kind="iri", value=iri.entity("zone", zone)),
+                            agent, det.confidence, now, ttl=self.claim_ttl_s)
+            )
+        return claims
+
+    # ---------------------------------------------------------------- helpers
 
     def _new_entity(self) -> str:
         return iri.entity("object", deterministic_id(self._rng))

@@ -1,0 +1,12 @@
+# ベンダーB（モバイルベース・擬似LiDAR）→ 共通検出形式へのリフティング定義
+# 形式: フラットJSON・別命名規則・センチメートル・記号識別子なし
+schema: vendor_mobile_b
+detections_path: objects
+sensor_id: lidar
+fields:
+  position:
+    x: px_cm
+    y: py_cm
+    z: pz_cm
+    units: cm
+  confidence: quality

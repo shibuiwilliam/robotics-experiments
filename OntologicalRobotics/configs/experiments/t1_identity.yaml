@@ -1,0 +1,20 @@
+# T1 越境同一性実験 (H2): OR-full vs OR−identity
+# 実行: uv run orx exp run configs/experiments/t1_identity.yaml
+name: t1-identity
+task: t1
+world_config: configs/world/t1_handoff.yaml
+conditions: [OR-full, OR-no-identity]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110,
+        111, 112, 113, 114, 115, 116, 117, 118, 119, 120]
+duration_s: 18.0
+claim_ttl_s: 5.0
+t1:
+  target_pool: [b1, b2, b3, b4]
+  decoy_pool: [n1, n2]
+  handoff_zone: handoff
+  slide_start_min: 4.0
+  slide_start_max: 6.0
+  slide_duration_s: 6.0
+  decision_offset_s: 3.0
+  land_x_half_range: 0.45
+  success_threshold_m: 0.30
