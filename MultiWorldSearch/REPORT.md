@@ -1,100 +1,103 @@
 # REPORT.md — MWS Scenario Validation Report
 
-**Date**: 2026-06-12（P10 完了後の検証本走）
-**Command**: `make scenario-all`（live）＋ `mws eval reconcile`（ゼロ差分監査）
-**Mode**: `MWS_CLOUD_MODE=live` — 実 Gemini Embedding 2（768d・v2 非対称タスク指示）＋ gemini-3.5-flash（ADK）
-**Manifest**: git `9e895f0b501e` · **git_dirty=false / git_untracked_tree=false** · seed 0 · `gemini2-768-v2` · batch=64 · モデルID/依存バージョン記録済み
-**Result**: **7/7 scenarios PASS — エラー 0** · スイート **263 passed**（mock・両シェル決定的） · ruff clean · pyright 0 errors
+**Date**: 2026-06-12（P11: 監査三角形・リプレイ・重みスイープ・並列 act 完了後の本走）
+**Command**: `make scenario-all`（live）＋ `mws eval reconcile`（**3点照合**）＋ `MWS_LLM_REPLAY` リプレイ実証 ＋ `eval tune-fusion`
+**Mode**: `MWS_CLOUD_MODE=live` — 実 Gemini Embedding 2（768d・v2 非対称）＋ gemini-3.5-flash（ADK・**並列ステップ実行**）
+**Result**: **7/7 scenarios PASS — エラー 0** · スイート **276 passed**(mock・両シェル決定的) · ruff clean · pyright 0 errors
 
-**Run IDs**: S1 `maintenance_handoff-0-b123bd4d` · S2 `physical_record_reconciliation-0-61cb572b` · S3 `collective_weak_signal-0-029da7ef` · S4 `new_sku_rampup-0-10730d72`（対照 `-9847fffb`） · S5 `incident_response-0-8a1b41c9` · S6 `counterfactual_safety-0-fea8fb81` · S7 `order_to_fulfillment-0-f0188d65`
+**Run IDs**: S1 `maintenance_handoff-0-028cc291`（リプレイ `-384110f0`） · S2 `physical_record_reconciliation-0-471042cb` · S3 `collective_weak_signal-0-7459002e` · S4 `new_sku_rampup-0-fac2a544`（対照 `-631be9dc`） · S5 `incident_response-0-3d01dc5f` · S6 `counterfactual_safety-0-3f1b7798` · S7 `order_to_fulfillment-0-29151bc0` · 重みスイープ `tune_fusion-0-df849f70`
 
 ---
 
-## 🧾 突き合わせ監査（reconciliation）— ゼロ差分
+## 🧾 突き合わせ監査 — **3点照合**でゼロ差分（M19 完了）
 
 ```
 $ mws eval reconcile --log <run.log> --runs <8 run IDs>
-actual : embedding_requests=64   llm_calls_real=17   （ログの実リクエスト行数）
-counted: embedding_requests=64   llm_calls_real=17   （metrics の計上値合計）
-delta  : 0 / 0  →  reconciled: true
+actual : embedding_requests=64  llm_calls_real=17  llm_calls_recorded=17
+counted: embedding_requests=64  llm_calls_real=17  llm_calls_recorded=17
+delta  : 0 / 0 / 0  →  reconciled: true
 ```
 
-**metrics に計上されていない実クラウド呼び出しは存在しない。** 実 LLM 17/17 全件が
-usage_metadata 実測トークンで、**全応答が `llm_calls.jsonl` に記録済み**（S1:8 / S5:8 / S7:1）。
+監査は**ログのマーカー行・metrics のカウンタ・llm_calls.jsonl の記録行**という独立生成された
+3 つのソースを照合する。記録脚の欠落・過剰はどちらも非ゼロ差分で検出される（反証テスト付き）。
+**レコーダはもう「信頼」ではなく「検証」の対象。**
 
 ## エグゼクティブサマリー（live・実測）
 
 | 指標 | 値 |
 |------|----|
-| 完了 | 7/7（＋S4 A/B 対照） |
-| Gemini Embedding 2 | **64 リクエスト / 163 テキスト**（バッチ化・ゼロ差分） |
-| 実 ADK LLM 呼 | **17**（全件実測トークン・全応答記録） |
-| クラウドコスト | **$0.00448** |
-| 帯域（実/仮想） | 890 KB / 166 KB |
-| 取込レイテンシ（perceive p50） | **全シナリオ 0.38–0.94 秒**（バッチ取込） |
-| 再現性 | manifest が SHA（dirty=false）・モデルID・バッチサイズ・依存バージョンを記録 |
+| 完了 | 7/7（＋S4 対照・＋S1 リプレイ実証） |
+| Gemini Embedding 2 | **64 リクエスト / 163 テキスト**（3点照合ゼロ差分） |
+| 実 ADK LLM 呼 | **17**（全件実測トークン・全応答記録・**並列実行**） |
+| act フェーズ | S1 **35.6→12.4 秒（-65%）**・S5 **35.1→9.9 秒（-72%）** |
+| クラウドコスト | ~$0.0045 |
 
-> **再現性の実証（M16 の成果）**: 今走の S1 は **7 ステップ計画**（前走は 8）。従来は
-> 説明不能だったこの live 揺らぎが、今回は `runs/<S1>/llm_calls.jsonl` の `purpose: plan`
-> レコードに**計画本文がそのまま記録**されており（"Isolate and lock-out pump_07" 〜 の
-> 7 項目 JSON）、変動を成果物から逐語的に検証できた。
+## P11 の成果（本走で受け入れ確認）
+
+### M19 — 監査の第3照合脚（上記）
+
+### REPLAY — 記録応答の決定的リプレイ（CLAUDE §5.1 完結）
+
+`MWS_LLM_REPLAY=runs/<S1>/llm_calls.jsonl` で同一シナリオを再実行:
+**ADK 呼 0・リプレイ 8/8・タスクゲート完全一致**（7/7 ステップ・転移 True・全 task metrics 同値）・
+**再記録なし**（リプレイ走に llm_calls.jsonl は生成されない — 監査の三角形を汚さない）・
+act 12.4 秒→**0.88 秒**。purpose 一致の順序許容マッチング（並列記録の完了順揺れに耐性）、
+不一致・枯渇は明示エラー（実クラウドへのサイレントフォールバック禁止）。live の
+record→replay 同一性テストも緑。リプレイ走は再現実験であり **reconcile の入力にはしない**（文書化済み）。
+
+### 重みスイープ — 事前登録で「現行重み確定」＋ **R@5 上限の発見**
+
+`eval tune-fusion`（run `tune_fusion-0-df849f70`）: シナリオ自身が所有するゴールデン
+（S1/S3/S5/S7 × seeds 0–1 = 8 ペア）に対し、事前登録した12候補グリッドを掃引。
+
+- **全候補で mean R@5 = 0.5029 と完全フラット**。relational_boost は R@10/nDCG を4ペアで悪化。
+- **判定（事前登録規則）: 採用なし — 現行重み確定。**
+- **より重要な発見**: R@5 には構造上限 5/n_relevant があり、**S1（n=10, max 0.50）・S3（n=13, max 0.385）・S7（n=9, max 0.556）は既に上限に張り付いている**。改善余地は S5 の1アトム（4/7→5/7）のみ。
+  **「R@5 が低い」という従来の限界記述は大部分が計測上限のアーティファクト**であり、ランキング欠陥ではない（mean 上限 0.5386 に対し実測 0.5029 = 93%）。
+
+### 並列ステップ実行（Backlog B — 読んでから実装）
+
+コード読解で S1/S5 の各ステップが**同一の事前計算済み検索射影のみを消費**し相互依存しないことを
+確認した上で、実 ADK 呼び出しを並列化（`MWS_LLM_MAX_CONCURRENCY` 既定4・結果は元順序で収集）。
+**S1 act 35.6→12.4 秒・S5 35.1→9.9 秒**、エビデンスゲート/監査ログ/コスト計上/記録の決定的
+順序は維持（usage は結果に同梱して属性付け — 共有状態レース排除、レコーダはロックで排他、
+スレッド安全テスト付き）。mock/リプレイは逐次のまま（挙動不変）。
 
 ## シナリオ別結果（全ゲート・反証テスト緑）
 
 | Sc | agent_mode | 主要結果 |
 |----|-----------|----------|
-| S1 | live | R@10 **0.90**・MRR 1.0・知覚税@10 **0.10**・relational_hits 1・**7/7 ステップ**（計画は記録済み）・スキル転移 True（信頼度 0.88） |
-| S2 | modeled | 融合 **30.048**（誤差 0.048・検索取得 2 観測）・WMS **50→30 書き戻し**（誤差 0）・差異チケット起票 |
-| S3 | modeled | **lot_L 発見**（margin 2・純度 0.6・recall 1.0）・QoR・prefetch カバレッジ 3・standing query 登録 |
-| S4 | modeled | 転移ゲイン **1.00**（実演あり成功率 1.0 / なし 0.0） |
-| S5 | live | R@10 **1.00**・SQ 自動発火・偵察派遣・SDS/出口/名簿消費・**8/8**（実 ADK・応答記録） |
-| S6 | modeled | 計算リスク 0.80/0.615 → **AVOID×2**・反実仮想アトム 2 件想起可能 |
-| S7 | live | R@10 **1.00**・E2E **1.00**・鮮度ゲート幽霊在庫→WMS 書き戻し→再発注→実 ADK 通知（応答記録） |
+| S1 | live(並列) | R@10 **0.90**・知覚税@10 0.10・relational_hits 1・**7/7**・転移 True・**リプレイで全ゲート再現** |
+| S2 | modeled | 融合誤差 0.048・MC 融合優越・WMS 50→30（誤差0）・チケット起票 |
+| S3 | modeled | lot_L 発見（margin 2・recall 1.0）・prefetch 3・H5 圧縮25.8%/保持1.00 |
+| S4 | modeled | 転移ゲイン **1.00** |
+| S5 | live(並列) | R@10 **1.00**・SQ自動発火・偵察・**8/8** |
+| S6 | modeled | リスク 0.80/0.615 → AVOID×2 |
+| S7 | live | R@10 **1.00**・E2E 1.00・鮮度ゲート→書き戻し→実ADK通知 |
 
-## レイテンシ分解（per-call 実測）
+レイテンシ: ANN ~0.04ms / embed p50 ~370–410ms / infer p50 3.7–3.9s（per-call、並列化で
+wall-clock のみ短縮 — per-call 分布は不変）。perceive 全シナリオ 0.4–0.9s。
 
-| バケット | p50 | 備考 |
-|----------|----:|------|
-| local ANN | ~0.04 ms | |
-| Gemini embed | ~370–410 ms | リクエスト単位（バッチ含む） |
-| Gemini infer | 2.8–4.2 s | S1 n=8 / S5 n=8 / S7 n=1 |
-| perceive（全シナリオ） | **0.38–0.94 s** | M17 バッチ取込の効果が全シナリオで持続 |
+## 仮説検証（全9仮説＋E1）
 
-前走で観測された S2 perceive の 7.2 秒は再現せず（今走 0.56 秒）— 一過性のネットワーク
-遅延と確定。コードに帰着する滞留は残っていない。
-
-## live multi-seed CI（v2 スキーム・seeds 0–2、前日計測）
-
-知覚税@10 **0.100 [0.100, 0.100]** / H9 融合 **0.717 [0.687, 0.746] < 0.807 [0.764, 0.850]**
-（等重み対照 0.879）/ 転移 1.000±0 / prefetch 3.0±0 / R@10 全 CI 幅 0。
-
-## 仮説検証（全9仮説＋E1・実験的結論あり）
-
-H1 支持（1.000±0）/ H2 支持（3 ストア横断・直接通信なし）/ H3 計測（0.100±0）/
-H4 支持（鮮度上書き S2/S7）/ H5 支持・計測（圧縮 25.8%・保持 1.00）/ H6 支持 /
-H7 支持（27.4×・品質比 1.06、MiniLM 代替）/ H8 支持（5 射影）/ H9 支持（CI 分離）/
-E1 支持（接頭辞 +0.056 R@5・事前登録）。
-
-## 取れていないログ/データ（IMPROVEMENT に登録）
-
-1. **M19** — **応答記録そのものが監査対象外**: `mws eval reconcile` はログ↔metrics の2点照合だが、`llm_calls.jsonl` の記録件数は照合されない。レコーダが故障しても（例外を握る変更・配線漏れ）ゼロ差分のまま気づけない。監査に第3の照合脚（`llm_calls_real == llm_calls.jsonl 行数`）を追加すべき。
-2. **（既知・任意）** `MWS_LLM_REPLAY`（記録応答の決定的リプレイ）は未実装 — 記録のみで M16 受け入れは満たすが、応答固定の A/B 比較には将来必要。
+H1–H9・E1 すべて従来どおり実験的結論あり（v2 live CI 含む、前 REPORT 参照）。
+**新規**: 融合重み「現行確定」（事前登録）・R@5 構造上限の定量化。
 
 ## 制約（既知）
 
-小規模コーパスで MRR 飽和（示唆的なのは Recall@5 = 0.39–0.57）。S6 ルールベース・
-VLA は力/軌道モデル・業務系スタブ。A2A 未実装。EmbeddingGemma は HF gated。
-Batch API の per-item token_count は None（`tokens_source` 明示）。フェーズ単体は
-1 サンプル（p95=p50、multi-seed 側で分布化）。
+R@5 は構造上限の 93%（残余は S5 の1アトムのみ — 真の改善はコーパス/ラベル設計側）。
+小規模コーパスで MRR 飽和。S6 ルールベース・VLA は力/軌道モデル・業務系スタブ。
+A2A 未実装。EmbeddingGemma は HF gated（唯一の外部ブロック項目）。Batch API token_count None。
 
 ## 再現
 
 ```bash
-make scenario-all 2> run.log                     # live 実走（ログ捕捉）
+make scenario-all 2> run.log                      # live 実走
 uv run python -m mws.cli eval reconcile \
-  --log run.log --runs <run IDs>                  # ゼロ差分監査（非0で失敗）
-cat runs/<RUN_ID>/llm_calls.jsonl                 # 実 LLM 応答の記録（live のみ）
-cat runs/<RUN_ID>/manifest.json                   # SHA/dirty/モデル/依存（再現情報）
-MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live   # live CI（見積もり表示付き）
-uv run pytest                                     # 263 tests（mock・決定的）
+  --log run.log --runs <run IDs>                   # 3点照合（非0で失敗）
+MWS_LLM_REPLAY=runs/<RUN_ID>/llm_calls.jsonl \
+  MWS_CLOUD_MODE=live uv run python -m mws.cli \
+  scenario run --name maintenance_handoff --seed 0 # 記録応答の決定的リプレイ（LLM呼0）
+uv run python -m mws.cli eval tune-fusion          # 事前登録の重みスイープ（mock）
+uv run pytest                                      # 276 tests（mock・決定的）
 ```
