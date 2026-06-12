@@ -10,9 +10,13 @@ MuJoCoシミュレーション上で Ontological Robotics（共通オントロ�
 要件: Apple Silicon Mac、Python 3.11+、[uv](https://docs.astral.sh/uv/)。**APIキー・GPU設定・ビューア不要。**
 
 ```bash
-uv sync                 # 環境構築
+uv sync                 # 環境構築（make install でも可）
 uv run orx demo         # オフラインのエンドツーエンド実行（〜1分）
 ```
+
+よく使うコマンドは `make help` に一覧（`make demo` / `make test` / `make exp-all` など）。
+live計測用の環境変数は [.env.example](.env.example) を `.env` にコピーして設定する
+（既定のオフライン動作では不要）。
 
 `orx demo` は P0 パイプライン（sim → perception → anchoring → world graph → oracle）を
 ヘッドレスで実行し、忠実度レポート（真理グラフとの差分）を表示します。
