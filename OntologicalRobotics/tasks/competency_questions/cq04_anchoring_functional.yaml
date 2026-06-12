@@ -1,0 +1,12 @@
+id: cq04_anchoring_functional
+question: "（構造CQ）現在信念で1トラックが複数個体にアンカーしていないか"
+sparql: |
+  PREFIX orx-upper: <https://orx.local/onto/upper#>
+  SELECT ?track WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?track orx-upper:anchoredTo ?e1, ?e2 .
+      FILTER(?e1 != ?e2)
+    }
+  }
+truth_fn: empty
+compare: set

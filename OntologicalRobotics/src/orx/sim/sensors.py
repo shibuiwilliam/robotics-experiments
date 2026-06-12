@@ -1,0 +1,159 @@
+"""合成検出器とベンダースキーマ観測エミッタ。
+
+検出器はシム状態を読む「センサモデル」であり、劣化ノブ（PROJECT.md §7.3）は
+ここ（sim側）にのみ実装する。anchoring/kg がノイズを知ることは禁止
+（CLAUDE.md §9）。
+
+ベンダースキーマA (`vendor_arm_a`): ネストJSON・英語略記・m単位。
+このスキーマは**意図的に異質**であり、正規化は ontology/mappings/ の仕事。
+"""
+
+from __future__ import annotations
+
+import math
+
+import mujoco
+import numpy as np
+
+from orx.common.config import DegradationConfig, RobotConfig
+from orx.common.schemas import RawObservation
+from orx.sim.mjcf import body_name
+from orx.sim.world import SimWorld
+
+
+class SensedObject:
+    """センサ内部表現（ベンダー形式に直す前）。"""
+
+    def __init__(
+        self,
+        true_object_id: str,
+        position: tuple[float, float, float],
+        barcode: str | None,
+        confidence: float,
+    ) -> None:
+        self.true_object_id = true_object_id
+        self.position = position
+        self.barcode = barcode
+        self.confidence = confidence
+
+
+def _visible(
+    world: SimWorld, robot: RobotConfig, cam_pos: np.ndarray, cam_xmat: np.ndarray,
+    target_pos: np.ndarray, target_body_id: int, robot_body_id: int,
+) -> bool:
+    """視錐台内かつ遮蔽されていないか（mj_ray による遮蔽判定）。"""
+    rel = target_pos - cam_pos
+    dist = float(np.linalg.norm(rel))
+    if dist < 1e-6 or dist > robot.detection_range:
+        return False
+    p_cam = cam_xmat.T @ rel  # カメラフレーム（-Z が視線）
+    if p_cam[2] > -1e-6:
+        return False
+    half_fov = math.radians(robot.camera.fovy) / 2
+    limit = math.tan(half_fov)
+    if abs(p_cam[0] / -p_cam[2]) > limit or abs(p_cam[1] / -p_cam[2]) > limit:
+        return False
+    direction = rel / dist
+    geomid = np.zeros(1, dtype=np.int32)
+    mujoco.mj_ray(
+        world.model, world.data, cam_pos, direction,
+        None, 1, robot_body_id, geomid,  # 自分の身体は遮蔽判定から除外
+    )
+    if geomid[0] < 0:
+        return False
+    hit_body = int(world.model.geom_bodyid[geomid[0]])
+    return hit_body == target_body_id
+
+
+def sense(
+    world: SimWorld,
+    robot: RobotConfig,
+    knobs: DegradationConfig,
+    rng: np.random.Generator,
+) -> list[SensedObject]:
+    """ロボットのカメラから見える箱を検出する（劣化ノブ適用済み）。"""
+    if knobs.observation_delay_s > 0 or knobs.contradiction_rate > 0:
+        raise NotImplementedError(
+            "observation_delay_s / contradiction_rate は P4 で実装する (T4)。"
+        )
+    view = world.camera_view(robot.name)
+    robot_body_id = world.model.body(f"robot_{robot.name}").id
+    sensed: list[SensedObject] = []
+    for box in world.config.boxes:
+        body_id = world.model.body(body_name(box.name)).id
+        true_pos = np.array(world.data.body(body_name(box.name)).xpos)
+        if not _visible(world, robot, view.pos, view.xmat, true_pos, body_id, robot_body_id):
+            continue
+        if knobs.occlusion_rate > 0 and rng.random() < knobs.occlusion_rate:
+            continue
+        noisy = true_pos + rng.normal(0.0, knobs.pose_noise_sigma, 3) \
+            if knobs.pose_noise_sigma > 0 else true_pos
+        dist = float(np.linalg.norm(true_pos - view.pos))
+        barcode: str | None = None
+        if box.barcode is not None and dist <= robot.barcode_read_range:
+            if not (knobs.id_read_failure_rate > 0 and rng.random() < knobs.id_read_failure_rate):
+                barcode = box.barcode
+        confidence = max(0.5, 1.0 - 0.05 * dist / max(robot.detection_range, 1e-6))
+        sensed.append(
+            SensedObject(
+                true_object_id=box.name,
+                position=(float(noisy[0]), float(noisy[1]), float(noisy[2])),
+                barcode=barcode,
+                confidence=round(confidence, 4),
+            )
+        )
+    return sensed
+
+
+# ----------------------------------------------------- vendor schema emitters
+
+
+def emit_vendor_arm_a(
+    robot_id: str, sim_time: float, seq: int, sensed: list[SensedObject]
+) -> RawObservation:
+    """ベンダーA形式: ネスト構造・略記キー・メートル。"""
+    payload = {
+        "hdr": {"rid": robot_id, "ts": round(sim_time, 6), "n": len(sensed)},
+        "dets": [
+            {
+                "p": {
+                    "x": round(s.position[0], 6),
+                    "y": round(s.position[1], 6),
+                    "z": round(s.position[2], 6),
+                },
+                "bc": s.barcode,
+                "cf": s.confidence,
+            }
+            for s in sensed
+        ],
+    }
+    return RawObservation(
+        robot_id=robot_id,
+        vendor_schema="vendor_arm_a",
+        sim_time=sim_time,
+        seq=seq,
+        payload=payload,
+        oracle_truth_ids=[s.true_object_id for s in sensed],
+    )
+
+
+_EMITTERS = {"vendor_arm_a": emit_vendor_arm_a}
+
+
+def observe(
+    world: SimWorld,
+    robot: RobotConfig,
+    seq: int,
+    rng: np.random.Generator,
+    knobs: DegradationConfig | None = None,
+) -> RawObservation:
+    """1ロボットの観測を、そのベンダースキーマで発行する。"""
+    emitter = _EMITTERS.get(robot.vendor_schema)
+    if emitter is None:
+        raise ValueError(
+            f"未知のベンダースキーマ {robot.vendor_schema!r}"
+            f"（対応: {sorted(_EMITTERS)}）"
+        )
+    effective = knobs if knobs is not None else world.config.degradation
+    sensed = sense(world, robot, effective, rng)
+    return emitter(robot.name, world.sim_time, seq, sensed)

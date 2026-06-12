@@ -9,28 +9,35 @@
 - [x] ツーリング: ruff（T20=print禁止）、pytest、import-linter（依存方向＋oracle分離契約）
 - [x] 空テストスイート緑（14 passed: import・CLI・アーキテクチャ契約）
 - [x] docs/IMPLEMENTATION_PLAN.md 作成
-- [ ] **計画のユーザー承認** ← いまここ（承認まで実装着手しない）
+- [x] **計画のユーザー承認**（2026-06-12、D1–D4の推奨案込み）
 
-## Phase P0 — 基盤
+## Phase P0 — 基盤 ✅（2026-06-12 完了）
 
-- [ ] P0-01 common.schemas（pydanticメッセージ）
-- [ ] P0-02 common.iri
-- [ ] P0-03 common.seeding
-- [ ] P0-04 common.logging（structlog JSONL）
-- [ ] P0-05 common.providers（openai/cache/stub）
-- [ ] P0-06 common.config（YAML＋構成ハッシュ）
-- [ ] P0-10 C1 ミニ倉庫世界 v0（1アーム・10物体・オフスクリーン224px・真値アクセサ）
-- [ ] P0-11 C1 ベンダースキーマA＋劣化ノブ骨格（全ノブ0）
-- [ ] P0-12 C4 合成検出器＋CLIP埋め込み（MPS/CPU/stub）
-- [ ] P0-13 C4 知覚パス1バッチプロファイル（性能予算比較を記録）
-- [ ] P0-14 オントロジー v0（upper/spacetime/agency TTL＋SHACL shapes）
-- [ ] P0-15 C6 kg（書込API・named graphクレーム・LanceDB索引）
-- [ ] P0-16 C5 アンカリング骨格（ID決定的＋最近傍ゲート）
-- [ ] P0-17 C8 oracle（真値ABox＋忠実度メトリクス）
-- [ ] P0-18 C9 replay（記録・マニフェスト・リプレイ同一性）
-- [ ] P0-19 CQフレームワーク＋構造CQ 3〜5問
-- [ ] P0-20 CLI（demo / sim run / replay / report / cq）
-- [ ] P0-21 **フェーズゲート** — 測定値: 忠実度F1=___（基準>0.95）、リプレイ同一性=___
+- [x] P0-01 common.schemas（pydanticメッセージ）
+- [x] P0-02 common.iri
+- [x] P0-03 common.seeding
+- [x] P0-04 common.logging（structlog JSONL）
+- [x] P0-05 common.providers（openai/cache/stub）
+- [x] P0-06 common.config（YAML＋構成ハッシュ）
+- [x] P0-10 C1 ミニ倉庫世界 v0（1アーム・8箱・オフスクリーン224px・真値アクセサ）
+- [x] P0-11 C1 ベンダースキーマA＋劣化ノブ骨格（全ノブ0、delay/contradictionはP4で実装）
+- [x] P0-12 C4 合成検出器＋CLIP埋め込み（MPS/CPU/stub）
+- [x] P0-13 C4 知覚パスプロファイル → docs/design/perf_p0.md（全予算クリア）
+- [x] P0-14 オントロジー v0（upper/spacetime/agency TTL＋SHACL shapes＋sameAs禁止shape）
+- [x] P0-15 C6 kg（書込API・named graphクレーム・調停・物質化・LanceDB索引）
+- [x] P0-16 C5 アンカリング骨格（ID決定的＋最近傍ゲート、OR−identityアブレーション切替）
+- [x] P0-17 C8 oracle（真値ABox＋忠実度メトリクス、ORコア不依存）
+- [x] P0-18 C9 replay（記録・マニフェスト・反実仮想リプレイ）
+- [x] P0-19 CQフレームワーク＋CQ 4問（tasks/competency_questions/）
+- [x] P0-20 CLI（demo / sim run / replay / report / cq / version）
+- [x] P0-21 **フェーズゲート** — 測定値（demo_tiny 12s, seed 7, ノイズ0）:
+  - 忠実度: トリプルF1=**1.000**（基準>0.95 ✓）、同一性F1=1.000、位置RMSE=0.000m、
+    遷移遅延=0.0s、取りこぼし=0、陳腐化率=0
+  - リプレイ同一性: metrics.json **バイト一致** ✓（tests/exp/test_episode.py）
+  - 反実仮想: OR-no-identity リプレイで同一性F1が劣化（条件切替が機能）
+  - 性能: 60sエピソード記録1.06s（予算120s）、リプレイ0.12s（予算30s）
+  - テスト: 108 passed（単体・CQ回帰・SHACL・リプレイ同一性・アーキテクチャ不変条件）
+  - 補足: D2のon/containsはP0世界に積み重ねが無いため未使用（語彙は定義済み、P1世界で有効化）
 
 ## Phase P1 — アンカリング・同一性（T1）
 

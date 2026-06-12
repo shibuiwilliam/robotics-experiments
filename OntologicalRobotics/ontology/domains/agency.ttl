@@ -1,0 +1,43 @@
+# ORX 主体・来歴ドメインオントロジー v0
+# 出典: PROV-O (prov:Agent, prov:wasAttributedTo, prov:generatedAtTime) を剪定・拡張。
+# 拡張点: 確信度 (confidence) と有効期間 (validUntil)、シム時間軸 (xsd:double 秒)。
+# D3方式: 各主張はクレームIDのnamed graphに入り、メタグラフでグラフIRIに本語彙を付与する。
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix orx-upper: <https://orx.local/onto/upper#> .
+@prefix orx-prov: <https://orx.local/onto/prov#> .
+
+orx-prov: a owl:Ontology ;
+    rdfs:comment "主体・来歴: 誰が・何に基づき・どの確信度で・いつ主張したか (PROV-O拡張)"@ja .
+
+orx-prov:Claim a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "主張"@ja ;
+    rdfs:comment "世界グラフへの1書込単位。named graph IRI がこのクラスのインスタンス"@ja .
+
+orx-prov:assertedBy a owl:ObjectProperty ;
+    rdfs:domain orx-prov:Claim ;
+    rdfs:range orx-upper:Agent ;
+    rdfs:comment "PROV-O prov:wasAttributedTo の剪定"@ja .
+
+orx-prov:confidence a owl:DatatypeProperty ;
+    rdfs:domain orx-prov:Claim ; rdfs:range xsd:double ;
+    rdfs:comment "[0,1]。SHACLで必須・範囲を強制"@ja .
+
+orx-prov:observedAt a owl:DatatypeProperty ;
+    rdfs:domain orx-prov:Claim ; rdfs:range xsd:double ;
+    rdfs:comment "観測シム時刻 [s] (PROV-O prov:generatedAtTime の簡約)"@ja .
+
+orx-prov:validUntil a owl:DatatypeProperty ;
+    rdfs:domain orx-prov:Claim ; rdfs:range xsd:double ;
+    rdfs:comment "有効期限シム時刻 [s]。欠落は無期限。陳腐化率監視の基礎"@ja .
+
+orx-prov:SensorAgent a owl:Class ;
+    rdfs:subClassOf orx-upper:Agent ;
+    rdfs:label "センサ主体"@ja .
+
+orx-prov:AnchoringAgent a owl:Class ;
+    rdfs:subClassOf orx-upper:Agent ;
+    rdfs:label "アンカリング主体"@ja .
