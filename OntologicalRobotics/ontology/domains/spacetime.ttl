@@ -1,0 +1,47 @@
+# ORX 時空間・事象ドメインオントロジー v0
+# 出典: OWL-Time の Instant/Interval 概念、GeoSPARQL の空間関係を剪定・簡約。
+# 時刻はシム時間 (xsd:double 秒) で表す — 実験の自己完結性を優先。
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix orx-upper: <https://orx.local/onto/upper#> .
+@prefix orx-st: <https://orx.local/onto/st#> .
+
+orx-st: a owl:Ontology ;
+    rdfs:comment "時空間・事象: ゾーン、位置、包含・支持関係、状態遷移"@ja .
+
+orx-st:Zone a owl:Class ;
+    rdfs:subClassOf orx-upper:PhysicalEntity ;
+    rdfs:label "ゾーン"@ja ;
+    rdfs:comment "名前付き空間領域。位置の離散化単位 (忠実度評価のD2述語)"@ja .
+
+orx-st:inZone a owl:ObjectProperty ;
+    rdfs:domain orx-upper:PhysicalObject ;
+    rdfs:range orx-st:Zone ;
+    rdfs:label "ゾーン内"@ja .
+
+orx-st:on a owl:ObjectProperty ;
+    rdfs:domain orx-upper:PhysicalObject ;
+    rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "上に載る"@ja ;
+    rdfs:comment "支持関係 (P1以降の積み重ね世界で使用)"@ja .
+
+orx-st:contains a owl:ObjectProperty ;
+    rdfs:domain orx-upper:PhysicalObject ;
+    rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "含む"@ja .
+
+orx-st:posX a owl:DatatypeProperty ;
+    rdfs:domain orx-upper:PhysicalEntity ; rdfs:range xsd:double ;
+    rdfs:comment "世界座標 [m]。連続位置は忠実度ではRMSEで別評価 (D2)"@ja .
+
+orx-st:posY a owl:DatatypeProperty ;
+    rdfs:domain orx-upper:PhysicalEntity ; rdfs:range xsd:double .
+
+orx-st:posZ a owl:DatatypeProperty ;
+    rdfs:domain orx-upper:PhysicalEntity ; rdfs:range xsd:double .
+
+orx-st:ZoneTransition a owl:Class ;
+    rdfs:subClassOf orx-upper:Event ;
+    rdfs:label "ゾーン遷移"@ja .

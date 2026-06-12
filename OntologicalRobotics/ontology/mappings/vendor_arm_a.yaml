@@ -1,0 +1,13 @@
+# ベンダーA（固定アーム・RGBカメラ）→ 共通検出形式へのリフティング定義
+# 形式: ネストJSON・英語略記・メートル
+schema: vendor_arm_a
+detections_path: dets
+sensor_id: rgb_cam
+fields:
+  position:
+    x: p.x
+    y: p.y
+    z: p.z
+    units: m
+  symbol_id: bc
+  confidence: cf

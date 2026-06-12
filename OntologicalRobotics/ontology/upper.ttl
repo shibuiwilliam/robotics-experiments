@@ -1,0 +1,69 @@
+# ORX 上位オントロジー v0
+# 方針 (PROJECT.md §6): 既存標準は採用・剪定・拡張。インポートせず必要概念のみ写経し出典明記。
+# 出典: BFO 2.0 の continuant/occurrent 区別、DOLCE の physical/non-physical endurant 区別を剪定。
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix orx-upper: <https://orx.local/onto/upper#> .
+
+orx-upper: a owl:Ontology ;
+    rdfs:comment "ORX上位オントロジー: 存在論的コミットメントを全層に強制する基礎層"@ja .
+
+# --- 根本区別 (出典: BFO continuant / occurrent) ---
+
+orx-upper:Continuant a owl:Class ;
+    rdfs:label "持続体"@ja ;
+    rdfs:comment "時間を通じて全体として存続する実体 (BFO:continuant を剪定)"@ja .
+
+orx-upper:Occurrent a owl:Class ;
+    rdfs:label "生起体"@ja ;
+    rdfs:comment "時間的部分を持つ出来事・過程 (BFO:occurrent を剪定)"@ja .
+
+# --- 物理的実体 / 情報的実体 (出典: DOLCE physical/non-physical endurant) ---
+
+orx-upper:PhysicalEntity a owl:Class ;
+    rdfs:subClassOf orx-upper:Continuant ;
+    rdfs:label "物理的実体"@ja .
+
+orx-upper:InformationEntity a owl:Class ;
+    rdfs:subClassOf orx-upper:Continuant ;
+    rdfs:label "情報的実体"@ja ;
+    rdfs:comment "注文・文書・トラック等。物理的実体とのカテゴリ混同を構造的に防ぐ"@ja .
+
+orx-upper:PhysicalObject a owl:Class ;
+    rdfs:subClassOf orx-upper:PhysicalEntity ;
+    rdfs:label "物理オブジェクト"@ja .
+
+orx-upper:Box a owl:Class ;
+    rdfs:subClassOf orx-upper:PhysicalObject ;
+    rdfs:label "箱"@ja .
+
+orx-upper:Agent a owl:Class ;
+    rdfs:subClassOf orx-upper:Continuant ;
+    rdfs:label "主体"@ja .
+
+orx-upper:Robot a owl:Class ;
+    rdfs:subClassOf orx-upper:Agent, orx-upper:PhysicalEntity ;
+    rdfs:label "ロボット"@ja .
+
+orx-upper:Event a owl:Class ;
+    rdfs:subClassOf orx-upper:Occurrent ;
+    rdfs:label "事象"@ja .
+
+# --- アンカリング (PROJECT.md §5.2-3: owl:sameAs 直書き禁止の代替) ---
+
+orx-upper:Track a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "知覚トラック"@ja ;
+    rdfs:comment "単一センサ系列が追跡する観測の束。物理個体への対応は anchoredTo で改訂可能に主張する"@ja .
+
+orx-upper:anchoredTo a owl:ObjectProperty ;
+    rdfs:domain orx-upper:Track ;
+    rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "アンカー先"@ja ;
+    rdfs:comment "同一性は確信度付きの改訂可能な信念。owl:sameAs は使わない"@ja .
+
+orx-upper:hasIdentifier a owl:DatatypeProperty ;
+    rdfs:domain orx-upper:Continuant ;
+    rdfs:label "記号識別子"@ja ;
+    rdfs:comment "バーコード等。アイデンティティ・スレッドの結節点"@ja .

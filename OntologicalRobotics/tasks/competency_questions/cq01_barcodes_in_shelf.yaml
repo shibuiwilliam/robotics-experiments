@@ -1,0 +1,14 @@
+id: cq01_barcodes_in_shelf
+question: "棚A (shelf_a) に現在ある識別子付きの箱のバーコードは何か"
+sparql: |
+  PREFIX orx-upper: <https://orx.local/onto/upper#>
+  PREFIX orx-st: <https://orx.local/onto/st#>
+  SELECT ?bc WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?e orx-st:inZone <https://orx.local/id/zone/shelf_a> ;
+         orx-upper:hasIdentifier ?bc .
+    }
+  }
+truth_fn: barcodes_in_zone
+truth_args: {zone: shelf_a}
+compare: set
