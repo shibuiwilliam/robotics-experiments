@@ -87,6 +87,8 @@ class SimWorld:
         start = tuple(float(v) for v in self.data.body(body_name(move.box)).xpos)
         self._active_slides.append((move, start, dest))
 
+    _SLIDE_LIFT = 0.35  # 搬送アークの最大持ち上げ [m]（他の箱を薙ぎ倒さない）
+
     def _advance_slides(self) -> None:
         if not self._active_slides:
             return
@@ -94,8 +96,15 @@ class SimWorld:
         remaining: list[tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]] = []
         for move, start, dest in self._active_slides:
             alpha = min(1.0, (now - move.at_time) / move.duration_s)
-            pos = tuple(s + alpha * (d - s) for s, d in zip(start, dest, strict=True))
-            self._set_box_pose(move.box, (pos[0], pos[1], pos[2]))
+            # クレーン状の3相: 垂直上昇(15%) → 水平移動(70%) → 垂直降下(15%)。
+            # 隣接箱を横移動で薙ぎ倒さないために相を分離する。
+            a_up = min(1.0, alpha / 0.15)
+            a_move = min(1.0, max(0.0, (alpha - 0.15) / 0.70))
+            a_down = min(1.0, max(0.0, (alpha - 0.85) / 0.15))
+            x = start[0] + a_move * (dest[0] - start[0])
+            y = start[1] + a_move * (dest[1] - start[1])
+            z = start[2] + a_move * (dest[2] - start[2]) + self._SLIDE_LIFT * (a_up - a_down)
+            self._set_box_pose(move.box, (x, y, z))
             if alpha < 1.0:
                 remaining.append((move, start, dest))
         self._active_slides = remaining

@@ -1,0 +1,68 @@
+# ORX 業務・文書ドメインオントロジー v0
+# 受注・SKU・出荷指示・SOP文書。すべて情報的実体（物理的実体とのカテゴリ混同を防ぐ）。
+# アイデンティティ・スレッド: Order → ShippingInstruction → barcode(リテラル) →
+# 物理個体の orx-upper:hasIdentifier と同値結合で橋渡しする。
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix orx-upper: <https://orx.local/onto/upper#> .
+@prefix orx-biz: <https://orx.local/onto/biz#> .
+
+orx-biz: a owl:Ontology ;
+    rdfs:comment "業務・文書: WMSレコードとSOP文書の語彙"@ja .
+
+orx-biz:Order a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "受注"@ja .
+
+orx-biz:Sku a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "SKU"@ja .
+
+orx-biz:ShippingInstruction a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "出荷指示"@ja .
+
+orx-biz:Document a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "文書（SOP等）"@ja .
+
+orx-biz:ordersSku a owl:ObjectProperty ;
+    rdfs:domain orx-biz:Order ; rdfs:range orx-biz:Sku .
+
+orx-biz:forOrder a owl:ObjectProperty ;
+    rdfs:domain orx-biz:ShippingInstruction ; rdfs:range orx-biz:Order .
+
+orx-biz:hasBarcode a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:ShippingInstruction ; rdfs:range xsd:string ;
+    rdfs:comment "物理個体の orx-upper:hasIdentifier と結合する識別子の糸"@ja .
+
+orx-biz:status a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Order ; rdfs:range xsd:string .
+
+orx-biz:destination a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Order ; rdfs:range xsd:string .
+
+orx-biz:quantity a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Order ; rdfs:range xsd:integer .
+
+orx-biz:skuName a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Sku ; rdfs:range xsd:string .
+
+orx-biz:weightKg a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Sku ; rdfs:range xsd:double .
+
+orx-biz:fragile a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Sku ; rdfs:range xsd:boolean .
+
+orx-biz:appliesTo a owl:ObjectProperty ;
+    rdfs:domain orx-biz:Document ;
+    rdfs:comment "SOP文書が適用される対象クラス/SKU（T7 オントロジー誘導検索）"@ja .
+
+orx-biz:situation a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Document ; rdfs:range xsd:string ;
+    rdfs:comment "手順書の適用状況タグ (handling / damage / storage)"@ja .
+
+orx-biz:docTitle a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Document ; rdfs:range xsd:string .

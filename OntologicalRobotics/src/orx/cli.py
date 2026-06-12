@@ -147,7 +147,13 @@ def exp_run(
 
     シード毎に1回記録し、全条件を反実仮想リプレイで対比較する。
     """
-    from orx.exp.runner import load_experiment, run_experiment, write_experiment_report
+    from orx.common.providers import CacheMissError
+    from orx.exp.runner import (
+        load_experiment,
+        run_experiment,
+        summarize,
+        write_experiment_report,
+    )
 
     try:
         config = load_experiment(experiment_config)
@@ -157,17 +163,15 @@ def exp_run(
         )
         exp_dir, result = run_experiment(config, runs_root(), progress=typer.echo)
         report_path = write_experiment_report(exp_dir, reports_dir())
+    except CacheMissError as exc:
+        _fail(f"{exc}\n（オフライン実行は provider.mode を stub にしてください）")
+        return
     except (ConfigError, ValueError, FileNotFoundError) as exc:
         _fail(str(exc))
         return
     typer.echo("")
-    typer.echo("条件別タスク成功率:")
-    for condition, rate in result.success_rates.items():
-        typer.echo(f"  {condition:<18} {rate:.3f}")
-    for cmp in result.comparisons:
-        typer.echo(
-            f"McNemar ({cmp.condition_a} vs {cmp.condition_b}): p = {cmp.mcnemar_p:.2e}"
-        )
+    for line in summarize(result):
+        typer.echo(line)
     typer.echo(f"結果: {exp_dir / 'results.json'}")
     typer.echo(f"レポート: {report_path}")
 
