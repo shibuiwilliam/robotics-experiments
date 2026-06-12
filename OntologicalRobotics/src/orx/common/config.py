@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -72,15 +72,24 @@ class RobotConfig(StrictModel):
     vendor_schema: str  # ontology/mappings/ のマッピング名と一致
     camera: CameraConfig
     detection_range: float = 4.0
-    barcode_read_range: float = 2.5
+    barcode_read_range: float = 2.5  # 0.0 = 記号ID読取不可（擬似LiDAR等）
+    visual_embedding: bool = True  # False = 埋め込み無し（LiDAR系センサ）
 
 
 class ScriptedMove(StrictModel):
-    """評価用の状態遷移イベント: at_time に box を to_zone へ移す。"""
+    """評価用の状態遷移イベント。
+
+    mode="teleport": at_time に瞬間移動（P0互換）。
+    mode="slide": at_time から duration_s かけて等速で移動（時空間連続性が保たれ、
+    アンカリングの動きゲートで追跡可能 — T1の搬送イベントに使う）。
+    """
 
     box: str
     at_time: float
     to_zone: str
+    mode: Literal["teleport", "slide"] = "teleport"
+    duration_s: float = 0.0
+    offset: tuple[float, float] = (0.0, 0.0)  # ゾーン中心からのxyオフセット
 
 
 class DegradationConfig(StrictModel):
@@ -107,12 +116,23 @@ class WorldConfig(StrictModel):
 
 
 class AnchoringParams(StrictModel):
-    """C5 アンカリングのパラメータ（D1: 重み・閾値はコンフィグ駆動）。"""
+    """C5 アンカリングのパラメータ（D1: 2仮説スコア、重み・閾値はコンフィグ駆動）。
 
-    gate_radius: float = 0.30  # 時空間ゲート [m]
-    spatial_sigma: float = 0.15  # 空間スコアの尺度 [m]
+    空間スコアは「静止仮説」（時間で広がるガウス、密度正規化で大σにペナルティ）と
+    「搬送仮説」（運動コーン内の定常尤度、休眠時間と共に立ち上がる）の最大値。
+    埋め込みコサイン類似は乗法的に変調する（双対表現, H4）。
+    """
+
+    spatial_sigma: float = 0.06  # 静止仮説の基底σ [m]（センサノイズより十分大きく）
+    sigma_growth_tau: float = 2.0  # σ成長の時定数 [s]（σ_eff = σ·(1+Δt/τ)）
+    transit_score: float = 0.50  # 搬送仮説の上限スコア
+    transit_sigma_base: float = 0.20  # 等速予測の残差σ基底 [m]
+    transit_sigma_rate: float = 0.10  # 予測誤差の成長率 [m/s]
+    v_max: float = 0.75  # 速度推定のクランプ [m/s]
+    velocity_ema: float = 0.5  # 速度推定の指数移動平均係数
+    w_embedding: float = 0.4  # 埋め込み変調の強さ（factor = 1-w + w·cos）
+    theta_merge: float = 0.10  # マッチ採用の最低スコア
     id_confidence: float = 0.98  # 記号ID一致時の確信度
-    new_entity_confidence: float = 0.90
     enabled: bool = True  # False = OR−identity アブレーション（検出毎に新個体）
 
 

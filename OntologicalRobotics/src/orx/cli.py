@@ -133,18 +133,61 @@ def replay(
     _echo_fidelity(fidelity)
 
 
+exp_app = typer.Typer(help="実験の実行（`orx exp run`）")
+app.add_typer(exp_app, name="exp")
+
+
+@exp_app.command("run")
+def exp_run(
+    experiment_config: Path = typer.Argument(
+        ..., help="実験コンフィグ (configs/experiments/*.yaml)"
+    ),
+) -> None:
+    """条件×シード×タスクの実験を実行し、結果とレポートを出力する。
+
+    シード毎に1回記録し、全条件を反実仮想リプレイで対比較する。
+    """
+    from orx.exp.runner import load_experiment, run_experiment, write_experiment_report
+
+    try:
+        config = load_experiment(experiment_config)
+        typer.echo(
+            f"実験 {config.name}: task={config.task} "
+            f"conditions={config.conditions} seeds={len(config.seeds)}"
+        )
+        exp_dir, result = run_experiment(config, runs_root(), progress=typer.echo)
+        report_path = write_experiment_report(exp_dir, reports_dir())
+    except (ConfigError, ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
+        return
+    typer.echo("")
+    typer.echo("条件別タスク成功率:")
+    for condition, rate in result.success_rates.items():
+        typer.echo(f"  {condition:<18} {rate:.3f}")
+    for cmp in result.comparisons:
+        typer.echo(
+            f"McNemar ({cmp.condition_a} vs {cmp.condition_b}): p = {cmp.mcnemar_p:.2e}"
+        )
+    typer.echo(f"結果: {exp_dir / 'results.json'}")
+    typer.echo(f"レポート: {report_path}")
+
+
 @app.command()
 def report(
-    run_id: str = typer.Argument(..., help="data/runs/ 配下の run ID"),
+    target_id: str = typer.Argument(..., help="data/runs/ 配下の run ID または exp ID"),
 ) -> None:
-    """runのMarkdownレポートを reports/ に再生成する。"""
+    """run/実験のMarkdownレポートを reports/ に再生成する。"""
     from orx.exp.report import write_run_report
+    from orx.exp.runner import RESULTS, write_experiment_report
 
-    run_dir = runs_root() / run_id
-    if not run_dir.exists():
-        _fail(f"run が見つかりません: {run_dir}")
+    target_dir = runs_root() / target_id
+    if not target_dir.exists():
+        _fail(f"run/exp が見つかりません: {target_dir}")
     try:
-        out = write_run_report(run_dir, reports_dir())
+        if (target_dir / RESULTS).exists():
+            out = write_experiment_report(target_dir, reports_dir())
+        else:
+            out = write_run_report(target_dir, reports_dir())
     except (ValueError, FileNotFoundError) as exc:
         _fail(str(exc))
         return

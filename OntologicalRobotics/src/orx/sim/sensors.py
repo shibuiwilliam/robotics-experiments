@@ -137,7 +137,38 @@ def emit_vendor_arm_a(
     )
 
 
-_EMITTERS = {"vendor_arm_a": emit_vendor_arm_a}
+def emit_vendor_mobile_b(
+    robot_id: str, sim_time: float, seq: int, sensed: list[SensedObject]
+) -> RawObservation:
+    """ベンダーB形式: フラット構造・別命名規則・センチメートル・ID読取なし。
+
+    擬似LiDAR想定 — 記号識別子フィールド自体が存在しない（意図的異質性）。
+    """
+    payload = {
+        "device_serial": robot_id,
+        "stamp_ms": round(sim_time * 1000.0, 3),
+        "frame_no": seq,
+        "objects": [
+            {
+                "px_cm": round(s.position[0] * 100.0, 4),
+                "py_cm": round(s.position[1] * 100.0, 4),
+                "pz_cm": round(s.position[2] * 100.0, 4),
+                "quality": s.confidence,
+            }
+            for s in sensed
+        ],
+    }
+    return RawObservation(
+        robot_id=robot_id,
+        vendor_schema="vendor_mobile_b",
+        sim_time=sim_time,
+        seq=seq,
+        payload=payload,
+        oracle_truth_ids=[s.true_object_id for s in sensed],
+    )
+
+
+_EMITTERS = {"vendor_arm_a": emit_vendor_arm_a, "vendor_mobile_b": emit_vendor_mobile_b}
 
 
 def observe(

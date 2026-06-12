@@ -136,7 +136,9 @@ def record_episode(
     world = SimWorld(config.world, seeds.child("sim"))
     embedder = make_visual_embedder(config.visual_embedder)
     pipelines = {
-        r.name: PerceptionPipeline(load_mapping(r.vendor_schema), embedder)
+        r.name: PerceptionPipeline(
+            load_mapping(r.vendor_schema), embedder if r.visual_embedding else None
+        )
         for r in config.world.robots
     }
     sense_rngs = {r.name: seeds.child("sense").child(r.name).rng() for r in config.world.robots}
@@ -183,7 +185,10 @@ def record_episode(
                     obs = observe(world, robot, seq[robot.name], sense_rngs[robot.name])
                     seq[robot.name] += 1
                     writer.append_observation(obs)
-                    image, view = world.render(robot.name)
+                    if robot.visual_embedding:
+                        image, view = world.render(robot.name)
+                    else:
+                        image, view = None, None  # LiDAR系: 描画・埋め込み不要
                     event = pipelines[robot.name].process(obs, image, view)
                     writer.append_event(event)
                     stage.consume_event(event, writer)

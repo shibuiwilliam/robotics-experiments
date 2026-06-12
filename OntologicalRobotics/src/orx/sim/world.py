@@ -39,6 +39,9 @@ class SimWorld:
         self._pending_moves: list[ScriptedMove] = sorted(
             config.scripted_moves, key=lambda m: m.at_time
         )
+        self._active_slides: list[
+            tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]
+        ] = []
         self._zones = {z.name: z for z in config.zones}
 
     # ------------------------------------------------------------------ time
@@ -51,21 +54,51 @@ class SimWorld:
         """target_time まで物理を進める。スクリプト移動は期日に適用する。"""
         while self.data.time < target_time - 1e-9:
             while self._pending_moves and self._pending_moves[0].at_time <= self.data.time:
-                self._apply_move(self._pending_moves.pop(0))
+                self._start_move(self._pending_moves.pop(0))
+            self._advance_slides()
             mujoco.mj_step(self.model, self.data)
+        self._advance_slides()
 
-    def _apply_move(self, move: ScriptedMove) -> None:
+    def _move_target(self, move: ScriptedMove) -> tuple[float, float, float]:
         zone = self._zones.get(move.to_zone)
         if zone is None:
             raise ValueError(f"scripted move {move.box!r}: 未定義ゾーン {move.to_zone!r}")
         box = next(b for b in self.config.boxes if b.name == move.box)
-        jnt = self.model.joint(joint_name(move.box))
+        return (
+            zone.center[0] + move.offset[0],
+            zone.center[1] + move.offset[1],
+            zone.center[2] - zone.size[2] / 2 + box.size + 0.002,
+        )
+
+    def _set_box_pose(self, box_name: str, pos: tuple[float, float, float]) -> None:
+        jnt = self.model.joint(joint_name(box_name))
         adr = jnt.qposadr[0]
-        z = zone.center[2] - zone.size[2] / 2 + box.size + 0.002
-        self.data.qpos[adr : adr + 3] = [zone.center[0], zone.center[1], z]
+        self.data.qpos[adr : adr + 3] = pos
         self.data.qpos[adr + 3 : adr + 7] = [1.0, 0.0, 0.0, 0.0]
         dofadr = jnt.dofadr[0]
         self.data.qvel[dofadr : dofadr + 6] = 0.0
+
+    def _start_move(self, move: ScriptedMove) -> None:
+        dest = self._move_target(move)
+        if move.mode == "teleport" or move.duration_s <= 0:
+            self._set_box_pose(move.box, dest)
+            mujoco.mj_forward(self.model, self.data)
+            return
+        start = tuple(float(v) for v in self.data.body(body_name(move.box)).xpos)
+        self._active_slides.append((move, start, dest))
+
+    def _advance_slides(self) -> None:
+        if not self._active_slides:
+            return
+        now = float(self.data.time)
+        remaining: list[tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]] = []
+        for move, start, dest in self._active_slides:
+            alpha = min(1.0, (now - move.at_time) / move.duration_s)
+            pos = tuple(s + alpha * (d - s) for s, d in zip(start, dest, strict=True))
+            self._set_box_pose(move.box, (pos[0], pos[1], pos[2]))
+            if alpha < 1.0:
+                remaining.append((move, start, dest))
+        self._active_slides = remaining
         mujoco.mj_forward(self.model, self.data)
 
     # ----------------------------------------------------------------- truth
