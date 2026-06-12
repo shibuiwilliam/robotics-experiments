@@ -74,3 +74,22 @@
 - 日付: 2026-06-12 / 状態: 採用
 - リプレイ同一性は FidelityReport の正準JSON（sort_keys, ensure_ascii=False, indent=2）
   同士のバイト比較で判定（orx/replay/io.py metrics_json）。壁時計を含むマニフェストは対象外。
+
+## ADR-013: シナリオのコードは src/、宣言的仕様は tasks/（D1）
+- 日付: 2026-06-13 / 状態: 採用（ユーザー承認）
+- SCENARIOS.md §3.3 は `tasks/suites/s{N}_{slug}/` にタスク生成器・採点器・反証テストを置くと
+  規定するが、`orx scenario` CLI はインストール済みパッケージ `orx` から import して実行するため、
+  パッケージ外の `tasks/` の Python は import できない（src-layout の技術的制約。既存 T1〜T7 も
+  `src/orx/exp/suites/` にある）。
+- 解決: シナリオの**コード**は `src/orx/exp/suites/s{N}_{slug}/`（importable サブパッケージ）、
+  `tasks/suites/s{N}_{slug}/` は**宣言的仕様**（README・CQ参照・固定フィクスチャ）、pytest は
+  `tests/scenarios/s{N}/`。§3.3 のディレクトリ名を宣言的成果物で尊重しつつ CLI から import 可能に保つ。
+
+## ADR-014: 反証は条件別リファレンスソルバ（情報層）で証明（D2）
+- 日付: 2026-06-13 / 状態: 採用（ユーザー承認）
+- 反証テストは LLM 層ではなく**情報/表現層**で B0/B1 の構造的失敗を証明する。各条件が許す情報・
+  ツールのみを引数に取る決定的ソルバを実装（B0=生データダンプ, B1=ロボット個別スキーマ＋ツール
+  （共通オントロジー無し）, OR-full=世界グラフ＋アイデンティティ・スレッド）。「B0/B1 は参照連鎖が
+  情報内に存在せず構造的に不完全、OR-full は成功」をアサート。LLM不要・決定的・stubで常時CI実行。
+  理想推論器でも B0 は解けない（情報経路が無い）ためリギングではない。T2 `OR-reference` の一般化。
+- リギング防止: B0ソルバは世界グラフ/識別子スレッドを引数に取らない（型・引数で機械的に担保）。
