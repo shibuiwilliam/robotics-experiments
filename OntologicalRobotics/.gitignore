@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+build/
+
+# Secrets — APIキーは環境変数からのみ読む (CLAUDE.md §1)
+.env
+
+# 実験成果物 (PROJECT.md §11 — runs/ と cache/ はコミットしない)
+data/runs/
+data/cache/
+
+# macOS
+.DS_Store
