@@ -8,7 +8,11 @@
 
 ## 1. 未完課題
 
-**なし。** 実装可能な登録課題はすべて消化済み（P1–P11）。
+### M20 — manifest が「何が dirty か」を記録しない（**Low・再現性の最後の一歩**）
+
+- **現状**: manifest は `git_dirty: bool` を記録するが、dirty な**パス一覧は記録しない**。2026-06-12 の検証本走で `git_dirty: true` が記録された際、原因（REPORT.md が作業ツリーから削除されていた — コードは SHA と一致、計測影響なし）の特定に manifest の外（`git status`）が必要だった。
+- **修正案**: `get_git_state()` が `git status --porcelain -- .` の結果から dirty パスの先頭 N 件（例 20）を `git_dirty_paths` として manifest に含める（既にコマンドは実行している — 出力を捨てているだけ）。
+- **受け入れ基準**: dirty な状態で生成した manifest 単体から「何が dirty だったか」が読める。clean なら空リスト。テスト付き。
 
 ---
 
