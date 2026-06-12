@@ -603,6 +603,23 @@ class CollectiveWeakSignalScenario(BaseScenario):
             "recall_retention": round(recall_retention, 4),
         }
 
+    def golden_eval(self) -> tuple[RetrievalQuery, set[str]]:
+        """Golden evaluation pair (defect query + sim-truth relevance) —
+        single source for evaluate() and the fusion-tuning harness."""
+        relevant = derive_relevance(
+            query_entity_ids=list(LOT_L_OBJECTS),
+            query_tags=["defect", "micro_defect", "weak_signal", "lot_L"],
+            atoms=self._atoms,
+        )
+        defect_query = RetrievalQuery(
+            text="micro defect weak signal quality anomaly lot inspection",
+            tags=["defect", "micro_defect", "weak_signal"],
+            structured_filters={"defect_type": "micro_defect"},
+            consumer=ConsumerType.LLM,
+            top_k=20,
+        )
+        return defect_query, relevant
+
     def evaluate(self) -> dict[str, Any]:
         """Compute cluster purity, recall, and scenario-specific metrics."""
         assert self.engine is not None
@@ -619,18 +636,7 @@ class CollectiveWeakSignalScenario(BaseScenario):
         signal_purity = defect_in_lot_l / total_defect_atoms if total_defect_atoms > 0 else 0.0
 
         # --- Retrieval metrics for defect query ---
-        relevant = derive_relevance(
-            query_entity_ids=list(LOT_L_OBJECTS),
-            query_tags=["defect", "micro_defect", "weak_signal", "lot_L"],
-            atoms=self._atoms,
-        )
-        defect_query = RetrievalQuery(
-            text="micro defect weak signal quality anomaly lot inspection",
-            tags=["defect", "micro_defect", "weak_signal"],
-            structured_filters={"defect_type": "micro_defect"},
-            consumer=ConsumerType.LLM,
-            top_k=20,
-        )
+        defect_query, relevant = self.golden_eval()
         defect_results = self.engine.search(defect_query)
         retrieved_ids = [r.atom_id for r in defect_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)

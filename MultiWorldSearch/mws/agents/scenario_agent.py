@@ -64,14 +64,18 @@ def create_step_agent(
                 "Set the env var or switch to MWS_CLOUD_MODE=mock."
             )
         from mws.agents.live import ADKOpsAgent
+        from mws.agents.ops_agent import _replay_source
 
-        logger.info("Creating live ADK step agent", name=name)
+        replay_source = _replay_source(settings)
+        logger.info("Creating live ADK step agent", name=name, replay=replay_source is not None)
         agent = ADKOpsAgent(
             api_key=settings.google_api_key,
             seed=settings.seed,
             name=name,
             instruction=instruction,
-            call_recorder=call_recorder,
+            # Replayed runs must not re-record (audit third leg stays honest).
+            call_recorder=None if replay_source is not None else call_recorder,
+            replay_source=replay_source,
         )
         agent.is_live = True  # type: ignore[attr-defined]
         return agent

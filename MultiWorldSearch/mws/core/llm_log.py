@@ -30,8 +30,12 @@ class LLMCallRecorder:
     """Appends one JSONL line per real LLM call to a run artifact file."""
 
     def __init__(self, path: Path) -> None:
+        import threading
+
         self._path = Path(path)
         self._count = 0
+        # Concurrent step execution (Backlog B) appends from worker threads.
+        self._lock = threading.Lock()
 
     @property
     def path(self) -> Path:
@@ -68,8 +72,66 @@ class LLMCallRecorder:
             "tokens_measured": tokens_measured,
             "latency_ms": round(latency_ms, 1),
         }
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._path, "a") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        self._count += 1
+        with self._lock:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._path, "a") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._count += 1
         logger.debug("LLM call recorded", purpose=purpose, n=self._count)
+
+
+class ReplayMismatchError(RuntimeError):
+    """The next recorded call does not match the requested (agent, purpose)."""
+
+
+class ReplayExhaustedError(RuntimeError):
+    """More calls requested than were recorded."""
+
+
+class LLMReplaySource:
+    """Deterministic replay of a recorded llm_calls.jsonl (CLAUDE.md §5.1).
+
+    Each (agent, purpose) consumes the FIRST unconsumed matching record —
+    order-tolerant because parallel step execution (Backlog B) records lines
+    in completion order, which can permute across runs, while (agent, purpose)
+    pairs stay unique and deterministic. Any miss or exhaustion raises loudly;
+    silently falling through to a real cloud call would corrupt both the
+    experiment and the reconciliation audit.
+
+    Replayed calls make NO cloud round-trips: callers must not log the real-
+    call marker, must not re-record, and replayed runs are reproduction
+    artifacts — they are NOT valid inputs to ``mws eval reconcile``.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+        lines = [ln for ln in self._path.read_text().splitlines() if ln.strip()]
+        self._records: list[dict] = [json.loads(ln) for ln in lines]
+        self._consumed: list[bool] = [False] * len(self._records)
+        logger.info("LLM replay source loaded", path=str(path), n_records=len(self._records))
+
+    @property
+    def remaining(self) -> int:
+        return self._consumed.count(False)
+
+    def next(self, *, agent: str, purpose: str) -> dict:
+        """Consume and return the first unconsumed record for (agent, purpose)."""
+        if self.remaining == 0:
+            raise ReplayExhaustedError(
+                f"replay exhausted after {len(self._records)} records; "
+                f"requested ({agent!r}, {purpose!r})"
+            )
+        for i, record in enumerate(self._records):
+            if self._consumed[i]:
+                continue
+            if record.get("agent") == agent and record.get("purpose") == purpose:
+                self._consumed[i] = True
+                return record
+        unconsumed = [
+            (r.get("agent"), r.get("purpose"))
+            for i, r in enumerate(self._records)
+            if not self._consumed[i]
+        ]
+        raise ReplayMismatchError(
+            f"no recorded call matches ({agent!r}, {purpose!r}); remaining: {unconsumed}"
+        )

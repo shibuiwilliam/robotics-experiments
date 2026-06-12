@@ -49,6 +49,18 @@ class MWSSettings(BaseSettings):
         default="google/embeddinggemma-300m",
         description="Local student embedding model id (H7). Requires the 'student' extra.",
     )
+    llm_max_concurrency: int = Field(
+        default=4,
+        description="Max concurrent real LLM step calls (Backlog B; 1 = sequential)",
+    )
+    llm_replay: str = Field(
+        default="",
+        description=(
+            "Path to a recorded llm_calls.jsonl. When set, live agents replay "
+            "the recorded responses deterministically — zero cloud calls "
+            "(CLAUDE.md §5.1). Replayed runs are NOT valid reconcile inputs."
+        ),
+    )
     google_api_key: str = Field(default="", description="Gemini API key (live mode only)")
 
     @classmethod

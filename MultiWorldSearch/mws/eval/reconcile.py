@@ -5,8 +5,11 @@ LIVE run, the ground truth of cloud usage is the run log itself:
 
 - every real Gemini Embedding 2 API REQUEST logs one ``Gemini embedding call``
   line (mws/embedding/teacher.py — a batched request embedding N texts logs
-  ONE line with n_texts=N, and counts as ONE request in metrics; E2), and
-- every real ADK LLM call logs one ``ADK call`` line (mws/agents/live.py).
+  ONE line with n_texts=N, and counts as ONE request in metrics; E2),
+- every real ADK LLM call logs one ``ADK call`` line (mws/agents/live.py), and
+- every real ADK LLM call appends one line to ``runs/<RUN_ID>/llm_calls.jsonl``
+  (mws/core/llm_log.py) — the THIRD leg (M19), so the recorder itself is
+  audited rather than trusted.
 
 This module counts those lines and diffs them against the summed metrics of
 the run's artifacts. A non-zero delta means a real cloud call escaped the
@@ -57,14 +60,45 @@ def sum_run_metrics(run_dirs: list[Path]) -> dict[str, int]:
     return totals
 
 
+def sum_recorded_llm_calls(run_dirs: list[Path]) -> int:
+    """Third audit leg (M19): recorded real-LLM responses across runs.
+
+    Counts llm_calls.jsonl lines per run dir. A missing file counts as 0 —
+    consistent with mock runs, which make no real calls and create no file.
+    This leg is produced INDEPENDENTLY of the log markers and the metrics
+    counters (the recorder appends at call time), so a broken recorder shows
+    up as a non-zero delta instead of being silently trusted.
+    """
+    total = 0
+    for run_dir in run_dirs:
+        path = run_dir / "llm_calls.jsonl"
+        if path.exists():
+            total += sum(1 for line in path.read_text().splitlines() if line.strip())
+    return total
+
+
 def reconcile(log_path: Path, run_dirs: list[Path]) -> dict[str, Any]:
-    """Diff actual (log markers) vs counted (metrics) cloud calls.
+    """3-way diff: log markers vs metrics counters vs recorded responses.
+
+    The three legs are independently produced (logger lines, cost-tracker
+    counters, recorder JSONL appends) — never derived from each other. The
+    recorded leg is compared against BOTH other legs through llm_calls_real:
+    actual carries the marker count, counted carries the metrics count, and
+    ``llm_calls_recorded`` carries the JSONL line count on each side of the
+    diff so a recorder failure (M19) surfaces as a non-zero delta.
 
     Returns {"actual": ..., "counted": ..., "delta": ..., "reconciled": bool}.
     delta = actual - counted per category; reconciled iff all deltas are 0.
     """
     actual = count_log_markers(Path(log_path).read_text())
     counted = sum_run_metrics(run_dirs)
+    recorded = sum_recorded_llm_calls(run_dirs)
+    # Third leg: recorded responses must equal the real-call count seen in the
+    # LOG (actual side) and in the METRICS (counted side). Expressing it as
+    # actual=marker-count vs counted=recorded-count diffs it against both:
+    # marker==metrics is already enforced by llm_calls_real itself.
+    actual["llm_calls_recorded"] = actual["llm_calls_real"]
+    counted["llm_calls_recorded"] = recorded
     delta = {k: actual[k] - counted[k] for k in actual}
     reconciled = all(v == 0 for v in delta.values())
     result = {
