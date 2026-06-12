@@ -1,0 +1,44 @@
+# ORX 能力・行為ドメインオントロジー v0
+# 出典: IEEE 1872 CORA / SOMA のアフォーダンス・能力概念を剪定・簡約。
+# 能力契約は「身体化されたAPIスキーマ」: スキル種別・アフォーダンス・成功率統計。
+# 統計は実行エピソードで較正され続ける（T6, H3）。
+
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix orx-upper: <https://orx.local/onto/upper#> .
+@prefix orx-cap: <https://orx.local/onto/cap#> .
+
+orx-cap: a owl:Ontology ;
+    rdfs:comment "能力・行為: 能力契約と実行エピソード統計（能力台帳）"@ja .
+
+orx-cap:Capability a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "能力契約セル"@ja ;
+    rdfs:comment "(ロボット, スキル, 素材タグ) 毎の能力主張と経験統計"@ja .
+
+orx-cap:forRobot a owl:ObjectProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range orx-upper:Robot .
+
+orx-cap:skillType a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:string .
+
+orx-cap:materialTag a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:string .
+
+orx-cap:declaredPayloadKg a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:double .
+
+orx-cap:declaredReachM a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:double .
+
+orx-cap:trials a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:integer ;
+    rdfs:comment "実行エピソード数（関数的: 最新が現在値）"@ja .
+
+orx-cap:successes a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:Capability ; rdfs:range xsd:integer .
+
+orx-cap:SkillExecution a owl:Class ;
+    rdfs:subClassOf orx-upper:Event ;
+    rdfs:label "スキル実行エピソード"@ja .

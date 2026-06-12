@@ -33,9 +33,15 @@ class T2RunParams(StrictModel):
     provider: ProviderConfig = ProviderConfig()
 
 
+class T3RunParams(StrictModel):
+    n_episodes: int = 30
+    epsilon: float = 0.10
+    dest_zone: str = "dock"
+
+
 class ExperimentConfig(StrictModel):
     name: str
-    task: Literal["t1", "t2", "t7"]
+    task: Literal["t1", "t2", "t3", "t7"]
     world_config: str  # リポジトリルート相対
     conditions: list[str]
     seeds: list[int]
@@ -43,6 +49,7 @@ class ExperimentConfig(StrictModel):
     claim_ttl_s: float = 5.0
     t1: t1_suite.T1Params | None = None
     t2: T2RunParams | None = None
+    t3: T3RunParams | None = None
     t7: T2RunParams | None = None  # providerのみ（T2と同形）
 
 
@@ -86,6 +93,7 @@ class T2ExperimentResult(StrictModel):
 _VALID_CONDITIONS = {
     "t1": set(CONDITIONS),
     "t2": set(T2_CONDITIONS),
+    "t3": {"capability", "round-robin"},
     "t7": set(T7_CONDITIONS),
 }
 
@@ -98,12 +106,9 @@ def load_experiment(path: Path) -> ExperimentConfig:
         raise ValueError(f"未知の条件 {unknown}（対応: {sorted(valid)}）")
     if len(config.conditions) < 2:
         raise ValueError("条件は2つ以上必要です（対比較のため）")
-    if config.task == "t1" and config.t1 is None:
-        raise ValueError("task=t1 には t1: セクションが必要です")
-    if config.task == "t2" and config.t2 is None:
-        raise ValueError("task=t2 には t2: セクションが必要です")
-    if config.task == "t7" and config.t7 is None:
-        raise ValueError("task=t7 には t7: セクションが必要です")
+    for task_name in ("t1", "t2", "t3", "t7"):
+        if config.task == task_name and getattr(config, task_name) is None:
+            raise ValueError(f"task={task_name} には {task_name}: セクションが必要です")
     return config
 
 
@@ -121,9 +126,125 @@ def run_experiment(
     base_world = load_config(repo_root() / config.world_config, WorldConfig)
     if config.task == "t2":
         return _run_t2(config, exp_dir, base_world, notify)
+    if config.task == "t3":
+        return _run_t3(config, exp_dir, base_world, notify)
     if config.task == "t7":
         return _run_t7(config, exp_dir, base_world, notify)
     return _run_t1(config, exp_dir, base_world, notify)
+
+
+class T3ExperimentResult(StrictModel):
+    task: Literal["t3"] = "t3"
+    exp_id: str
+    name: str
+    config_hash: str
+    seeds: list[int]
+    conditions: list[str]
+    n_tasks_total: int
+    allocation_accuracy: dict[str, float]
+    replans: int
+    brier_first5_mean: float
+    brier_last5_mean: float
+    calibration_mae_first5: float
+    calibration_mae_last5: float
+    episode_curves: dict[str, list[float]]
+    comparisons: list[PairedComparison]
+
+
+def _run_t3(
+    config: ExperimentConfig, exp_dir: Path, base_world: WorldConfig, notify: object
+) -> tuple[Path, T3ExperimentResult]:
+    assert config.t3 is not None and callable(notify)
+    from orx.business.db import WmsRecord
+    from orx.exp.suites import t3 as t3_suite
+    from orx.exp.suites.t2 import prepare_graph
+    from orx.skills.server import SkillServer
+
+    params = config.t3
+    paired_all: list[tuple[bool, bool]] = []
+    replans_total = 0
+    per_episode_brier: list[list[float]] = []  # Brier信頼性項（較正の本体）
+    per_episode_raw_brier: list[list[float]] = []
+    per_episode_mae: list[list[float]] = []
+
+    for seed in config.seeds:
+        run_config = RunConfig(
+            world=base_world,
+            duration_s=config.duration_s,
+            root_seed=seed,
+            claim_ttl_s=config.claim_ttl_s,
+        )
+        run_id, _ = record_episode(run_config, exp_dir / "episodes", run_id=f"seed{seed}")
+        run_dir = exp_dir / "episodes" / run_id
+        reader = RunReader(run_dir)
+        final_truth = list(reader.truth_states())[-1]
+        # 知覚→グラフ（計画の窓）。WMSは不要なので空レコードで構築。
+        graph = prepare_graph(
+            run_dir, "OR-full", WmsRecord(orders=[], skus=[], instructions=[]),
+            at_time=final_truth.sim_time,
+        )
+        seeds_tree = SeedTree(seed)
+        server = SkillServer(base_world, seeds_tree.child("skills").rng())
+        ledger = t3_suite.CapabilityLedger(graph, seeds_tree)
+        metrics, paired, replans = t3_suite.run_learning_episodes(
+            base_world, graph, server, ledger, seeds_tree,
+            params.n_episodes, params.epsilon, params.dest_zone,
+            graph_time=final_truth.sim_time,
+        )
+        paired_all.extend(paired)
+        replans_total += replans
+        per_episode_brier.append([m.brier_reliability for m in metrics])
+        per_episode_raw_brier.append([m.brier for m in metrics])
+        per_episode_mae.append([m.calibration_mae for m in metrics])
+        notify(
+            f"  seed={seed}: brier(reliability) "
+            f"{metrics[0].brier_reliability:.3f}→{metrics[-1].brier_reliability:.3f} "
+            f"calib {metrics[0].calibration_mae:.3f}→{metrics[-1].calibration_mae:.3f}"
+        )
+
+    n_episodes = params.n_episodes
+    mean_brier = [
+        sum(c[m] for c in per_episode_brier) / len(per_episode_brier)
+        for m in range(n_episodes)
+    ]
+    mean_mae = [
+        sum(c[m] for c in per_episode_mae) / len(per_episode_mae)
+        for m in range(n_episodes)
+    ]
+    cap_ok = [p[0] for p in paired_all]
+    rr_ok = [p[1] for p in paired_all]
+    stats_rng = SeedTree(config.seeds[0]).child("bootstrap").rng()
+    comparisons = [
+        compare_conditions("capability", "round-robin", cap_ok, rr_ok, stats_rng)
+    ]
+    result = T3ExperimentResult(
+        exp_id=exp_dir.name,
+        name=config.name,
+        config_hash=config_hash(config),
+        seeds=list(config.seeds),
+        conditions=list(config.conditions),
+        n_tasks_total=len(paired_all),
+        allocation_accuracy={
+            "capability": sum(cap_ok) / len(cap_ok),
+            "round-robin": sum(rr_ok) / len(rr_ok),
+        },
+        replans=replans_total,
+        brier_first5_mean=round(sum(mean_brier[:5]) / 5, 6),
+        brier_last5_mean=round(sum(mean_brier[-5:]) / 5, 6),
+        calibration_mae_first5=round(sum(mean_mae[:5]) / 5, 6),
+        calibration_mae_last5=round(sum(mean_mae[-5:]) / 5, 6),
+        episode_curves={
+            "brier": [round(v, 6) for v in mean_brier],
+            "raw_brier": [
+                round(sum(c[m] for c in per_episode_raw_brier) / len(per_episode_raw_brier), 6)
+                for m in range(n_episodes)
+            ],
+            "calibration_mae": [round(v, 6) for v in mean_mae],
+        },
+        comparisons=comparisons,
+    )
+    (exp_dir / RESULTS).write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return exp_dir, result
 
 
 class T7ExperimentResult(StrictModel):
@@ -451,7 +572,9 @@ def render_t2_report(result: T2ExperimentResult) -> str:
     return "\n".join(lines)
 
 
-def summarize(result: ExperimentResult | T2ExperimentResult | T7ExperimentResult) -> list[str]:
+def summarize(
+    result: ExperimentResult | T2ExperimentResult | T3ExperimentResult | T7ExperimentResult,
+) -> list[str]:
     """CLI表示用の要約行。"""
     lines: list[str] = []
     if isinstance(result, T7ExperimentResult):
@@ -460,6 +583,18 @@ def summarize(result: ExperimentResult | T2ExperimentResult | T7ExperimentResult
             lines.append(f"  {c:<14} {result.accuracies[c]:.3f}")
         if result.embedding_mode == "stub":
             lines.append("  ※ stub埋め込み: vector-rag はハーネス検証のみ")
+    elif isinstance(result, T3ExperimentResult):
+        lines.append("割当正答率:")
+        for c, v in result.allocation_accuracy.items():
+            lines.append(f"  {c:<14} {v:.3f}")
+        lines.append(
+            f"Brier: 序盤5ep平均 {result.brier_first5_mean:.3f} → "
+            f"終盤5ep平均 {result.brier_last5_mean:.3f}"
+        )
+        lines.append(
+            f"較正MAE: {result.calibration_mae_first5:.3f} → "
+            f"{result.calibration_mae_last5:.3f} / 再計画 {result.replans} 回"
+        )
     elif isinstance(result, T2ExperimentResult):
         lines.append("条件別正答率（/1kトークン効率）:")
         for c in result.conditions:
@@ -485,6 +620,50 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
 
     data = json.loads((exp_dir / RESULTS).read_text(encoding="utf-8"))
     out_dir.mkdir(parents=True, exist_ok=True)
+    if data.get("task") == "t3":
+        t3_result = T3ExperimentResult.model_validate(data)
+        out_path = out_dir / f"{t3_result.exp_id}.md"
+        curve = t3_result.episode_curves["brier"]
+        mae_curve = t3_result.episode_curves["calibration_mae"]
+        lines = [
+            f"# ORX Experiment Report — `{t3_result.exp_id}`",
+            "",
+            f"- タスク: t3/t6（能力考慮計画・較正, H3） / タスク数: "
+            f"{t3_result.n_tasks_total} / 構成ハッシュ: `{t3_result.config_hash}`",
+            "",
+            "## 割当品質 (T3)",
+            "",
+            "| 条件 | 割当正答率 |",
+            "|------|-----------|",
+            *[
+                f"| {c} | {v:.3f} |"
+                for c, v in t3_result.allocation_accuracy.items()
+            ],
+            "",
+            *[
+                f"- McNemar ({c.condition_a} vs {c.condition_b}): p = {c.mcnemar_p:.2e}"
+                f"（差CI95 [{c.diff_ci_low:.3f}, {c.diff_ci_high:.3f}]）"
+                for c in t3_result.comparisons
+            ],
+            f"- 再計画回数: {t3_result.replans}",
+            "",
+            "## 較正曲線 (T6)",
+            "",
+            f"- Brier: 序盤5ep {t3_result.brier_first5_mean:.4f} → "
+            f"終盤5ep {t3_result.brier_last5_mean:.4f}",
+            f"- 較正MAE: {t3_result.calibration_mae_first5:.4f} → "
+            f"{t3_result.calibration_mae_last5:.4f}",
+            "",
+            "| ep | Brier | 較正MAE |",
+            "|----|-------|---------|",
+            *[
+                f"| {i + 1} | {curve[i]:.4f} | {mae_curve[i]:.4f} |"
+                for i in range(len(curve))
+            ],
+            "",
+        ]
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        return out_path
     if data.get("task") == "t7":
         t7_result = T7ExperimentResult.model_validate(data)
         out_path = out_dir / f"{t7_result.exp_id}.md"
