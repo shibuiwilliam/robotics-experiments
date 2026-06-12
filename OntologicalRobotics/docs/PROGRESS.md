@@ -162,3 +162,32 @@
 T7 vector-rag、T5 llm支援、メタモルフィック、H7知識効率。概算 0.9〜1.5Mトークン。
 手順: 各 configs/experiments/*.yaml の provider.mode を openai にして
 `uv run orx exp run <config>`（全応答キャッシュ→以後 mode=cache で再現・無料）。
+
+## シナリオ・プログラム（T8〜T14、SCENARIOS.md v1.0）
+
+計画: `docs/SCENARIO_IMPLEMENTATION_PLAN.md`（承認済み 2026-06-13）。決定 D1/D2/spec-commit 解決済み
+（ADR-013/014）。前提監査 PASS（P0〜P5 完了・158 tests green）。
+
+### 共通インフラ X1〜X6（各シナリオと同時に実装）
+- [ ] X1 割込み指示イベント（S1と同時）
+- [ ] X2 接触イベント蒸留（S2と同時）
+- [ ] X3 状態リセットイベント（S2と同時）
+- [ ] X4 ID無し同一性解決（S6と同時）
+- [ ] X5 人間アクタ（S5/S7時）
+- [ ] X6 非対称コスト採点（S6と同時）
+
+### CLI・レポート拡張
+- [ ] `orx scenario list` / `scenario demo s{n}` / `scenario run <cfg>`
+- [ ] `orx report` シナリオテンプレート（失敗予言検証・頑健性曲線・トークン効率）
+
+### Tier A → M-Scenario-A
+- [ ] S1 ロット回収（T8 / X1 / H2,H6,H7）— 受入: ノイズ0で列挙F1=1.0・完遂率100%・反証green
+- [ ] S2 アレルゲン（T9 / X2,X3 / H5）— 受入: 汚染F1=1.0・違反0・見落とし掃引で曲線分離
+- [ ] S6 リサイクル（T13 / X4,X6 / H4）— 受入: コスト加重で OR-full > 両アブレ・較正曲線
+- [ ] M-Scenario-A: 3シナリオ×全条件の比較レポート提示
+
+### Tier B（Tier Aゲート後）
+- [ ] S3 製造ライン（T10 / H1,H3） / [ ] S7 介護（T14 / H2,H4,H6） / [ ] S4 プラント（T11 / H2,H5）
+
+### Tier C（Tier Bゲート後・規範層新設）
+- [ ] S5 病院（T12 / 規範層 / normative.ttl）
