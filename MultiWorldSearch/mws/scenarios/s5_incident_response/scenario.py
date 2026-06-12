@@ -290,9 +290,30 @@ class IncidentResponseScenario(BaseScenario):
             "receive_recon",
             "finalize_plan",
         ]
-        for step in agent_steps:
+
+        # Steps are independent (same pre-computed projection, no cross-step
+        # dependency) → concurrent real ADK calls (Backlog B), results gathered
+        # in original order. Mock/replay stay sequential.
+        def _execute(step: str) -> dict[str, Any]:
             with _infer_cm():
-                result = agent.execute_step(step, {"retrieval_results": incident_projected})
+                return agent.execute_step(step, {"retrieval_results": incident_projected})
+
+        parallel = (
+            is_live
+            and not getattr(agent, "is_replay", False)
+            and self.settings.llm_max_concurrency > 1
+            and len(agent_steps) > 1
+        )
+        if parallel:
+            from concurrent.futures import ThreadPoolExecutor
+
+            workers = min(self.settings.llm_max_concurrency, len(agent_steps))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                step_results = list(pool.map(_execute, agent_steps))
+        else:
+            step_results = [_execute(step) for step in agent_steps]
+
+        for step, result in zip(agent_steps, step_results, strict=True):
             required = _STEP_REQUIRED_EVIDENCE.get(step)
             if required is not None and required not in retrieved_tags:
                 result = {
@@ -307,9 +328,9 @@ class IncidentResponseScenario(BaseScenario):
                 f"execute_{step}",
                 details=result,
             )
-            # Track LLM cost (real cloud call only in live mode — M8;
-            # measured tokens from usage_metadata when available — M13)
-            step_usage = getattr(agent, "last_usage", None) if is_live else None
+            # Track LLM cost (real cloud call only in live mode — M8; measured
+            # tokens ride in the result for thread-safe attribution — M13/B)
+            step_usage = result.get("usage") if is_live else None
             self.cost.record_llm_call(
                 input_tokens=(
                     step_usage["input_tokens"]
@@ -393,12 +414,9 @@ class IncidentResponseScenario(BaseScenario):
             details=self._incident_plan,
         )
 
-    def evaluate(self) -> dict[str, Any]:
-        """Phase 7: Compute metrics and save report."""
-        assert self.engine is not None
-        assert self.audit is not None
-
-        # Ground-truth relevance
+    def golden_eval(self) -> tuple[RetrievalQuery, set[str]]:
+        """Golden evaluation pair (incident query + sim-truth relevance) —
+        single source for evaluate() and the fusion-tuning harness."""
         relevant = derive_relevance(
             query_entity_ids=["leak_source", "room_B"],
             query_tags=[
@@ -412,7 +430,6 @@ class IncidentResponseScenario(BaseScenario):
             ],
             atoms=self._atoms,
         )
-        # Re-run query for retrieval metrics
         eval_query = RetrievalQuery(
             text="substance_X leak safety SDS exit duty roster incident response",
             tags=["sds", "safety", "substance_X", "leak"],
@@ -420,6 +437,15 @@ class IncidentResponseScenario(BaseScenario):
             consumer=ConsumerType.LLM,
             top_k=10,
         )
+        return eval_query, relevant
+
+    def evaluate(self) -> dict[str, Any]:
+        """Phase 7: Compute metrics and save report."""
+        assert self.engine is not None
+        assert self.audit is not None
+
+        # Ground-truth relevance
+        eval_query, relevant = self.golden_eval()
         eval_results = self.engine.search(eval_query)
         retrieved_ids = [r.atom_id for r in eval_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)

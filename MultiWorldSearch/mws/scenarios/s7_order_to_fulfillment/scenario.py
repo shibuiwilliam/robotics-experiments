@@ -588,25 +588,29 @@ class OrderToFulfillmentScenario(BaseScenario):
             details=self._erp_status,
         )
 
-    def evaluate(self) -> dict[str, Any]:
-        """Compute metrics and save report."""
-        assert self.engine is not None
-        assert self.audit is not None
-
-        # Ground-truth relevance
+    def golden_eval(self) -> tuple[RetrievalQuery, set[str]]:
+        """Golden evaluation pair (fulfillment query + sim-truth relevance) —
+        single source for evaluate() and the fusion-tuning harness."""
         relevant = derive_relevance(
             query_entity_ids=["sku_A", "sku_B", "sku_C", "ORD-501"],
             query_tags=["wms", "inventory", "order", "observation", "ghost_inventory"],
             atoms=self._atoms,
         )
-
-        # Re-run a combined query for retrieval metrics
         combined_query = RetrievalQuery(
             text="order fulfillment sku_A sku_B sku_C inventory ghost",
             tags=["order", "inventory", "wms"],
             consumer=ConsumerType.LLM,
             top_k=10,
         )
+        return combined_query, relevant
+
+    def evaluate(self) -> dict[str, Any]:
+        """Compute metrics and save report."""
+        assert self.engine is not None
+        assert self.audit is not None
+
+        # Ground-truth relevance
+        combined_query, relevant = self.golden_eval()
         combined_results = self.engine.search(combined_query)
         retrieved_ids = [r.atom_id for r in combined_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)

@@ -270,9 +270,33 @@ class MaintenanceHandoffScenario(BaseScenario):
             response_chars=len(str(plan_steps)),
             real=is_live,
         )
-        for step in plan_steps:
+
+        # Steps are independent (each consumes the SAME pre-computed retrieval
+        # projection; no step reads another's LLM output), so real ADK calls
+        # run concurrently (Backlog B). Results are gathered back in ORIGINAL
+        # step order, so evidence gating, audit logs, cost records, and
+        # metrics stay deterministic. Mock agents stay sequential (no benefit,
+        # byte-identical behavior); replay stays sequential by design.
+        def _execute(step: str) -> dict[str, Any]:
             with _infer_cm():
-                result = agent.execute_step(step, {"retrieval_results": ops_projected})
+                return agent.execute_step(step, {"retrieval_results": ops_projected})
+
+        parallel = (
+            is_live
+            and not getattr(agent, "is_replay", False)
+            and self.settings.llm_max_concurrency > 1
+            and len(plan_steps) > 1
+        )
+        if parallel:
+            from concurrent.futures import ThreadPoolExecutor
+
+            workers = min(self.settings.llm_max_concurrency, len(plan_steps))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                step_results = list(pool.map(_execute, plan_steps))
+        else:
+            step_results = [_execute(step) for step in plan_steps]
+
+        for step, result in zip(plan_steps, step_results, strict=True):
             # Gate completion on retrieved evidence.
             required = _STEP_REQUIRED_EVIDENCE.get(step)
             evidence_present = required is None or required in retrieved_tags
@@ -287,8 +311,10 @@ class MaintenanceHandoffScenario(BaseScenario):
                 "act", "ops_agent", f"execute_{step}", entity_id="pump_07", details=result
             )
 
-            # Track LLM cost
-            step_usage = getattr(agent, "last_usage", None) if is_live else None
+            # Track LLM cost — usage rides in the result (thread-safe
+            # attribution; the shared agent.last_usage is racy under
+            # concurrency and must not be read here).
+            step_usage = result.get("usage") if is_live else None
             self.cost.record_llm_call(
                 input_tokens=(
                     step_usage["input_tokens"]
@@ -353,18 +379,18 @@ class MaintenanceHandoffScenario(BaseScenario):
             },
         )
 
-    def evaluate(self) -> dict[str, Any]:
-        """Compute metrics and save report."""
-        assert self.engine is not None
-        assert self.audit is not None
+    def golden_eval(self) -> tuple[RetrievalQuery, set[str]]:
+        """Golden evaluation pair: the flagship ops query + sim-truth relevance.
 
-        # Ground-truth relevance for OpsAgent query
+        Single source of truth for this scenario's retrieval gold — consumed
+        by evaluate(), the ablation study, and the fusion-tuning harness
+        (eval tune-fusion), so the definitions can never drift apart.
+        """
         relevant = derive_relevance(
             query_entity_ids=["pump_07", "valve_03"],
             query_tags=["maintenance", "pump_07", "anomaly", "bearing", "sop"],
             atoms=self._atoms,
         )
-        # Re-run the query to get IDs
         ops_query = RetrievalQuery(
             text="pump_07 anomaly vibration temperature maintenance procedure bearing",
             tags=["maintenance", "pump_07", "anomaly"],
@@ -374,6 +400,14 @@ class MaintenanceHandoffScenario(BaseScenario):
             consumer=ConsumerType.LLM,
             top_k=10,
         )
+        return ops_query, relevant
+
+    def evaluate(self) -> dict[str, Any]:
+        """Compute metrics and save report."""
+        assert self.engine is not None
+        assert self.audit is not None
+
+        ops_query, relevant = self.golden_eval()
         ops_results = self.engine.search(ops_query)
         retrieved_ids = [r.atom_id for r in ops_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)

@@ -225,6 +225,30 @@ def eval_e1_ab() -> None:
     click.echo(json.dumps(result, indent=2, default=str))
 
 
+@eval_cmd.command("tune-fusion")
+def eval_tune_fusion() -> None:
+    """Pre-registered RRF weight sweep on scenario-owned golden pairs (mock).
+
+    Renders the pre-registered verdict (adopt / current confirmed) and records
+    the sweep table to runs/. Adoption additionally requires the golden test
+    suite and a live confirmation — never applied automatically here.
+    """
+    import json
+    import uuid
+
+    from mws.core.config import get_settings
+    from mws.eval.report import create_manifest, save_report
+    from mws.eval.tune_fusion import run_fusion_tuning
+
+    settings = get_settings()
+    result = run_fusion_tuning()
+    run_id = f"tune_fusion-{settings.seed}-{uuid.uuid4().hex[:8]}"
+    manifest = create_manifest(run_id=run_id, scenario="tune_fusion", seed=settings.seed)
+    save_report(run_id=run_id, manifest=manifest, metrics=result)
+    result["run_id"] = run_id
+    click.echo(json.dumps(result, indent=2, default=str))
+
+
 @eval_cmd.command("multi-seed")
 @click.option("--scenarios", default="", help="Comma-separated scenario names (default: all)")
 @click.option("--seeds", default="0,1,2,3", help="Comma-separated seeds")

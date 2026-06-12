@@ -97,6 +97,7 @@ class ADKOpsAgent:
         name: str = "ops_agent",
         instruction: str | None = None,
         call_recorder: Any = None,
+        replay_source: Any = None,
     ) -> None:
         import os
 
@@ -115,6 +116,12 @@ class ADKOpsAgent:
         #: prompt/response/tokens/latency is appended to the run's
         #: llm_calls.jsonl so live variance is explainable after the fact.
         self._call_recorder = call_recorder
+        #: Optional LLMReplaySource (REPLAY) — when set, calls return the
+        #: recorded responses deterministically: NO cloud round-trip, NO
+        #: "ADK call" marker, NO re-recording (a replayed run must never look
+        #: like a measured run to the reconciliation audit).
+        self._replay = replay_source
+        self.is_replay = replay_source is not None
 
         tools: list[Any] = []
         if search_fn is not None:
@@ -129,9 +136,36 @@ class ADKOpsAgent:
 
         logger.info("ADK agent initialized", name=name, model=model, n_tools=len(tools))
 
-    def _run_agent(self, message: str, purpose: str = "call") -> list[Any]:
-        """Run the ADK agent with a message, handling async properly."""
+    def _run_agent(self, message: str, purpose: str = "call") -> tuple[list[Any], dict | None]:
+        """Run the ADK agent; returns (events, usage).
+
+        Usage is RETURNED (not only stored on ``last_usage``) so concurrent
+        step execution attributes tokens to the right call — the shared
+        attribute is kept for backward compatibility but is racy under
+        parallelism and must not be read by parallel callers.
+        """
         import time
+
+        if self._replay is not None:
+            # Deterministic replay: fabricate one minimal event carrying the
+            # recorded response text so ALL downstream parsing (plan JSON
+            # scan, _extract_text) behaves exactly as in the original run.
+            from types import SimpleNamespace
+
+            record = self._replay.next(agent=self._name, purpose=purpose)
+            usage = (
+                {
+                    "input_tokens": int(record.get("input_tokens", 0)),
+                    "output_tokens": int(record.get("output_tokens", 0)),
+                }
+                if record.get("tokens_measured")
+                else None
+            )
+            self.last_usage = usage
+            logger.debug("LLM call replayed", agent=self._name, purpose=purpose)
+            part = SimpleNamespace(text=record.get("response", ""))
+            events = [SimpleNamespace(content=SimpleNamespace(parts=[part]), usage_metadata=None)]
+            return events, usage
 
         from google.adk.runners import InMemoryRunner
 
@@ -147,22 +181,22 @@ class ADKOpsAgent:
         coro = runner.run_debug(message, quiet=True)
         events = _run_async(coro)
         latency_ms = (time.perf_counter() - start) * 1000
-        self.last_usage = _extract_usage(events)
+        usage = _extract_usage(events)
+        self.last_usage = usage
 
         if self._call_recorder is not None:
-            usage = self.last_usage or {}
             self._call_recorder.record(
                 agent=self._name,
                 model=self._model,
                 purpose=purpose,
                 prompt=message,
                 response=_extract_text(events),
-                input_tokens=int(usage.get("input_tokens", 0)),
-                output_tokens=int(usage.get("output_tokens", 0)),
-                tokens_measured=self.last_usage is not None,
+                input_tokens=int((usage or {}).get("input_tokens", 0)),
+                output_tokens=int((usage or {}).get("output_tokens", 0)),
+                tokens_measured=usage is not None,
                 latency_ms=latency_ms,
             )
-        return events
+        return events, usage
 
     def plan(self, context: dict[str, Any]) -> list[str]:
         """Generate a maintenance plan using ADK agent with tool-use loop."""
@@ -172,7 +206,7 @@ class ADKOpsAgent:
             for r in retrieval_results[:10]
         )
 
-        events = self._run_agent(
+        events, _usage = self._run_agent(
             f"Based on this context, generate a maintenance plan. "
             f"Return ONLY a JSON list of step name strings.\n\nContext:\n{context_text}",
             purpose="plan",
@@ -213,7 +247,7 @@ class ADKOpsAgent:
             f"- {r.get('text', r.get('text_summary', ''))}" for r in retrieval_results[:5]
         )
 
-        events = self._run_agent(
+        events, usage = self._run_agent(
             f"Execute step: '{step}'.\nContext:\n{context_text}\n"
             f"Describe the action and result in 1-2 sentences.",
             purpose=f"step:{step}",
@@ -222,9 +256,13 @@ class ADKOpsAgent:
         result_text = _extract_text(events) or f"Step {step} executed."
 
         logger.info("ADK agent step executed", step=step)
+        # ``usage`` rides along in the result so CONCURRENT step execution
+        # (Backlog B) attributes measured tokens to the right call — callers
+        # must read result["usage"], never the racy shared last_usage.
         return {
             "action": step,
             "result": result_text,
             "status": "complete",
             "model": self._model,
+            "usage": usage,
         }

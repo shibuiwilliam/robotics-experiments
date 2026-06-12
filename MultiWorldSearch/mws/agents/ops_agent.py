@@ -43,12 +43,27 @@ def create_ops_agent(
             )
         from mws.agents.live import ADKOpsAgent
 
-        logger.info("Creating live ADK ops agent")
+        replay_source = _replay_source(settings)
+        logger.info("Creating live ADK ops agent", replay=replay_source is not None)
         return ADKOpsAgent(
             api_key=settings.google_api_key,
             seed=settings.seed,
             search_fn=search_fn,
-            call_recorder=call_recorder,
+            # A replayed run is a reproduction, not a measurement: it must not
+            # append to llm_calls.jsonl (the audit's third leg).
+            call_recorder=None if replay_source is not None else call_recorder,
+            replay_source=replay_source,
         )
 
     return MockOpsAgent(seed=settings.seed)
+
+
+def _replay_source(settings: MWSSettings) -> Any:
+    """Build an LLMReplaySource when MWS_LLM_REPLAY is set (else None)."""
+    if not settings.llm_replay:
+        return None
+    from pathlib import Path
+
+    from mws.core.llm_log import LLMReplaySource
+
+    return LLMReplaySource(Path(settings.llm_replay))
