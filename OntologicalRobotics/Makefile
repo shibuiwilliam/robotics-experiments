@@ -4,15 +4,17 @@
 
 .PHONY: help install format lint lint-fix test test-v test-cq test-arch check \
         demo cq exp-t1 exp-t2 exp-t3 exp-t4 exp-t5 exp-t7 exp-all \
-        onboard-demo profile clean
+        onboard-demo profile clean \
+        scenario-list scenario-demo scenario-s1 \
+        scenario-run-all scenario-demo-all scenario-test scenario-validate scenario-all
 
 # .env があれば読み込んで子プロセスへ渡す（OPENAI_API_KEY 等。.env は gitignore 済み）
 -include .env
 export
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ── Setup ──────────────────────────────────────────────────────────
 
@@ -79,6 +81,41 @@ exp-all: exp-t1 exp-t2 exp-t3 exp-t4 exp-t5 exp-t7 ## Run all offline experiment
 
 onboard-demo: ## New-robot onboarding workflow demo (T5)
 	uv run orx onboard configs/robots/fuzzed_vendor_x.yaml
+
+# ── Scenarios (T8–T14, business use-cases, offline) ────────────────
+# 「実行」= experiment を回しレポート生成 / 「検証」= demo(反証アサート, 失敗時非零) ＋ pytest。
+
+scenario-list: ## List registered business scenarios (T8–T14)
+	uv run orx scenario list
+
+scenario-demo: ## Demo+validate one scenario offline: make scenario-demo S=s1
+	@test -n "$(S)" || { echo "usage: make scenario-demo S=s1"; exit 2; }
+	uv run orx scenario demo $(S)
+
+scenario-s1: ## S1 lot-recall (T8): demo(validate) + experiment + report + tests
+	uv run orx scenario demo s1
+	uv run orx scenario run configs/experiments/s1_lot_recall.yaml
+	uv run pytest tests/scenarios/s1 -q
+
+scenario-run-all: ## Run every scenario experiment (configs/experiments/s*_*.yaml) + report
+	@found=0; \
+	for f in configs/experiments/s*_*.yaml; do \
+		[ -e "$$f" ] || continue; found=1; \
+		echo "=== run $$f ==="; uv run orx scenario run "$$f" || exit 1; \
+	done; \
+	[ "$$found" = 1 ] || echo "（シナリオ実験コンフィグが未だありません）"
+
+scenario-demo-all: ## Demo+validate every registered scenario (反証 green を全件アサート)
+	@for s in $$(uv run orx scenario list | awk 'NR>1 {print $$1}'); do \
+		echo "=== demo $$s ==="; uv run orx scenario demo "$$s" || exit 1; \
+	done
+
+scenario-test: ## Run all scenario test suites (oracle/falsification/replay/metamorphic/SHACL)
+	uv run pytest tests/scenarios -q
+
+scenario-validate: scenario-demo-all scenario-test ## Validate ALL scenarios (demos + test suites)
+
+scenario-all: scenario-run-all scenario-test ## Run + validate ALL scenarios end-to-end
 
 # ── Housekeeping ───────────────────────────────────────────────────
 
