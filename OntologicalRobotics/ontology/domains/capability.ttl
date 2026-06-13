@@ -42,3 +42,13 @@ orx-cap:successes a owl:DatatypeProperty ;
 orx-cap:SkillExecution a owl:Class ;
     rdfs:subClassOf orx-upper:Event ;
     rdfs:label "スキル実行エピソード"@ja .
+
+# --- S2 洗浄イベント（T9, X3） ---
+orx-cap:CleaningEvent a owl:Class ;
+    rdfs:subClassOf orx-upper:Event ;
+    rdfs:label "洗浄イベント"@ja ;
+    rdfs:comment "対象の獲得汚染をリセットする浄化イベント（X3）"@ja .
+
+orx-cap:cleans a owl:ObjectProperty ;
+    rdfs:domain orx-cap:CleaningEvent ; rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "洗浄対象"@ja .

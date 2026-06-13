@@ -1,0 +1,11 @@
+# S2 アレルゲン交差汚染実験（T9, H5）— 完全オフライン（決定的リファレンスソルバ）
+# 反証: B0(履歴なし)/B1(横断融合なし) は推移閉包を解けず汚染把持を許可（安全違反）、
+# OR−belief は洗浄リセットを無視し許可把持を拒否（過保守）、OR-full のみ違反0・過保守0。
+name: s2-allergen
+scenario: s2
+world_config: configs/world/s2_allergen.yaml
+conditions: [OR-full, OR-belief, B1, B0]
+seeds: [201, 202, 203, 204, 205, 206, 207, 208]
+duration_s: 0.0
+knob: contact_miss_rate
+knob_values: [0.0, 0.2, 0.4, 0.6]

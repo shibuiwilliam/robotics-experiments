@@ -51,3 +51,18 @@ orx-st:QuarantineZone a owl:Class ;
     rdfs:subClassOf orx-st:Zone ;
     rdfs:label "隔離ゾーン"@ja ;
     rdfs:comment "回収対象個体を隔離する区画"@ja .
+
+# --- S2 アレルゲン交差汚染（T9, X2） ---
+orx-st:ContactEvent a owl:Class ;
+    rdfs:subClassOf orx-upper:Event ;
+    rdfs:label "接触イベント"@ja ;
+    rdfs:comment "2実体の接触。汚染の推移閉包の基礎（X2 蒸留）"@ja .
+
+orx-st:contactParty a owl:ObjectProperty ;
+    rdfs:domain orx-st:ContactEvent ; rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "接触当事者"@ja .
+
+orx-st:possiblyContaminatedBy a owl:ObjectProperty ;
+    rdfs:domain orx-upper:PhysicalObject ;
+    rdfs:label "汚染可能性"@ja ;
+    rdfs:comment "接触推移閉包から導出される時刻依存の汚染主張（導出専用）"@ja .

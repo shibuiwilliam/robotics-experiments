@@ -26,3 +26,24 @@ orx-sh:MemberOfLotShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:message "memberOfLot の値は orx-biz:Lot 型でなければならない（識別子スレッドの整合）"@ja ;
     ] .
+
+# --- S2 アレルゲン交差汚染（T9） ---
+@prefix orx-st: <https://orx.local/onto/st#> .
+
+orx-sh:ContactEventShape a sh:NodeShape ;
+    sh:targetClass orx-st:ContactEvent ;
+    sh:property [
+        sh:path orx-st:contactParty ;
+        sh:minCount 2 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "ContactEvent は contactParty を2つ以上持つ（両当事者）"@ja ;
+    ] .
+
+orx-sh:PossiblyContaminatedShape a sh:NodeShape ;
+    sh:targetSubjectsOf orx-st:possiblyContaminatedBy ;
+    sh:property [
+        sh:path orx-st:possiblyContaminatedBy ;
+        sh:class orx-biz:AllergenClass ;
+        sh:minCount 1 ;
+        sh:message "possiblyContaminatedBy の値は AllergenClass でなければならない"@ja ;
+    ] .
