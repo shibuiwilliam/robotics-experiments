@@ -180,7 +180,7 @@ LLM層メタモルフィック。手順: configs/experiments/*.yaml の provider
 ### 共通インフラ X1〜X6（各シナリオと同時に実装）
 - [x] X1 割込み指示イベント（S1と同時）— 回収割込みを recall_time での意思決定として実装
       （割込み＝記録された時刻での回収クエリ＋再評価。決定レベル採点 ADR-009 と整合）
-- [~] X2 接触イベント蒸留（S2と同時）— ContactEvent スキーマ済。蒸留(sim接触)は実装中
+- [x] X2 接触イベント蒸留（perception/contacts.distill_contacts, contact_miss_rate ノブ）
 - [x] X3 状態リセットイベント（ResetEvent スキーマ＝洗浄/施錠/認証）
 - [ ] X4 ID無し同一性解決（S6と同時）
 - [ ] X5 人間アクタ（S5/S7時）
@@ -199,8 +199,13 @@ LLM層メタモルフィック。手順: configs/experiments/*.yaml の provider
   - 頑健性: id_read_failure 0→0.6 で OR-full=1.0 維持、B0 0.65→0.31 劣化（H2/H6の堅牢性）
   - 成果物: data/runs/scenario-s1-89389d38 / reports/scenario-s1-89389d38.md
   - テスト: 175 passed（oracle単体4・反証6・CQ3・統合5 を追加）
-- [~] S2 アレルゲン（T9 / X2,X3 / H5）**実装中** — 汚染推移閉包オラクル(ADR-015)＋
-      X2/X3スキーマ＋oracle単体7件 green。残: 世界の接触dynamics・条件別ソルバ・反証・掃引・gate
+- [x] S2 アレルゲン（T9 / X2,X3 / H5）✅（2026-06-13）— 測定値（8シード, ノイズ0）:
+  - **受入: OR-full 汚染集合F1=1.000・違反0・過保守0**（acc 1.000）✓
+  - 反証 green: B0 履歴なし→安全違反16・F1 0.500 / B1 横断融合なし→安全違反8・F1 0.800 /
+    OR−belief 洗浄リセット無視→過保守8 / OR-full 正答
+  - 頑健性: contact_miss_rate 掃引で OR-full ≥ OR−belief（ノイズ0で既に分離）
+  - 4条件の構造的失敗が相異（履歴/横断融合/時間意味論）。語彙＋SHACL＋CQ＋メタモルフィック＋replay 完備
+  - 成果物: data/runs/scenario-s2-ec06ef90 / レポート。テスト: 207 passed
 - [ ] S6 リサイクル（T13 / X4,X6 / H4）— 受入: コスト加重で OR-full > 両アブレ・較正曲線
 - [ ] M-Scenario-A: 3シナリオ×全条件の比較レポート提示
 

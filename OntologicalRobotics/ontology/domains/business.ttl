@@ -85,3 +85,9 @@ orx-biz:RecallOrder a owl:Class ;
 orx-biz:targetsLot a owl:ObjectProperty ;
     rdfs:domain orx-biz:RecallOrder ; rdfs:range orx-biz:Lot ;
     rdfs:label "回収対象ロット"@ja .
+
+# --- S2 アレルゲンクラス（T9） ---
+orx-biz:AllergenClass a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "アレルゲンクラス"@ja ;
+    rdfs:comment "peanut/gluten 等の規制対象アレルゲン区分"@ja .

@@ -1,0 +1,11 @@
+id: cq_s2_contact_parties
+question: "接触イベントの両当事者は誰か（汚染推論の証跡）？"
+sparql: |
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX orx-st: <https://orx.local/onto/st#>
+  SELECT ?c ?party WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?c rdf:type orx-st:ContactEvent ; orx-st:contactParty ?party .
+    }
+  }
+note: "ContactEvent（X2 蒸留）の証跡。来歴付きで世界グラフに残る。"

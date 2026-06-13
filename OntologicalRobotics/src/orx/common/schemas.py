@@ -159,11 +159,12 @@ class ZoneTransition(StrictModel):
 
 
 class ContactEvent(StrictModel):
-    """X2: 接触イベント（両当事者・時刻）。シム接触から蒸留される（S2/S5）。"""
+    """X2: 接触イベント（両当事者・時刻・観測者）。シム接触から蒸留される（S2/S5）。"""
 
-    a: str  # 実体ID（box/gripper/tray 等）
+    a: str  # 実体ID（box/gripper/tray 等。canonical）
     b: str
     sim_time: float
+    observer: str = ""  # 観測したロボット（共通オントロジー無し条件の横断不可能性に使う）
 
 
 class ResetEvent(StrictModel):

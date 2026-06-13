@@ -71,9 +71,13 @@ def register(spec: ScenarioSpec) -> None:
 def _ensure_loaded() -> None:
     """登録副作用のための遅延 import（循環回避）。"""
     if "s1" not in _REGISTRY:
-        from orx.exp.suites.s1_lot_recall import runner as _s1  # noqa: F401
+        from orx.exp.suites.s1_lot_recall import runner as _s1
 
         _s1.register_self()
+    if "s2" not in _REGISTRY:
+        from orx.exp.suites.s2_allergen import runner as _s2
+
+        _s2.register_self()
 
 
 def get(scenario_id: str) -> ScenarioSpec:

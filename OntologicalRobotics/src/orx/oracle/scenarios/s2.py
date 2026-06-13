@@ -36,10 +36,12 @@ def contamination_closure(
     同時刻は ContactEvent → CleaningEvent の順で適用する（洗浄が最後に効く＝
     「触れてから洗った」が同tickなら清浄、を表す）。
     """
-    acquired: dict[str, set[str]] = {e: set() for e in intrinsic}
+    # intrinsic の値は set/list いずれも許容（堅牢化）
+    intr: dict[str, set[str]] = {e: set(v) for e, v in intrinsic.items()}
+    acquired: dict[str, set[str]] = {e: set() for e in intr}
 
     def carried(e: str) -> set[str]:
-        return intrinsic.get(e, set()) | acquired.get(e, set())
+        return intr.get(e, set()) | acquired.get(e, set())
 
     timeline: list[tuple[float, int, str, tuple]] = []
     for c in contacts:
@@ -56,13 +58,13 @@ def contamination_closure(
             acquired.setdefault(a, set())
             acquired.setdefault(b, set())
             tab = carried(a) | carried(b)
-            acquired[a] |= tab - intrinsic.get(a, set())
-            acquired[b] |= tab - intrinsic.get(b, set())
+            acquired[a] |= tab - intr.get(a, set())
+            acquired[b] |= tab - intr.get(b, set())
         else:
             (e,) = args
             acquired[e] = set()
 
-    entities = set(intrinsic) | set(acquired)
+    entities = set(intr) | set(acquired)
     return ContaminationState(
         carried={e: sorted(carried(e)) for e in entities if carried(e)}
     )

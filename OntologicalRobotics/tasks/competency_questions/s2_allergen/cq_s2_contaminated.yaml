@@ -1,0 +1,10 @@
+id: cq_s2_contaminated
+question: "現時点で汚染可能性のある実体とアレルゲンの対は何か（推移閉包＋洗浄反映）？"
+sparql: |
+  PREFIX orx-st: <https://orx.local/onto/st#>
+  SELECT ?e ?allergen WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?e orx-st:possiblyContaminatedBy ?allergen .
+    }
+  }
+note: "OR-full の推移閉包をグラフ化したもの。B0/B1 は接触履歴/横断融合が無く再現できない。"

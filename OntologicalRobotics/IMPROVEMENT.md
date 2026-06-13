@@ -76,7 +76,7 @@
   | S | Suite | 状況 | 主な未実装 / 固有作業 |
   |---|-------|------|----------------------|
   | S1 | T8 | ✅ 完了 | （ゲート閉） |
-  | S2 | T9 | 🟡 oracle+X2/X3スキーマのみ | X2 接触蒸留・X3 洗浄・world/exp config・4条件ソルバ（B0/B1/OR-full/**OR−belief**）・反証・`contact_miss_rate` 掃引・CQ・SHACL・demo・登録・ゲート |
+  | S2 | T9 | ✅ 完了 | （ゲート閉。OR-full 汚染F1=1.0/違反0、4条件の構造的失敗を実証） |
   | S3 | T10 | ❌ 未着手 | 多ベンダー異種・ProcessRequirement 突合せ・故障の経年劣化・T3/T5/T6 の業務文脈化 |
   | S4 | T11 | ❌ 未着手 | X4 ID無し台帳アンカリング・2視点・矛盾観測の信念調停・SOP起票連鎖 |
   | S5 | T12 | ❌ 未着手 | **新規 `ontology/domains/normative.ttl`**（deontic）・X2/X3/X5・custody連鎖・監査可能性指標 |
@@ -212,7 +212,7 @@
 | M-2 tasks/suites 整合 | ✅ 解決 | ADR-016（宣言spec方針）。PROJECT.md は改変せず解釈を記録 |
 | M-4 生成物の残骸 | ✅ 解決 | reports/*.md と mappings/proposals/ を .gitignore、追跡解除、fuzz残骸削除 |
 | L-1 空.gitkeep | ✅ 解決 | 中身のあるディレクトリの .gitkeep 削除 |
-| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（1/7） | S1✅。残 S2,S3,S4,S5,S6,S7 を §5 順（S2→S6→M-A→S3→S7→S4→S5）でゲート閉まで実装。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented＋M-Scenario-A レポート |
+| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（**2/7**: S1,S2✅） | 残 S6→M-A→S3→S7→S4→S5。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented＋M-Scenario-A レポート |
 | M-3 ハードケース n=1 | ⏳ 各シナリオで対応 | 受入文言に射程明記済。各シナリオ世界で複数ハードケース化 |
 | L-2 シナリオCQ（S2–S7） | ⏳ 各シナリオで対応 | 各シナリオ実装時に語彙＋CQ＋SHACL をセットで追加（SCENARIOS.md §6） |
 | 本丸: live計測 | ⏳ 別件 | OPENAI_API_KEY＋コスト承認が前提。H1–H7 のagent検証はこれで初実施 |
