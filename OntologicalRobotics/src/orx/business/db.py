@@ -125,6 +125,62 @@ def generate_wms(world: WorldConfig, seeds: SeedTree, db_path: Path) -> WmsRecor
     return WmsRecord(orders=orders, skus=skus, instructions=instructions)
 
 
+class LotData(StrictModel):
+    """S1 ロット回収のロット/回収データ（業務真値の種）。"""
+
+    members: dict[str, str]  # barcode -> lot_id
+    recall_lot: str
+    recall_id: str
+    recall_time: float
+
+
+_LOT_DDL = """
+CREATE TABLE lots (lot_id TEXT PRIMARY KEY);
+CREATE TABLE lot_members (
+    barcode TEXT PRIMARY KEY,
+    lot_id TEXT NOT NULL REFERENCES lots(lot_id)
+);
+CREATE TABLE recall_orders (
+    recall_id TEXT PRIMARY KEY,
+    lot_id TEXT NOT NULL REFERENCES lots(lot_id),
+    recall_time REAL NOT NULL
+);
+"""
+
+
+def generate_lot_tables(
+    world: WorldConfig, db_path: Path, recall_lot: str, recall_time: float
+) -> LotData:
+    """世界コンフィグの box.lot から lot/lot_members/recall_orders を生成する。
+
+    既存 WMS sqlite（generate_wms 後）にテーブルを追加する。lot↔個装(barcode) の
+    参照連鎖がここで定義され、S1 の回収逆引きの業務真値となる。
+    """
+    members = {b.barcode: b.lot for b in world.boxes if b.barcode and b.lot}
+    if recall_lot not in set(members.values()):
+        raise ValueError(f"回収ロット {recall_lot!r} に属する個装がありません")
+    lots = sorted(set(members.values()))
+    recall_id = "RC-9001"
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(_LOT_DDL)
+        conn.executemany("INSERT INTO lots VALUES (:lot_id)", [{"lot_id": v} for v in lots])
+        conn.executemany(
+            "INSERT INTO lot_members VALUES (:barcode, :lot_id)",
+            [{"barcode": bc, "lot_id": lot} for bc, lot in sorted(members.items())],
+        )
+        conn.execute(
+            "INSERT INTO recall_orders VALUES (?, ?, ?)",
+            (recall_id, recall_lot, recall_time),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return LotData(
+        members=members, recall_lot=recall_lot, recall_id=recall_id, recall_time=recall_time
+    )
+
+
 class BusinessDB:
     """読み取り専用のWMSアクセス（エージェントツール・真値導出が使う）。"""
 

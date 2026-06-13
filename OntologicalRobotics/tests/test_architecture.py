@@ -99,6 +99,19 @@ def test_truth_not_referenced_by_or_core() -> None:
                     )
 
 
+def test_oracle_scenarios_independent_of_or_core() -> None:
+    """シナリオ真値導出（oracle.scenarios）はORコアを import しない（CLAUDE.md §3-4）。"""
+    forbidden = ("orx.anchoring", "orx.kg", "orx.agent", "orx.replay", "orx.exp")
+    scen_dir = SRC / "oracle" / "scenarios"
+    assert scen_dir.exists()
+    for path in sorted(scen_dir.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for name in _imported_names(tree):
+            assert not any(name == f or name.startswith(f + ".") for f in forbidden), (
+                f"{path}: ORコア {name} を import（評価の独立性違反）"
+            )
+
+
 def test_no_owl_sameas_outside_kg_guard() -> None:
     for package in NON_KG:
         for path, tree in _modules(package):

@@ -45,3 +45,9 @@ orx-st:posZ a owl:DatatypeProperty ;
 orx-st:ZoneTransition a owl:Class ;
     rdfs:subClassOf orx-upper:Event ;
     rdfs:label "ゾーン遷移"@ja .
+
+# --- S1 隔離ゾーン（T8） ---
+orx-st:QuarantineZone a owl:Class ;
+    rdfs:subClassOf orx-st:Zone ;
+    rdfs:label "隔離ゾーン"@ja ;
+    rdfs:comment "回収対象個体を隔離する区画"@ja .

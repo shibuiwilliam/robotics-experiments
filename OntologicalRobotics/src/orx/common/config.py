@@ -61,6 +61,7 @@ class BoxConfig(StrictModel):
     barcode: str | None = None  # 記号識別子（無しはID無し個体）
     weight_kg: float = 0.5  # 把持の成否に効く（T3/T6, H3）
     material: str = "cardboard"  # 素材タグ（reflective/glass等は把持difficulty）
+    lot: str | None = None  # ロット番号（S1/T8。業務lotテーブルの種。simは使わない）
 
 
 class CameraConfig(StrictModel):

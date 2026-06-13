@@ -180,7 +180,8 @@ def exp_run(
 def report(
     target_id: str = typer.Argument(..., help="data/runs/ 配下の run ID または exp ID"),
 ) -> None:
-    """run/実験のMarkdownレポートを reports/ に再生成する。"""
+    """run/実験/シナリオのMarkdownレポートを reports/ に再生成する。"""
+    from orx.exp import scenario as scn
     from orx.exp.report import write_run_report
     from orx.exp.runner import RESULTS, write_experiment_report
 
@@ -188,7 +189,9 @@ def report(
     if not target_dir.exists():
         _fail(f"run/exp が見つかりません: {target_dir}")
     try:
-        if (target_dir / RESULTS).exists():
+        if scn.is_scenario_result(target_dir):
+            out = scn.write_report(target_dir, reports_dir())
+        elif (target_dir / RESULTS).exists():
             out = write_experiment_report(target_dir, reports_dir())
         else:
             out = write_run_report(target_dir, reports_dir())
@@ -196,6 +199,73 @@ def report(
         _fail(str(exc))
         return
     typer.echo(f"レポート生成: {out}")
+
+
+scenario_app = typer.Typer(help="業務シナリオ（T8〜T14）の一覧・デモ・実行")
+app.add_typer(scenario_app, name="scenario")
+
+
+@scenario_app.command("list")
+def scenario_list() -> None:
+    """登録済みシナリオの一覧（Tier・仮説・条件・ステータス）。"""
+    from orx.exp import scenario as scn
+
+    typer.echo(f"{'ID':<4}{'Suite':<6}{'Tier':<5}{'仮説':<16}{'状態':<12}名称")
+    for spec in scn.all_specs():
+        m = spec.meta
+        typer.echo(
+            f"{m.id:<4}{m.suite:<6}{m.tier:<5}{','.join(m.hypotheses):<16}"
+            f"{m.status:<12}{m.title}"
+        )
+
+
+@scenario_app.command("demo")
+def scenario_demo(
+    scenario_id: str = typer.Argument(..., help="シナリオID（例 s1）"),
+) -> None:
+    """シナリオをオフラインでエンドツーエンド実行し、レポートを印字する。"""
+    from orx.exp import scenario as scn
+
+    try:
+        spec = scn.get(scenario_id)
+    except ValueError as exc:
+        _fail(str(exc))
+        return
+    typer.echo(f"シナリオ {scenario_id} デモ実行中（stub/offline）…")
+    result, report_md = spec.demo(runs_root(), typer.echo)
+    typer.echo("")
+    typer.echo(report_md)
+    failures = [k for k, v in result.get("falsification", {}).items() if not v]
+    if failures:
+        _fail(f"失敗予言の検証が未達: {failures}")
+    typer.secho(f"OK: シナリオ {scenario_id} 反証テスト green", fg=typer.colors.GREEN)
+
+
+@scenario_app.command("run")
+def scenario_run(
+    experiment_config: Path = typer.Argument(
+        ..., help="シナリオ実験コンフィグ (configs/experiments/s{n}_*.yaml)"
+    ),
+) -> None:
+    """シナリオ実験（条件×シード×掃引）を実行し、結果とレポートを出力する。"""
+    from orx.exp import scenario as scn
+
+    try:
+        config = scn.load_scenario_experiment(experiment_config)
+        typer.echo(
+            f"シナリオ {config.scenario}: conditions={config.conditions} "
+            f"seeds={len(config.seeds)}"
+        )
+        exp_dir, result = scn.run_experiment(config, runs_root(), progress=typer.echo)
+        report_path = scn.write_report(exp_dir, reports_dir())
+    except (ConfigError, ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
+        return
+    typer.echo("")
+    for line in scn.get(config.scenario).summarize(result):
+        typer.echo(line)
+    typer.echo(f"結果: {exp_dir / 'results.json'}")
+    typer.echo(f"レポート: {report_path}")
 
 
 @app.command()

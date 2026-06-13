@@ -1,0 +1,14 @@
+id: cq_s1_recall_targets
+question: "回収対象ロットに属する物理個体（バーコード）とその現在ゾーンは？"
+sparql: |
+  PREFIX orx-upper: <https://orx.local/onto/upper#>
+  PREFIX orx-st: <https://orx.local/onto/st#>
+  PREFIX orx-biz: <https://orx.local/onto/biz#>
+  SELECT ?bc ?zone WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?si orx-biz:memberOfLot <https://orx.local/id/lot/{recall_lot}> ;
+          orx-biz:hasBarcode ?bc .
+      OPTIONAL { ?e orx-upper:hasIdentifier ?bc ; orx-st:inZone ?zone . }
+    }
+  }
+note: "{recall_lot} はエピソード毎に oracle が決める回収ロット。OR-full のみ搬送済み個体の現在ゾーンを返せる。"
