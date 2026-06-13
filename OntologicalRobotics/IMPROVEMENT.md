@@ -17,8 +17,9 @@
    （anchoring on/off）、(c) 較正学習曲線、のいずれかであり、**仮説の本体である「オントロジーを使う
    LLMエージェントが生データのエージェントに勝つ」というエージェントレベルの比較は一度も実行されて
    いない**（すべて live モード待ち）。H4/H7 に至っては stub（偽）埋め込み・0トークンの上で数字が出ている。
-2. **シナリオ・プログラム（現ミッション）が順序通り完全には実装されていない。** Tier A は S1 のみ完了、
-   S2 はオラクルのみ（≈15%）、S6 未着手 → マイルストーン **M-Scenario-A 未達**。
+2. **シナリオ・プログラム（T8–T14）が完全には実装されていない。** 全7シナリオ中**実装済みは S1 のみ**。
+   S2 はオラクル＋スキーマのみ（≈15%）、S3–S7 は設計文書のみで未着手 → マイルストーン **M-Scenario-A 未達**。
+   **要件: S1–S7 を全件ゲート閉まで実装する（C3）。**
 
 つまり「**真理グラフ評価・反実仮想リプレイ・アンカリング機構**という装置は確かに動く（＝シミュレーション
 研究の貢献の核は本物）」が、「**それらを使って H1–H7 を反証可能に検証した**」とまでは言えない。
@@ -61,15 +62,35 @@
 - **修正案**: stub モードの vector-rag 行・p 値はレポートから「ハーネス検証（数値は無意味）」と明示するか
   非表示にし、**H4 の主張に p 値を引用しない**。本計測は OpenAI 埋め込み（live）でのみ行う。
 
-### C3. シナリオ・プログラムが順序通り完全実装されていない（Tier A 未完・M-Scenario-A 未達）
-- **根拠**: `docs/PROGRESS.md:185-202`。S1=✅、S2=`[~]`（`tests/scenarios/s2/test_oracle_s2.py` の
-  オラクル単体7件のみ。`src/orx/exp/suites/s2_allergen/`・world/exp config・reference ソルバ・反証テスト・
-  CQ・demo 不在）、S6=`[ ]`（完全に不在）。`orx scenario demo s2/s6` は不可。M-Scenario-A は `[ ]`。
-- **なぜ目的に反するか**: ミッションは「Tier A を S1→S2→S6 の順で完全に実装し M-Scenario-A まで」。
-  S1 のゲートは閉じているが、Tier A 全体は未完で、3シナリオ比較レポートという成果物が無い。
-- **修正案**: S2 を完成（§3.3 全成果物＋反証＋掃引＋ゲート）→ S6（OR-sym/OR-vec 条件追加含む）→
-  M-Scenario-A 比較レポート、の順で継続。S6 は H4 を分離する設計なので **OR-sym/OR-vec を
-  `exp/episode.py:33` の CONDITIONS に追加**する作業が前提（現状3条件のみ）。
+### C3. 全シナリオ（S1–S7 / T8–T14）を完全実装する（現状 S1 のみ・他6件 未完）
+- **要件**: `SCENARIOS.md`（T8–T14）と `docs/scenarios/` の7シナリオを**全件**、各々ゲート閉まで
+  完全実装する（Tier A だけでなく Tier B・Tier C も含む）。文書だけのシナリオは「未実装」とみなす。
+- **根拠（実体・2026-06-13 確認）**: suite code は `src/orx/exp/suites/s1_lot_recall/` のみ、
+  world/exp config・CLI登録（`orx scenario list`）も `s1` のみ。oracle は s1/s2、テストは
+  tests/scenarios/{s1,s2}（S2 はオラクル単体7件のみ）。S3–S7 は `docs/scenarios/*.md` の設計のみ。
+- **なぜ目的に反するか**: PROJECT.md §8.2 / §12 と SCENARIOS.md は H1–H7 を業務文脈で実証するために
+  T8–T14 を要求する。S1 だけでは Tier A すら未完（M-Scenario-A 未達）であり、業務検証の論証が欠ける。
+- **各シナリオの実装状況と必要作業**（各々 §3.3 全成果物＝suite code・world/exp config・語彙＋SHACL＋CQ・
+  業務データ・oracle 真値導出・反証テスト・replay同一性・メタモルフィック・demo・登録・ゲート）:
+
+  | S | Suite | 状況 | 主な未実装 / 固有作業 |
+  |---|-------|------|----------------------|
+  | S1 | T8 | ✅ 完了 | （ゲート閉） |
+  | S2 | T9 | 🟡 oracle+X2/X3スキーマのみ | X2 接触蒸留・X3 洗浄・world/exp config・4条件ソルバ（B0/B1/OR-full/**OR−belief**）・反証・`contact_miss_rate` 掃引・CQ・SHACL・demo・登録・ゲート |
+  | S3 | T10 | ❌ 未着手 | 多ベンダー異種・ProcessRequirement 突合せ・故障の経年劣化・T3/T5/T6 の業務文脈化 |
+  | S4 | T11 | ❌ 未着手 | X4 ID無し台帳アンカリング・2視点・矛盾観測の信念調停・SOP起票連鎖 |
+  | S5 | T12 | ❌ 未着手 | **新規 `ontology/domains/normative.ttl`**（deontic）・X2/X3/X5・custody連鎖・監査可能性指標 |
+  | S6 | T13 | ❌ 未着手 | **OR-sym / OR-vec 条件を `exp/episode.py` CONDITIONS に追加**・双対表現経路・X4・X6 非対称コスト |
+  | S7 | T14 | ❌ 未着手 | X4・X5・所有(情報的関係)＋最終目撃＋視覚署名の三系統融合・誤配送採点 |
+
+- **実装順序（SCENARIOS.md §5 厳守）**: **Tier A**: S1✅ → S2 → S6 → **M-Scenario-A**（S1+S2+S6×全条件の
+  比較レポート）。**Tier B**: S3 → S7 → S4。**Tier C**: S5（規範層 normative.ttl・Tier A/B ゲート閉後）。
+- **横断インフラ**（共有・再利用・コピペ禁止）: X2 接触蒸留（S2/S5）, X3 状態リセット（S2/S5）,
+  X4 ID無し同一性（S4/S6/S7）, X5 人間アクタ（S5/S7）, X6 非対称コスト（S6）。X1 は実装済（S1）。
+- **完了定義**: 全7シナリオで `make scenario-validate`（demo の反証 green ＋ tests/scenarios 緑）が通り、
+  `orx scenario list` に S1–S7 が implemented で並び、M-Scenario-A 比較レポートが生成されること。
+- **射程の注記（C1 と整合）**: 各シナリオの数値も ceiling/ablation/agent を分離報告し、決定的経路の
+  数値を仮説確認として提示しない（agent 検証は live・別件）。
 
 ---
 
@@ -191,7 +212,7 @@
 | M-2 tasks/suites 整合 | ✅ 解決 | ADR-016（宣言spec方針）。PROJECT.md は改変せず解釈を記録 |
 | M-4 生成物の残骸 | ✅ 解決 | reports/*.md と mappings/proposals/ を .gitignore、追跡解除、fuzz残骸削除 |
 | L-1 空.gitkeep | ✅ 解決 | 中身のあるディレクトリの .gitkeep 削除 |
-| C3 S2/S6/M-Scenario-A | ⏳ 進行中 | S2 完成→S6→M-Scenario-A（次ユニット）。S2 はオラクル＋スキーマ済 |
-| M-3 ハードケース n=1 | ⏳ S2/S6で対応 | 受入文言に射程明記済。シナリオ世界の複数ハードケース化は S2/S6 で設計 |
-| L-2 S2 CQ | ⏳ S2で対応 | S2 実装時に CQ＋SHACL 追加 |
+| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（1/7） | S1✅。残 S2,S3,S4,S5,S6,S7 を §5 順（S2→S6→M-A→S3→S7→S4→S5）でゲート閉まで実装。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented＋M-Scenario-A レポート |
+| M-3 ハードケース n=1 | ⏳ 各シナリオで対応 | 受入文言に射程明記済。各シナリオ世界で複数ハードケース化 |
+| L-2 シナリオCQ（S2–S7） | ⏳ 各シナリオで対応 | 各シナリオ実装時に語彙＋CQ＋SHACL をセットで追加（SCENARIOS.md §6） |
 | 本丸: live計測 | ⏳ 別件 | OPENAI_API_KEY＋コスト承認が前提。H1–H7 のagent検証はこれで初実施 |
