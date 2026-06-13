@@ -143,3 +143,77 @@ def write_report(exp_dir: Path, out_dir: Path) -> Path:
     out_path = out_dir / f"{exp_dir.name}.md"
     out_path.write_text(spec.render_report(data), encoding="utf-8")
     return out_path
+
+
+# ----------------------------------------------------------------- milestones
+
+TIER_A = ["s1", "s2", "s6"]  # SCENARIOS.md §5: M-Scenario-A の対象
+
+
+def run_milestone(
+    scenario_ids: list[str], runs_root: Path, progress: object | None = None
+) -> tuple[Path, dict]:
+    """複数シナリオを標準実験コンフィグで実行し、比較レポート用に結果を束ねる。"""
+    from orx.common.paths import repo_root
+
+    notify = progress if callable(progress) else (lambda *_: None)
+    results: dict[str, dict] = {}
+    for sid in scenario_ids:
+        spec = get(sid)
+        cfg_path = repo_root() / "configs" / "experiments" / f"{sid}_{spec.meta.slug}.yaml"
+        config = load_scenario_experiment(cfg_path)
+        notify(f"=== {sid} ({spec.meta.suite}) ===")
+        _exp_dir, result = run_experiment(config, runs_root, progress)
+        results[sid] = result
+    out = {"scenarios": scenario_ids, "results": results}
+    return runs_root, out
+
+
+def render_milestone(name: str, milestone: dict) -> str:
+    from orx.exp import scope
+
+    ids = milestone["scenarios"]
+    results = milestone["results"]
+    lines = [
+        f"# ORX Milestone Report — {name}",
+        "",
+        f"対象シナリオ: {', '.join(ids)}（SCENARIOS.md §5）。",
+        "",
+        scope.scope_section([scope.CEILING, scope.ABLATION]),
+        "> 全シナリオの数値は決定的リファレンスソルバ（ceiling/ablation）。"
+        "**仮説 H1–H7 のエージェントレベル検証は未実行（live）。**",
+        "",
+        "## 反証予言の総括",
+        "",
+        "| シナリオ | Suite | 仮説 | 反証 green | 構成ハッシュ |",
+        "|----------|-------|------|-----------|--------------|",
+    ]
+    all_green = True
+    for sid in ids:
+        spec = get(sid)
+        r = results[sid]
+        fal = r.get("falsification", {})
+        green = all(fal.values()) if fal else False
+        all_green = all_green and green
+        mark = "✓ 全green" if green else "✗ 未達"
+        lines.append(
+            f"| {sid} {spec.meta.title} | {spec.meta.suite} | "
+            f"{','.join(spec.meta.hypotheses)} | {mark} | `{r.get('config_hash', '?')}` |"
+        )
+    lines += ["", f"**Tier A 反証総合判定: {'全green ✓' if all_green else '未達 ✗'}**", ""]
+
+    for sid in ids:
+        spec = get(sid)
+        lines += [f"## {sid} — {spec.meta.title}（{spec.meta.suite}）", ""]
+        # 各 summarize() は末尾に失敗予言行を含む
+        lines += [f"- {line}" for line in spec.summarize(results[sid])]
+        lines.append("")
+    lines += [
+        "## 注記",
+        "",
+        "各シナリオの数値は表現上限（決定的リファレンスソルバ）と機構アブレーションであり、"
+        "「オントロジーを使う LLM エージェントが生データに勝つ」という仮説本体ではない。"
+        "エージェントレベル検証は live 計測（OPENAI_API_KEY＋コスト承認）で別途実施する。",
+        "",
+    ]
+    return "\n".join(lines)
