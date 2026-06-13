@@ -66,3 +66,22 @@ orx-biz:situation a owl:DatatypeProperty ;
 
 orx-biz:docTitle a owl:DatatypeProperty ;
     rdfs:domain orx-biz:Document ; rdfs:range xsd:string .
+
+# --- S1 ロット回収（T8） ---
+orx-biz:Lot a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "ロット"@ja ;
+    rdfs:comment "製造/入荷ロット。個装(barcode)の集合。回収の単位"@ja .
+
+orx-biz:memberOfLot a owl:ObjectProperty ;
+    rdfs:range orx-biz:Lot ;
+    rdfs:label "ロット帰属"@ja ;
+    rdfs:comment "個装(ShippingInstruction/物理個体)→ロット。回収対象の逆引き経路"@ja .
+
+orx-biz:RecallOrder a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "回収指示"@ja .
+
+orx-biz:targetsLot a owl:ObjectProperty ;
+    rdfs:domain orx-biz:RecallOrder ; rdfs:range orx-biz:Lot ;
+    rdfs:label "回収対象ロット"@ja .

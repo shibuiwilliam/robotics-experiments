@@ -169,7 +169,8 @@ T7 vector-rag、T5 llm支援、メタモルフィック、H7知識効率。概�
 （ADR-013/014）。前提監査 PASS（P0〜P5 完了・158 tests green）。
 
 ### 共通インフラ X1〜X6（各シナリオと同時に実装）
-- [ ] X1 割込み指示イベント（S1と同時）
+- [x] X1 割込み指示イベント（S1と同時）— 回収割込みを recall_time での意思決定として実装
+      （割込み＝記録された時刻での回収クエリ＋再評価。決定レベル採点 ADR-009 と整合）
 - [ ] X2 接触イベント蒸留（S2と同時）
 - [ ] X3 状態リセットイベント（S2と同時）
 - [ ] X4 ID無し同一性解決（S6と同時）
@@ -177,11 +178,18 @@ T7 vector-rag、T5 llm支援、メタモルフィック、H7知識効率。概�
 - [ ] X6 非対称コスト採点（S6と同時）
 
 ### CLI・レポート拡張
-- [ ] `orx scenario list` / `scenario demo s{n}` / `scenario run <cfg>`
-- [ ] `orx report` シナリオテンプレート（失敗予言検証・頑健性曲線・トークン効率）
+- [x] `orx scenario list` / `scenario demo s{n}` / `scenario run <cfg>`
+- [x] `orx report` シナリオテンプレート（失敗予言検証・頑健性曲線・トークン効率）
 
 ### Tier A → M-Scenario-A
-- [ ] S1 ロット回収（T8 / X1 / H2,H6,H7）— 受入: ノイズ0で列挙F1=1.0・完遂率100%・反証green
+- [x] S1 ロット回収（T8 / X1 / H2,H6,H7）✅（2026-06-13）— 測定値（8シード, t8 world）:
+  - **受入: OR-full 列挙F1=1.000・完遂率=1.000**（ノイズ0）✓
+  - 反証 green: B0_misses_in_transit ✓（B0 completion 0.646, membership_recall<1）/
+    B1_stale_location ✓（B1 membership_F1=1.0 だが location 0.646）/ OR_full_succeeds ✓
+  - McNemar OR-full vs B0/B1: **p = 7.81e-03**（8/8 discordant）
+  - 頑健性: id_read_failure 0→0.6 で OR-full=1.0 維持、B0 0.65→0.31 劣化（H2/H6の堅牢性）
+  - 成果物: data/runs/scenario-s1-89389d38 / reports/scenario-s1-89389d38.md
+  - テスト: 175 passed（oracle単体4・反証6・CQ3・統合5 を追加）
 - [ ] S2 アレルゲン（T9 / X2,X3 / H5）— 受入: 汚染F1=1.0・違反0・見落とし掃引で曲線分離
 - [ ] S6 リサイクル（T13 / X4,X6 / H4）— 受入: コスト加重で OR-full > 両アブレ・較正曲線
 - [ ] M-Scenario-A: 3シナリオ×全条件の比較レポート提示

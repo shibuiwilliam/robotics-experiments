@@ -1,0 +1,12 @@
+# S1 ロット回収実験（T8, H2/H6/H7）— 完全オフライン（決定的リファレンスソルバ）
+# 反証: B0 は搬送中・ID不可読個体を取りこぼし（列挙recall<1）、B1 は横断同一性が無く
+# 搬送済み個体の現在地が陳腐化、OR-full のみ完遂率100%。
+name: s1-lot-recall
+scenario: s1
+world_config: configs/world/s1_lot_recall.yaml
+conditions: [OR-full, B0, B1]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108]
+duration_s: 18.0
+claim_ttl_s: 8.0
+knob: id_read_failure_rate
+knob_values: [0.0, 0.2, 0.4, 0.6]
