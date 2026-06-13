@@ -158,6 +158,22 @@ class ZoneTransition(StrictModel):
     sim_time: float
 
 
+class ContactEvent(StrictModel):
+    """X2: 接触イベント（両当事者・時刻）。シム接触から蒸留される（S2/S5）。"""
+
+    a: str  # 実体ID（box/gripper/tray 等）
+    b: str
+    sim_time: float
+
+
+class ResetEvent(StrictModel):
+    """X3: 状態リセットイベント（洗浄・施錠・認証等）。対象の獲得状態を失効させる。"""
+
+    entity: str
+    kind: str = "cleaning"  # cleaning | unlock | authorize ...
+    sim_time: float
+
+
 # -------------------------------------------------------------------- reports
 
 
