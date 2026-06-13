@@ -1,0 +1,28 @@
+# SHACL shapes — シナリオ語彙のクラス固有制約（IMPROVEMENT.md H-1）
+# 汎用 ClaimShape（claims.ttl）が来歴・確信度・時刻を担保するのに加え、ここでは
+# シナリオ新語彙の構造制約を定義する。全書込パスは tests/scenarios/*/test_shapes_*.py で検証。
+
+@prefix sh:  <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix orx-biz: <https://orx.local/onto/biz#> .
+@prefix orx-sh:  <https://orx.local/onto/shapes#> .
+
+# --- S1 ロット回収（T8） ---
+
+orx-sh:RecallOrderShape a sh:NodeShape ;
+    sh:targetClass orx-biz:RecallOrder ;
+    sh:property [
+        sh:path orx-biz:targetsLot ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "RecallOrder は targetsLot をちょうど1つ持たねばならない"@ja ;
+    ] .
+
+orx-sh:MemberOfLotShape a sh:NodeShape ;
+    sh:targetSubjectsOf orx-biz:memberOfLot ;
+    sh:property [
+        sh:path orx-biz:memberOfLot ;
+        sh:class orx-biz:Lot ;
+        sh:minCount 1 ;
+        sh:message "memberOfLot の値は orx-biz:Lot 型でなければならない（識別子スレッドの整合）"@ja ;
+    ] .

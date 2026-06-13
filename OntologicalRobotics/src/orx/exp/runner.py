@@ -719,31 +719,43 @@ def render_experiment_report(result: ExperimentResult) -> str:
 
 
 def render_t2_report(result: T2ExperimentResult) -> str:
+    from orx.exp import scope
+
+    scopes = [scope.CEILING, scope.AGENT]  # OR-reference=ceiling, OR-full/B1/B0=agent
     lines = [
         f"# ORX Experiment Report — `{result.exp_id}`",
         "",
         f"- タスク: t2（業務‐物理クエリ） / 質問数: {result.n_questions} / "
         f"LLMモード: {result.llm_mode} / 構成ハッシュ: `{result.config_hash}`",
         "",
-        "## 条件別サマリ（H6 正答率 / H7 知識効率）",
+        scope.scope_section(scopes),
+        "## 条件別サマリ（OR-reference=表現上限 / OR-full・B1・B0=エージェント）",
         "",
-        "| 条件 | 正答率 | 総トークン | 正答率/1kトークン |",
-        "|------|--------|-----------|---------------------|",
+        "| 条件 | 射程 | 正答率 | 総トークン | 正答率/1kトークン |",
+        "|------|------|--------|-----------|---------------------|",
     ]
     for c in result.conditions:
         eff = result.accuracy_per_1k_tokens[c]
+        cat = "ceiling" if c == "OR-reference" else "agent"
         lines.append(
-            f"| {c} | {result.accuracies[c]:.3f} | {result.total_tokens[c]} | "
+            f"| {c} | {cat} | {result.accuracies[c]:.3f} | {result.total_tokens[c]} | "
             f"{eff:.4f} |"
         )
     if result.llm_mode == "stub":
         lines += [
             "",
-            "> **注**: LLMモードが stub のため、エージェント条件（OR-full/B1/B0）の"
-            "正答率は無意味（ハーネス検証のみ）。OR-reference が表現の上限を示す。"
-            "本計測は mode=openai（要コスト承認）で実行する。",
+            scope.stub_warning("正答率・p値・トークン効率"),
+            "",
+            "> H6 は OR-reference が**表現上限 1.000** を示すのみ（オントロジーが当該クエリを"
+            "表現・解決できる証明）。**H6/H7 のエージェントレベル検証は未実行**"
+            "（mode=openai・要コスト承認）。H7（トークン効率）は stub では 0 トークンで未計測。",
         ]
     lines += ["", "## 対比較（質問単位のMcNemar）", ""]
+    if result.llm_mode == "stub":
+        lines.append(
+            "> stub モードでは agent 条件が決定的ダミー出力のため、以下の p 値は"
+            "**ceiling vs ダミー**の比較で無意味（C2）。live でのみ有効。"
+        )
     for cmp in result.comparisons:
         lines += [
             f"- {cmp.condition_a} vs {cmp.condition_b}: "
@@ -871,12 +883,15 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "ハブ&スポーク統合のコスト = 共通オントロジーへのマッピング記述行数。"
             "支援生成は人手記述を「修正行数」まで圧縮する（H1）。",
             "",
+            "> **射程注記**: heuristic（規則ベース）は決定的な**表現上限**であり、ファズ空間が"
+            "規則の射程に収まる設計のため飽和する。**H1 の llm 支援エージェント検証は未実行**"
+            "（live）。手書きとの行数比較は H1 の必要条件を示すが本体検証ではない。",
+            "",
         ]
         if t5_result.llm_mode == "stub" and "llm" in modes:
-            lines.append(
-                "> **注**: stubモードのため llm 行はハーネス検証のみ。"
-                "本計測は provider.mode=openai で行う。"
-            )
+            from orx.exp import scope as _scope
+
+            lines.append(_scope.stub_warning("llm 行の精度・行数"))
         out_path.write_text("\n".join(lines), encoding="utf-8")
         return out_path
     if data.get("task") == "t4":
@@ -972,33 +987,51 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
         out_path.write_text("\n".join(lines), encoding="utf-8")
         return out_path
     if data.get("task") == "t7":
+        from orx.exp import scope
+
         t7_result = T7ExperimentResult.model_validate(data)
         out_path = out_dir / f"{t7_result.exp_id}.md"
+        is_stub = t7_result.embedding_mode == "stub"
+        scopes = [scope.CEILING, scope.AGENT]  # onto-guided=ceiling, vector-rag=agent(embedding)
         lines = [
             f"# ORX Experiment Report — `{t7_result.exp_id}`",
             "",
             f"- タスク: t7（SOP検索, H4） / クエリ数: {t7_result.n_queries} / "
             f"埋め込み: {t7_result.embedding_mode}",
             "",
-            "| 条件 | 正答率(P@1) |",
-            "|------|-------------|",
+            scope.scope_section(scopes),
+            "| 条件 | 射程 | 正答率(P@1) |",
+            "|------|------|-------------|",
             *[
-                f"| {c} | {t7_result.accuracies[c]:.3f} |"
+                f"| {c} | {'ceiling' if c == 'onto-guided' else 'agent'} | "
+                f"{t7_result.accuracies[c]:.3f} |"
                 for c in t7_result.conditions
             ],
             "",
-            *[
-                f"- McNemar ({c.condition_a} vs {c.condition_b}): p = {c.mcnemar_p:.2e}"
-                for c in t7_result.comparisons
-            ],
-            "",
         ]
-        if t7_result.embedding_mode == "stub":
-            lines.insert(
-                -1,
-                "> **注**: stub埋め込みのため vector-rag はハーネス検証のみ。"
-                "本計測は OpenAI 埋め込み（live・キャッシュ記録）で行う。",
-            )
+        if is_stub:
+            # C2: stub 埋め込みに対する vector-rag の p 値は決定的走査 vs ランダムノイズで無意味。
+            lines += [
+                scope.stub_warning("P@1・McNemar p値"),
+                "",
+                "> vector-rag は stub 埋め込み（sha256由来の無意味ベクトル）のため、正答率と"
+                "下記 p 値は**ランダム同等**。**H4 の根拠に引用しない**。"
+                "onto-guided 1.000 は誘導検索の**表現上限**のみ（本計測は live 実埋め込み）。",
+                "",
+                "<!-- C2: stub の p 値は H4 主張に使わない。参考値として折りたたみ表記 -->",
+                *[
+                    f"- （参考・無意味）{c.condition_a} vs {c.condition_b}: p = {c.mcnemar_p:.2e}"
+                    for c in t7_result.comparisons
+                ],
+            ]
+        else:
+            lines += [
+                *[
+                    f"- McNemar ({c.condition_a} vs {c.condition_b}): p = {c.mcnemar_p:.2e}"
+                    for c in t7_result.comparisons
+                ],
+            ]
+        lines.append("")
         out_path.write_text("\n".join(lines), encoding="utf-8")
         return out_path
     if data.get("task") == "t2":
