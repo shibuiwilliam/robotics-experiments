@@ -113,3 +113,13 @@
   コードは src に置く（§11 の「定義」を宣言的成果物と解釈）。シナリオ（S1〜）はこの方針で
   `tasks/suites/s{n}_{slug}/README.md` を持つ。既存 T1〜T7 は遡及で宣言 spec を作らない（低価値・
   PROGRESS/PLAN に定義が揃っているため）。PROJECT.md は改変しない（解釈の追認を要すれば提示）。
+
+## ADR-017: S6 視覚署名はプロトタイプ＋ノイズσ（D4）／OR-sym・OR-vec はシナリオ条件
+- 日付: 2026-06-13 / 状態: 採用（ユーザー承認）
+- 視覚署名: クラス毎に固定プロトタイプベクトル、物体埋め込み = prototype + 種付きガウスノイズ。
+  接地 = コサイン最近傍プロトタイプ、確信度 = top1−top2 マージン。難易度ノブ = ノイズσ（visual_noise）。
+  低σ=分離容易（OR-vec は接地できるが規制推論欠如で誤レーン／OR-sym は記号無しで接地不能→全委譲）、
+  高σ=接地劣化→委譲増。代替B(プロトタイプ間マージン)/C(曖昧境界比)は後付け可能。
+- OR-sym / OR-vec は **S6 のリファレンスソルバ条件**として実装（決定的・event/classification 型で
+  S2 と同型。box-detection リプレイの `episode.py` CONDITIONS には追加しない）。IMPROVEMENT.md の
+  「episode.py CONDITIONS に追加」は box-replay 前提の記述で、S6 の決定的設計では不要（ADR-014 と整合）。

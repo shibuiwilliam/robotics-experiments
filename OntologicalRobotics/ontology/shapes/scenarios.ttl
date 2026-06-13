@@ -47,3 +47,13 @@ orx-sh:PossiblyContaminatedShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:message "possiblyContaminatedBy の値は AllergenClass でなければならない"@ja ;
     ] .
+
+# --- S6 リサイクル選別（T13） ---
+orx-sh:RegulatedClassShape a sh:NodeShape ;
+    sh:targetClass orx-biz:RegulatedClass ;
+    sh:property [
+        sh:path orx-biz:disposalRoute ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "RegulatedClass は disposalRoute をちょうど1つ持つ（規制規則の一意性）"@ja ;
+    ] .

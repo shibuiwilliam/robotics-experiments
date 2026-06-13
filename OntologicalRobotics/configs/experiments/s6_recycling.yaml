@@ -1,0 +1,15 @@
+# S6 リサイクル選別実験（T13, H4 双対表現）— 完全オフライン（決定的ソルバ）
+# 反証: OR-sym(記号のみ)は接地不能で全件委譲、OR-vec(ベクトルのみ)は規制推論欠如で誤レーン
+# （電池の高コスト誤り）、OR-full(双対)のみコスト最小・高コスト誤り0。
+name: s6-recycling
+scenario: s6
+world_config: configs/world/s6_recycling.yaml
+conditions: [OR-full, OR-vec, OR-sym]
+seeds: [601, 602, 603, 604, 605, 606, 607, 608]
+duration_s: 0.0
+knob: visual_noise
+knob_values: [0.1, 0.5, 1.0, 2.0]
+params:
+  primary_sigma: 0.2
+  confidence_threshold: 0.15
+  high_cost_threshold: 50.0

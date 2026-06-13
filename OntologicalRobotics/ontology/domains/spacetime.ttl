@@ -66,3 +66,8 @@ orx-st:possiblyContaminatedBy a owl:ObjectProperty ;
     rdfs:domain orx-upper:PhysicalObject ;
     rdfs:label "汚染可能性"@ja ;
     rdfs:comment "接触推移閉包から導出される時刻依存の汚染主張（導出専用）"@ja .
+
+# --- S6 処理レーン（T13） ---
+orx-st:DisposalLane a owl:Class ;
+    rdfs:subClassOf orx-st:Zone ;
+    rdfs:label "処理レーン"@ja .
