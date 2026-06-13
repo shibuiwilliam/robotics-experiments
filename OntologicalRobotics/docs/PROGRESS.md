@@ -206,8 +206,8 @@ LLM層メタモルフィック。手順: configs/experiments/*.yaml の provider
   - 頑健性: contact_miss_rate 掃引で OR-full ≥ OR−belief（ノイズ0で既に分離）
   - 4条件の構造的失敗が相異（履歴/横断融合/時間意味論）。語彙＋SHACL＋CQ＋メタモルフィック＋replay 完備
   - 成果物: data/runs/scenario-s2-ec06ef90 / レポート。テスト: 207 passed
-- [ ] S6 リサイクル（T13 / X4,X6 / H4）— 受入: コスト加重で OR-full > 両アブレ・較正曲線
-- [ ] M-Scenario-A: 3シナリオ×全条件の比較レポート提示
+- [x] S6 リサイクル（T13 / X4,X6 / H4）✅（2026-06-14）— OR-full cost 0.062/高コスト誤り0、OR-vec 誤レーン(30)、OR-sym 崩壊。反証 green。
+- [x] **M-Scenario-A 達成**（2026-06-14）: S1+S2+S6 比較レポート（`orx scenario milestone`／`make scenario-milestone-a`）。3シナリオとも反証 green。Tier A 完了
 
 ### Tier B（Tier Aゲート後）
 - [ ] S3 製造ライン（T10 / H1,H3） / [ ] S7 介護（T14 / H2,H4,H6） / [ ] S4 プラント（T11 / H2,H5）

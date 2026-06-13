@@ -241,6 +241,35 @@ def scenario_demo(
     typer.secho(f"OK: シナリオ {scenario_id} 反証テスト green", fg=typer.colors.GREEN)
 
 
+@scenario_app.command("milestone")
+def scenario_milestone(
+    name: str = typer.Argument("M-Scenario-A", help="マイルストーン名（既定: M-Scenario-A）"),
+) -> None:
+    """Tier A（S1,S2,S6）の3シナリオ×全条件の比較レポートを生成する（M-Scenario-A）。"""
+    from orx.exp import scenario as scn
+
+    try:
+        _runs, milestone = scn.run_milestone(scn.TIER_A, runs_root(), progress=typer.echo)
+    except (ConfigError, ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
+        return
+    md = scn.render_milestone(name, milestone)
+    out_dir = reports_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"milestone-{name}.md"
+    out_path.write_text(md, encoding="utf-8")
+    typer.echo("")
+    typer.echo(md)
+    all_green = all(
+        all(milestone["results"][sid].get("falsification", {}).values())
+        for sid in milestone["scenarios"]
+    )
+    typer.echo(f"レポート: {out_path}")
+    if not all_green:
+        _fail("一部シナリオの反証予言が未達")
+    typer.secho(f"OK: {name} 全シナリオ反証 green", fg=typer.colors.GREEN)
+
+
 @scenario_app.command("run")
 def scenario_run(
     experiment_config: Path = typer.Argument(
