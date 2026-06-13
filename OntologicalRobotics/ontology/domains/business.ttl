@@ -91,3 +91,18 @@ orx-biz:AllergenClass a owl:Class ;
     rdfs:subClassOf orx-upper:InformationEntity ;
     rdfs:label "アレルゲンクラス"@ja ;
     rdfs:comment "peanut/gluten 等の規制対象アレルゲン区分"@ja .
+
+# --- S6 リサイクル選別：規制オントロジー（T13） ---
+orx-biz:RegulatedClass a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "規制対象クラス"@ja ;
+    rdfs:comment "battery/freon 等。処理経路が法規制で定まる製品クラス"@ja .
+
+orx-biz:disposalRoute a owl:ObjectProperty ;
+    rdfs:domain orx-biz:RegulatedClass ;
+    rdfs:label "規定処理経路"@ja ;
+    rdfs:comment "規制クラス → 処理レーン（規制規則・記号側の知識）"@ja .
+
+orx-biz:routedTo a owl:ObjectProperty ;
+    rdfs:domain orx-upper:PhysicalObject ;
+    rdfs:label "割当レーン"@ja .

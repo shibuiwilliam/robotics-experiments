@@ -1,0 +1,10 @@
+id: cq_s6_routed
+question: "OR-full が各物体を割り当てたレーンは何か？"
+sparql: |
+  PREFIX orx-biz: <https://orx.local/onto/biz#>
+  SELECT ?o ?lane WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?o orx-biz:routedTo ?lane .
+    }
+  }
+note: "視覚接地(X4)×規制推論(記号)の双対経路の結果。"

@@ -78,6 +78,10 @@ def _ensure_loaded() -> None:
         from orx.exp.suites.s2_allergen import runner as _s2
 
         _s2.register_self()
+    if "s6" not in _REGISTRY:
+        from orx.exp.suites.s6_recycling import runner as _s6
+
+        _s6.register_self()
 
 
 def get(scenario_id: str) -> ScenarioSpec:
