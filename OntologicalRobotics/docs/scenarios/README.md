@@ -1,4 +1,8 @@
-# ORX 検証シナリオ集
+# ORX 検証シナリオ集（着想メモ・SUPERSEDED）
+
+> **⚠️ authoritative は `SCENARIOS.md` v1.0**（タスクスイート T8–T14・受入基準・実装順序）。
+> 本ディレクトリは spec 確定前の**着想メモ**であり、実装・受入の正典ではない（IMPROVEMENT.md M-1）。
+> 実装計画は `docs/SCENARIO_IMPLEMENTATION_PLAN.md`、是正は `docs/REMEDIATION_PLAN.md` を参照。
 
 本ディレクトリは `SCENARIOS.md`（着想）を、各シナリオの**詳細定義**として落とし込んだものである。
 各ファイルは「叙述 → なぜオントロジーが必要か → 反証可能な予言 → ORXへの縮約 → タスク定義 →

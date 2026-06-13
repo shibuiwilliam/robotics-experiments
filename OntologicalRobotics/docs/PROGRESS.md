@@ -147,21 +147,30 @@
   - 成果物: data/runs/exp-t5-onboarding-9591cf5a / レポート
   - テスト: 158 passed
 
-## 全体状況（2026-06-12 時点）
+## 全体状況（2026-06-13 更新・計測射程を明示分離 = IMPROVEMENT.md C1）
 
-| Phase | 状態 | ゲート測定 |
-|-------|------|-----------|
-| P0 基盤 | ✅ | 忠実度F1=1.000（>0.95）、リプレイ同一性=バイト一致 |
-| P1 同一性 (H2) | ✅ | T1: 0.950 vs 0.000、McNemar p=3.8e-06 |
-| P2 業務+エージェント (H6,H7) | ✅構築/⏳live | T2表現上限1.000・T7 onto 1.000。LLM 3条件はlive待ち |
-| P3 能力契約 (H3) | ✅ | Brier信頼性 0.030→0.006、割当 0.968 vs 0.625 |
-| P4 信念管理 (H5) | ✅ | 乖離領域 contradiction ∈ {0.1..0.45} |
-| P5 オンボーディング (H1) | ✅構築/⏳live | heuristic 1.000/0.0修正行。LLM支援はlive待ち |
+> **重要（C1）**: 下表の数値は **ceiling（表現上限・決定的）/ ablation（機構）** であり、
+> **仮説 H1–H7 のエージェントレベル検証ではない**。エージェント検証（実LLM/実埋め込み）は
+> **全フェーズで未実行（live・OPENAI_API_KEY＋コスト承認要）**。装置は本物だが、
+> 「オントロジーを使うエージェントが生データに勝つ」という仮説本体は未計測。
 
-**live計測（要 OPENAI_API_KEY＋コスト承認）**: T2エージェント3条件（54問）、
-T7 vector-rag、T5 llm支援、メタモルフィック、H7知識効率。概算 0.9〜1.5Mトークン。
-手順: 各 configs/experiments/*.yaml の provider.mode を openai にして
-`uv run orx exp run <config>`（全応答キャッシュ→以後 mode=cache で再現・無料）。
+| Phase | 装置(機構/表現)の状態 | 射程 | 計測値（ceiling/ablation） | 仮説のagent検証 |
+|-------|----------------------|------|----------------------------|------------------|
+| P0 基盤 | ✅ | ceiling | 忠実度F1=1.000(ノイズ0)、リプレイ=バイト一致 | — |
+| P1 同一性 (H2) | ✅ | ablation | T1: 0.950 vs 0.000(OR−identity)、McNemar p=3.8e-06 | **未実行(live)** |
+| P2 業務 (H6,H7) | ✅ | ceiling | T2 OR-reference=1.000(表現上限のみ)。T7 onto=1.000 | **未実行(live)** |
+| P3 能力契約 (H3) | ✅ | ablation | Brier信頼性 0.030→0.006、割当 0.968 vs 0.625(round-robin) | **未実行(live)** |
+| P4 信念管理 (H5) | ✅ | ablation | 乖離領域 contradiction ∈ {0.1..0.45}(OR−belief比) | **未実行(live)** |
+| P5 統合 (H1) | ✅ | ceiling | heuristic 1.000/0.0修正行(規則射程内で飽和) | **未実行(live)** |
+
+- ceiling = 決定的リファレンスソルバ/期待SPARQL-SQL（LLM不要）。「表現できる」上限の証明。
+- ablation = 機構 on↔off の差（同一性/信念/能力台帳）。決定的経路での機構寄与。
+- **stub 入力に対する p 値（例 T7 1.69e-21）は無意味なので仮説の根拠に引用しない（C2）。**
+
+**live計測（要 OPENAI_API_KEY＋コスト承認・~0.9〜1.5Mトークン）＝目的達成の本丸**:
+T2 エージェント3条件(B0/B1/OR-full)、T7 vector-rag(実埋め込み)、T5 llm支援、H7 トークン効率、
+LLM層メタモルフィック。手順: configs/experiments/*.yaml の provider.mode を openai にして
+`uv run orx exp run/scenario run <config>`（全応答キャッシュ→以後 mode=cache で再現・無料）。
 
 ## シナリオ・プログラム（T8〜T14、SCENARIOS.md v1.0）
 

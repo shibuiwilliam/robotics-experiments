@@ -57,6 +57,9 @@ class S1Result(StrictModel):
     exp_id: str
     name: str
     config_hash: str
+    git_commit: str
+    orx_version: str
+    model_snapshot: str  # 決定的シナリオは "deterministic (no LLM/embedding)"
     seeds: list[int]
     conditions: list[str]
     recall_lots: dict[str, str]  # seed(str) -> lot
@@ -241,10 +244,16 @@ def run(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict
             )
         robustness = {"knob": config.knob, "values": values, "completion": completion_curve}
 
+    from orx import __version__
+    from orx.exp.episode import _git_commit
+
     result = S1Result(
         exp_id=exp_dir.name,
         name=config.name,
         config_hash=config_hash(config),
+        git_commit=_git_commit(),
+        orx_version=__version__,
+        model_snapshot="deterministic (no LLM/embedding)",
         seeds=list(config.seeds),
         conditions=CONDITIONS,
         recall_lots=recall_lots,
@@ -299,12 +308,21 @@ def summarize(result: dict) -> list[str]:
 
 
 def render_report(result: dict) -> str:
+    from orx.exp import scope
+
+    stamp = (
+        f" / git: `{result.get('git_commit', '?')}` / model: {result.get('llm_model', '?')}"
+    )
     lines = [
         f"# ORX Scenario Report — S1 ロット回収（T8） `{result['exp_id']}`",
         "",
-        f"- シナリオ: s1 / 仮説: H2, H6, H7 / シード数: {len(result['seeds'])} / "
-        f"構成ハッシュ: `{result['config_hash']}`",
+        f"- シナリオ: s1 / 仮説: H2, H6（表現側）/ シード数: {len(result['seeds'])} / "
+        f"構成ハッシュ: `{result['config_hash']}`{stamp}",
         f"- 回収ロット（シード別）: {result['recall_lots']}",
+        "",
+        scope.scope_section([scope.CEILING, scope.ABLATION]),
+        "> 3条件（OR-full/B0/B1）はすべて**決定的リファレンスソルバ**（ceiling/ablation）。"
+        "LLMエージェント版（H2/H6 のエージェント検証）は未実装・未実行（live）。",
         "",
         "## 1. 失敗予言の検証結果",
         "",

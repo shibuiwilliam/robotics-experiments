@@ -104,3 +104,12 @@
   - 把持可否: グリッパ g が「アレルゲンフリー集合 F」の製品を把持 → carried(g)∩F≠∅ なら違反。
 - 採用理由: アレルゲン別ライン（peanut-free 等）に忠実、BFSで安価、真理グラフでトリプル採点可能。
   provenance パス保持（代替C）は S5 監査で必要になれば後付け。
+
+## ADR-016: tasks/suites/ の解釈（PROJECT.md §11 と実装の整合, IMPROVEMENT.md M-2）
+- 日付: 2026-06-13 / 状態: 採用
+- PROJECT.md §11 は `tasks/suites/` を「T1〜T7 定義」の場所とするが、実装コードは技術的制約
+  （CLIがインストール済みパッケージから import する、ADR-013）により `src/orx/exp/suites/` にある。
+- 解決: `tasks/suites/` は各スイートの**宣言的仕様**（README・CQ参照・固定フィクスチャ）の場所とし、
+  コードは src に置く（§11 の「定義」を宣言的成果物と解釈）。シナリオ（S1〜）はこの方針で
+  `tasks/suites/s{n}_{slug}/README.md` を持つ。既存 T1〜T7 は遡及で宣言 spec を作らない（低価値・
+  PROGRESS/PLAN に定義が揃っているため）。PROJECT.md は改変しない（解釈の追認を要すれば提示）。

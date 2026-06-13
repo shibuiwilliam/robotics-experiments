@@ -17,3 +17,8 @@ data/cache/
 
 # macOS
 .DS_Store
+
+# 生成レポート（regenerable via `orx report` / `orx scenario run`）。代表は意図的に再生成。
+reports/*.md
+# onboard 提案の出力（デモ残骸）
+ontology/mappings/proposals/

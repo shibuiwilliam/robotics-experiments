@@ -51,6 +51,12 @@ uv run orx onboard configs/robots/fuzzed_vendor_x.yaml       # 新ロボット�
 
 ## 実装状況（P0〜P5 全フェーズ構築済み）
 
+> **計測射程の注意（重要・IMPROVEMENT.md C1）**: 本リポジトリのオフライン数値は
+> **表現上限（決定的ソルバ）／機構アブレーション**であり、**仮説 H1–H7 の「オントロジーを使う
+> LLMエージェントが生データに勝つ」という本体検証は未実行（live計測・OPENAI_API_KEY＋コスト承認要）**。
+> 装置（sim/perception/anchoring/kg/oracle/replay/exp/シナリオ基盤）は本物だが、エージェントレベルの
+> 仮説検証はこれからである。詳細は docs/PROGRESS.md・IMPROVEMENT.md を参照。
+
 - **C1 sim**: MuJoCoミニ倉庫、異種2ロボット（カメラ/擬似LiDAR）、ベンダースキーマA/B、
   スキーマ・ファジング、劣化ノブ5種、クレーン搬送
 - **C2 skills**: 擬似VLAスキルサーバ＋条件付き故障注入（重量/素材/リーチ）
