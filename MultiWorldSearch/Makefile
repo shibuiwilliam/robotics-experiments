@@ -1,4 +1,4 @@
-.PHONY: help install dev format lint typecheck test test-live test-scenarios \
+.PHONY: help install dev setup format lint typecheck test test-live test-scenarios \
        check scenario-list scenario-run scenario-all eval clean es-up es-down test-es
 
 help: ## Show this help
@@ -12,6 +12,9 @@ install: ## Install runtime dependencies
 
 dev: ## Install runtime + dev dependencies
 	uv sync --extra dev
+
+setup: ## Sync the full env (runtime + dev + live) for tests and live runs
+	uv sync --extra dev --extra live
 
 # ── Quality ────────────────────────────────────────────────────────
 
@@ -60,10 +63,13 @@ scenario-list: ## List all available scenarios
 scenario-run: ## Run a scenario (usage: make scenario-run NAME=maintenance_handoff SEED=0)
 	uv run python -m mws.cli scenario run --name $(NAME) --seed $(or $(SEED),0)
 
-scenario-all: ## Run all 7 scenarios with seed 0
-	@for s in $$(uv run python -m mws.cli scenario list); do \
-		echo "\n=== $$s ===" ; \
-		uv run python -m mws.cli scenario run --name "$$s" --seed 0 ; \
+scenario-all: setup ## Build env, run scenario acceptance tests, then run all 7 scenarios (seed 0)
+	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic) ==="
+	uv run --no-sync pytest tests/scenarios/ -q
+	@echo "\n=== [2/2] end-to-end scenario runs ==="
+	@for s in $$(uv run --no-sync python -m mws.cli scenario list); do \
+		echo "\n--- $$s ---" ; \
+		uv run --no-sync python -m mws.cli scenario run --name "$$s" --seed 0 ; \
 	done
 
 # ── Sim / Index / Eval ─────────────────────────────────────────────
