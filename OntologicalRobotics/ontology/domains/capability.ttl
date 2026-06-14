@@ -52,3 +52,22 @@ orx-cap:CleaningEvent a owl:Class ;
 orx-cap:cleans a owl:ObjectProperty ;
     rdfs:domain orx-cap:CleaningEvent ; rdfs:range orx-upper:PhysicalObject ;
     rdfs:label "洗浄対象"@ja .
+
+# --- S3 工程要求（T10, H3 能力統合） ---
+orx-cap:ProcessRequirement a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "工程要求"@ja ;
+    rdfs:comment "作業指示書(SOP)に書かれた工程の要件: 重量帯・把持面素材・精度。能力契約と突合せる"@ja .
+
+orx-cap:requiresPayloadKg a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:ProcessRequirement ; rdfs:range xsd:double ;
+    rdfs:comment "この工程が要する最小可搬重量(kg)"@ja .
+
+orx-cap:requiresMaterial a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:ProcessRequirement ; rdfs:range xsd:string ;
+    rdfs:comment "把持面の素材タグ"@ja .
+
+orx-cap:matchesCapability a owl:ObjectProperty ;
+    rdfs:domain orx-cap:ProcessRequirement ; rdfs:range orx-cap:Capability ;
+    rdfs:label "適合能力"@ja ;
+    rdfs:comment "工程要求×能力契約の語彙横断マッチ(OR-fullが導出, ベンダー非依存)"@ja .

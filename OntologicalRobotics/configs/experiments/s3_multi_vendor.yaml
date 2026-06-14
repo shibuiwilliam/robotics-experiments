@@ -1,0 +1,9 @@
+# S3 多ベンダー製造ライン実験（T10, H1 統合 / H3 能力契約）— 完全オフライン（決定的）
+# 反証: round-robin(能力無視)は実現可能性を外し完遂低下、B1(共通オントロジー無し)は段取り替え後に
+# 語彙横断照合できず割当失敗、OR-full(能力統合)のみ最良かつ故障後に縮退再割当で回復。台帳が劣化追従。
+name: s3-multi-vendor
+scenario: s3
+world_config: configs/world/s3_multi_vendor.yaml
+conditions: [OR-full, B1, round-robin]
+seeds: [301, 302, 303, 304, 305, 306, 307, 308]
+duration_s: 0.0
