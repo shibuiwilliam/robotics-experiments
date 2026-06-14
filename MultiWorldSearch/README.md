@@ -152,7 +152,7 @@ mws/
 ├── core/          # Atom schema, types, config, clock, logging, provenance
 ├── worldmodel/    # 4D scene graph (entities + relations)
 ├── storage/       # Polyglot stores: vector, graph, timeseries, spatial, blob
-├── embedding/     # Two-tier: mock (default) / Gemini teacher + local student
+├── embedding/     # Single model: Gemini gemini-embedding-2 (mock stand-in offline)
 ├── retrieval/     # Multi-index search, RRF fusion, consumer-aware projection
 ├── agents/        # ADK agent (live) / Mock agent (default)
 ├── vla/           # Retrieval-augmented policy, skill atoms
@@ -191,8 +191,7 @@ uv run python -m mws.cli eval run --run-id maintenance_handoff-0-XXXXXXXX
 uv run ruff format mws/ tests/    # Format
 uv run ruff check mws/ tests/     # Lint
 uv run pyright mws/               # Type check
-uv run pytest                     # Test (263 tests, mock, deterministic, <25s)
-uv run pytest -m student          # Local student model tests (needs --extra student)
+uv run pytest                     # Test (275 tests, mock, deterministic, <25s)
 uv run pytest -m live             # Test with live cloud (requires key)
 ```
 

@@ -61,8 +61,8 @@ class InstanceStore:
                 self.stores.vector.add(atom.atom_id, existing)
             else:
                 # Document side of the asymmetric scheme (E1); identity for
-                # symmetric (mock/student) embedders. Routed through the
-                # federation's tracked/cached path when available.
+                # the symmetric mock embedder. Routed through the federation's
+                # tracked/cached path when available.
                 if self._embed_document_fn is not None:
                     result = self._embed_document_fn(atom.text_summary)
                 else:

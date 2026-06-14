@@ -25,9 +25,42 @@ import numpy as np
 from mws.core.config import MWSSettings
 from mws.core.logging import get_logger
 from mws.core.types import EmbeddingSpace
-from mws.eval.h7 import _CORPUS, _QUERIES
 from mws.eval.metrics import mrr, recall_at_k
 from mws.storage.vector import VectorStore
+
+# Deterministic corpus: 4 entities x 3 documents + 8 noise documents.
+_CORPUS: list[tuple[str, str]] = [
+    ("pump", "Pump_07 bearing vibration exceeded threshold, replacement scheduled."),
+    ("pump", "Work order WO-101: pump_07 bearing replaced, torque spec 45 Nm applied."),
+    ("pump", "SOP-PUMP-07 step 4: inspect pump bearing runout, limit 0.05 mm."),
+    ("valve", "Valve_03 requires counter-clockwise loosening per maintenance skill demo."),
+    ("valve", "Skill demonstration: loosen valve_03 handle with two-finger grip."),
+    ("valve", "Valve_03 pressure rating 100 PSI, do not operate above the limit."),
+    ("forklift", "Forklift_12 battery charge at 18 percent, return to charging bay."),
+    ("forklift", "Asset registry: forklift_12 assigned to maintenance bay this week."),
+    ("forklift", "Forklift_12 observed on warehouse floor, status mismatch with registry."),
+    ("sds", "SDS substance_X: toxic vapor, requires PPE level C and ventilation."),
+    ("sds", "Chemical leak response: evacuate via south exit per substance_X SDS."),
+    ("sds", "Substance_X storage requires sealed containers below 25 degrees."),
+    ("noise", "Cafeteria menu for Friday includes soup and seasonal vegetables."),
+    ("noise", "Quarterly all-hands meeting moved to the second floor auditorium."),
+    ("noise", "Parking lot B is closed for resurfacing until next Monday."),
+    ("noise", "New visitor badge printer installed at the north reception desk."),
+    ("noise", "The annual safety poster contest accepts entries until month end."),
+    ("noise", "Window cleaning is scheduled for building C this weekend."),
+    ("noise", "The vending machine on floor two now accepts contactless payment."),
+    ("noise", "Office plants are watered by the facilities team every Tuesday."),
+]
+
+# Paraphrase queries (do not share exact wording with corpus docs).
+_QUERIES: list[tuple[str, str]] = [
+    ("pump", "how do I check the pump bearing wear and what torque to use"),
+    ("pump", "vibration problem on the pump, which work order fixed it"),
+    ("valve", "what is the technique to undo the valve handle"),
+    ("valve", "maximum safe pressure before operating the valve"),
+    ("forklift", "where should the low battery forklift go"),
+    ("sds", "what protective equipment for the toxic chemical spill"),
+]
 
 logger = get_logger(__name__)
 

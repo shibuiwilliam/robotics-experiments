@@ -67,9 +67,6 @@ class EmbeddingSpace(enum.StrEnum):
 
     MOCK_128 = "mock-128-v1"
     MOCK_768 = "mock-768-v1"
-    GEMMA_128 = "embgemma-128-v1"
-    GEMMA_768 = "embgemma-768-v1"
-    MINILM_384 = "minilm-384-v1"
     GEMINI_768 = "gemini2-768-v1"
     # v2: asymmetric task-instruction prefixes (IMPROVEMENT E1). Same model,
     # different coordinate semantics — never compare v1 and v2 vectors.

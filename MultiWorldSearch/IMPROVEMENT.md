@@ -18,9 +18,7 @@
 
 ## 2. ブロック中（外部要因）
 
-| 課題 | ブロッカー | 解除時のアクション |
-|------|-----------|-------------------|
-| H7 を本来の生徒 **EmbeddingGemma** で再実行 | Hugging Face の Gemma ライセンス未承諾（トークン有でも 401 gated） | ライセンス承諾 → `MWS_STUDENT_MODEL=google/embeddinggemma-300m` で `eval h7` 再実行（現結果は MiniLM-384 代替・開示済み） |
+**なし。** 唯一の外部ブロックだった「H7 を EmbeddingGemma で再実行（HF ライセンス未承諾）」は、**P12 で H7 を撤回し埋め込みを `gemini-embedding-2` 単一に統一**したことで消滅した。
 
 ---
 
@@ -31,6 +29,7 @@
 - **Batch API の per-item token_count が None** — `tokens_source: estimated` で機械可読に明示。
 - **S7 の gemini_infer は 1 呼/ラン**（p95=p50、multi-seed で分布化）・**フェーズ単位は1サンプル**・**S2 perceive のロボ観測3件は単発埋め込み**（by-design）。
 - **リプレイ走は reconcile の入力にしない** — 再現実験であり計測走ではない（`mws/core/llm_log.py` に文書化）。
+- **埋め込みは `gemini-embedding-2` 単一**（P12）— 教師/生徒二層・H7・sentence-transformers は撤去。クエリ時のクラウド往復（p50〜400ms）は既知の制約で、キャッシュ/バッチ/Batch API で抑える方針。高頻度制御ループ適合はスコープ外。
 
 ---
 
@@ -45,5 +44,6 @@
 | P9 (06-11) | E1–E4 gemini-embedding-2 公式準拠（非対称接頭辞 A/B +0.056・バッチ・Batch API・v2）＋監査が実リーク9件検出→修正 | 255 tests |
 | P10 (06-12) | M15–M18 — manifest 完全化＋コミット・llm_calls.jsonl 記録・取込全面バッチ（-48%）・v2 live CI | 263 tests |
 | P11 (06-12) | M19 **3点照合監査**・**REPLAY**（記録応答の決定的リプレイ、S1 全ゲート再現・LLM呼0）・**重みスイープ**（事前登録→現行確定＋R@5 構造上限の発見）・**並列 act**（S1 -65%/S5 -72%、レース排除・順序決定性維持） | 276 tests |
+| P12 (06-14) | **埋め込みを `gemini-embedding-2` 単一に統一** — 教師/生徒二層・H7・`LocalStudentEmbedder`・`sentence-transformers`（student extra）・`eval h7` CLI・student マーカー・GEMMA/MINILM 空間・`student_model` 設定を撤去。factory は live=gemini / mock=決定的スタンドインに単純化。docs（PROJECT/CLAUDE）整合 | 275 tests |
 
 詳細: `git log --follow IMPROVEMENT.md` / 各走の数値は REPORT.md。

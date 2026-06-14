@@ -51,8 +51,7 @@ def build_index(config_path: str, seed: int = 0, steps: int = 100) -> dict[str, 
     vector_backend = "lancedb" if vector_backend == "lancedb" else "memory"
     timeseries_backend = "duckdb" if timeseries_backend == "duckdb" else "memory"
 
-    emb_role = "teacher" if settings.cloud_mode == CloudMode.LIVE else "student"
-    embedder = create_embedder(settings, role=emb_role)
+    embedder = create_embedder(settings)
     # Space/dims come from the embedder (single source of truth — see
     # BaseScenario._init_run).
     stores = StoreRegistry(

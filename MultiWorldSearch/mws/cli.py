@@ -179,29 +179,6 @@ def eval_reconcile(log_path: str, runs: str) -> None:
         sys.exit(1)
 
 
-@eval_cmd.command("h7")
-def eval_h7() -> None:
-    """Run the H7 teacher/student embedding A/B (latency vs recall).
-
-    Requires the 'student' extra for the local model; GOOGLE_API_KEY for the
-    teacher tier. Prints JSON to stdout and records a runs/ manifest.
-    """
-    import json
-    import uuid
-
-    from mws.core.config import get_settings
-    from mws.eval.h7 import run_h7_ab
-    from mws.eval.report import create_manifest, save_report
-
-    settings = get_settings()
-    result = run_h7_ab(settings)
-    run_id = f"h7_ab-{settings.seed}-{uuid.uuid4().hex[:8]}"
-    manifest = create_manifest(run_id=run_id, scenario="h7_ab", seed=settings.seed)
-    save_report(run_id=run_id, manifest=manifest, metrics=result)
-    result["run_id"] = run_id
-    click.echo(json.dumps(result, indent=2, default=str))
-
-
 @eval_cmd.command("e1-ab")
 def eval_e1_ab() -> None:
     """Run the E1 A/B: task-instruction prefixes (v2) vs raw embedding (v1).

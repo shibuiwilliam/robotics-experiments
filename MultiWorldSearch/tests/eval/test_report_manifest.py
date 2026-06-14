@@ -36,7 +36,6 @@ def test_manifest_contains_all_reproducibility_fields() -> None:
     # Model ids come from their single sources of truth.
     assert manifest["model_ids"]["embedding"] == "gemini-embedding-2"
     assert manifest["model_ids"]["llm"] == "gemini-3.5-flash"
-    assert manifest["model_ids"]["student"]
     # Key dependency versions are resolved (installed in this env).
     for dep in ("mujoco", "lancedb", "duckdb", "google-genai"):
         assert manifest["dependency_versions"][dep] not in ("", None)

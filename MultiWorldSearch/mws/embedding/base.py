@@ -29,8 +29,8 @@ class Embedder(Protocol):
     (IMPROVEMENT E1): documents and queries are formatted differently before
     embedding. ``format_document``/``format_query`` return the FINAL string
     that will be embedded — callers must hash/cache on that string, not the
-    raw input. Symmetric embedders (mock, student) return the input unchanged,
-    so their behavior is byte-for-byte identical to the pre-E1 code.
+    raw input. The symmetric mock embedder returns the input unchanged, so its
+    behavior is byte-for-byte identical to the pre-E1 code.
     """
 
     @property
