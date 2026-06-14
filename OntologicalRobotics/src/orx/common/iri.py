@@ -17,6 +17,7 @@ NS_CAP = _ONTO_ROOT + "cap#"
 NS_ST = _ONTO_ROOT + "st#"
 NS_PROV = _ONTO_ROOT + "prov#"
 NS_BIZ = _ONTO_ROOT + "biz#"
+NS_NORM = _ONTO_ROOT + "norm#"
 
 XSD_DOUBLE = "http://www.w3.org/2001/XMLSchema#double"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
@@ -55,6 +56,11 @@ def prov(name: str) -> str:
 def biz(name: str) -> str:
     """orx-biz: 業務・文書語彙のIRI。"""
     return _term(NS_BIZ, name)
+
+
+def norm(name: str) -> str:
+    """orx-norm: 規範（deontic）語彙のIRI。"""
+    return _term(NS_NORM, name)
 
 
 def entity(type_: str, key: str) -> str:

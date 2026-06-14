@@ -119,3 +119,36 @@ orx-sh:WorkOrderShape a sh:NodeShape ;
         sh:datatype xsd:string ;
         sh:message "WorkOrder は appliesSop をちょうど1つ持つ（適用SOP）"@ja ;
     ] .
+
+# --- S5 病院内搬送（T12, 規範層） ---
+@prefix orx-norm: <https://orx.local/onto/norm#> .
+
+orx-sh:ProhibitionShape a sh:NodeShape ;
+    sh:targetClass orx-norm:Prohibition ;
+    sh:property [
+        sh:path orx-norm:appliesToItemClass ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Prohibition は appliesToItemClass をちょうど1つ持つ（適用物分類）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-norm:forbidsZoneClass ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Prohibition は forbidsZoneClass をちょうど1つ持つ（禁止区画分類）"@ja ;
+    ] .
+
+orx-sh:CustodyStepShape a sh:NodeShape ;
+    sh:targetClass orx-norm:CustodyStep ;
+    sh:property [
+        sh:path orx-norm:custodyOf ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "CustodyStep は custodyOf をちょうど1つ持つ（搬送物の一意性）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-norm:atZone ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "CustodyStep は atZone をちょうど1つ持つ（通行区画）"@ja ;
+    ] .

@@ -86,6 +86,10 @@ def _ensure_loaded() -> None:
         from orx.exp.suites.s4_inspection import runner as _s4
 
         _s4.register_self()
+    if "s5" not in _REGISTRY:
+        from orx.exp.suites.s5_hospital import runner as _s5
+
+        _s5.register_self()
     if "s6" not in _REGISTRY:
         from orx.exp.suites.s6_recycling import runner as _s6
 
@@ -160,6 +164,7 @@ def write_report(exp_dir: Path, out_dir: Path) -> Path:
 # ----------------------------------------------------------------- milestones
 
 TIER_A = ["s1", "s2", "s6"]  # SCENARIOS.md §5: M-Scenario-A の対象
+TIER_ALL = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"]  # 全7シナリオ比較（C3完了）
 
 
 def run_milestone(
@@ -212,7 +217,7 @@ def render_milestone(name: str, milestone: dict) -> str:
             f"| {sid} {spec.meta.title} | {spec.meta.suite} | "
             f"{','.join(spec.meta.hypotheses)} | {mark} | `{r.get('config_hash', '?')}` |"
         )
-    lines += ["", f"**Tier A 反証総合判定: {'全green ✓' if all_green else '未達 ✗'}**", ""]
+    lines += ["", f"**反証総合判定: {'全green ✓' if all_green else '未達 ✗'}**", ""]
 
     for sid in ids:
         spec = get(sid)

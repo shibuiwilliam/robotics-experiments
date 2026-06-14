@@ -38,6 +38,7 @@ _TBOX_FILES = (
     "domains/spacetime.ttl",
     "domains/agency.ttl",
     "domains/business.ttl",
+    "domains/normative.ttl",
 )
 
 
