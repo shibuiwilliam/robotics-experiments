@@ -1,19 +1,15 @@
-# IMPROVEMENT.md — 未完課題（2026-06-14 P15 完了後）
+# IMPROVEMENT.md — 未完課題（2026-06-14 P16 完了後）
 
 > **本書の位置づけ**
 > 未完の修正・改善課題**のみ**を保持する。完了済み課題の詳細は **git 履歴の本ファイル**と **REPORT.md** を参照。
-> 現状: live 7/7 PASS・**3点照合監査ゼロ差分**・埋め込みは `gemini-embedding-2` 単一（P12）・ベクトルバックエンドは memory/LanceDB/**Elasticsearch** から選択可（P13、シナリオ実行は ES 既定 P14）・**manifest が backend／dirty パスまで記録し単独で完全再現可能**（P15）・mock **278 tests** 両シェル緑（＋ES統合5件、`make es-up` 時）。
+> 現状: live 7/7 PASS・**3点照合監査ゼロ差分**・埋め込みは `gemini-embedding-2` 単一（P12）・ベクトルバックエンドは memory/LanceDB/**Elasticsearch** から選択可（P13、シナリオ実行は ES 既定 P14）・**manifest が backend／dirty パス／embedder 実空間まで記録し単独で完全再現可能**（P15+P16）・mock **280 tests** 両シェル緑（＋ES統合5件、`make es-up` 時）。
 
 ---
 
 ## 1. 未完課題
 
-### M22 — manifest の embedding_space / elasticsearch_index が settings 由来（**Low・再現性の精度**）
-
-- **現状**: `create_manifest` の `embedding_space`・`embedding_dims`・`elasticsearch_index`（P15）は `settings.default_embedding_space` / `settings.embedding_dims` から取る。しかし**実際のベクトルストア／ES インデックスは embedder の空間・次元**（単一情報源、`BaseScenario._init_run` が `embedder.space`/`embedder.dims` で `StoreRegistry` を構築）で名前空間化される。
-- **影響**: mock では一致（MockEmbedder が settings 空間を使う）。だが **live では embedder が常に `gemini2-768-v2`/768d** を使うため、`MWS_DEFAULT_EMBEDDING_SPACE` が未設定/古い shell だと manifest の `embedding_space` と `elasticsearch_index` 規約が**実体と食い違う**（P9 の空間ドリフトと同種の latent な不整合）。2026-06-14 のマルチシード検証では mock のため一致したが、live で再現する恐れ。
-- **修正案**: manifest の埋め込み系フィールドを **embedder の実空間/次元から**記録する（create_manifest に embedder か space/dims を渡す、または scenario が manifest 生成時に embedder 値を `extra` で上書き）。
-- **受け入れ基準**: live 実行の manifest の `embedding_space`/`elasticsearch_index` が実際に使われた ES index と一致する。テスト付き。
+**なし（実装可能な登録課題はすべて消化済み・P1–P16）。** 外部要因ブロックも現在ゼロ。
+新たな課題が出たら本節に追記する。
 
 ---
 
@@ -45,6 +41,7 @@
 | P9 (06-11) | E1–E4 gemini-embedding-2 公式準拠（非対称接頭辞 A/B +0.056・バッチ・Batch API・v2）＋監査が実リーク9件検出→修正 | 255 tests |
 | P10 (06-12) | M15–M18 — manifest 完全化＋コミット・llm_calls.jsonl 記録・取込全面バッチ（-48%）・v2 live CI | 263 tests |
 | P11 (06-12) | M19 **3点照合監査**・**REPLAY**（記録応答の決定的リプレイ、S1 全ゲート再現・LLM呼0）・**重みスイープ**（事前登録→現行確定＋R@5 構造上限の発見）・**並列 act**（S1 -65%/S5 -72%、レース排除・順序決定性維持） | 276 tests |
+| P16 (06-14) | **manifest の埋め込み系を embedder 実体由来に**（M22）— `create_manifest` に optional `embedder`。あれば `embedding_space`/`embedding_dims`/`elasticsearch_index` を `embedder.space`/`embedder.dims` から（無ければ settings フォールバック）。scenario(`_save_results`)・index_builder(batch) で実 embedder を渡す。fake embedder が settings と食い違っても manifest は embedder に追従する反証テスト＋フォールバックテスト。live の空間ドリフト不整合を解消 | 280 tests |
 | P15 (06-14) | **manifest を単独で完全再現可能に**（M20+M21）— `create_manifest` に `vector_backend`（ES 時は `elasticsearch_url`＋index 命名規約 `mws-vectors-<space>-<dims>d-*`、per-run uuid のため具体名でなくパターン）を記録。`get_git_state` に `git_dirty_paths`（先頭20件＋超過マーカー）。append-only（既存フィールド不変）。テストは ES 不要・git モック | 278 tests |
 | P14 (06-14) | **シナリオ実行を ES バックエンド既定化**（B方針）— `MWSSettings.vector_backend` 既定 `elasticsearch`、pytest は conftest で `memory` 強制（モックテスト境界）。ES ストアはインスタンスごと一意インデックス＋`close()/drop()` で後始末（engine/federated/consolidation の混在防止）。`make scenario-all`/`scenario-multi-seed-all` は `setup`(--extra es)＋`es-reset`（クリーン起動＝初期化）を事前依存に。実 ES で `make scenario-all` 完走・インデックス0残（teardown 検証）。既定テストは memory のまま 275 緑 | 275 tests |
 | P13 (06-14) | **Elasticsearch ベクトルバックエンドを追加**（`vector_backend="elasticsearch"`、`dense_vector`+kNN）— `docker-compose.yml`（ES8 単一ノード）・`ElasticsearchVectorStore`（VectorStore と同一IF・空間名前空間化・冪等add）・registry/config/index_builder 配線・`es` extra・`elasticsearch` pytest marker（既定除外）・`make es-up/es-down/test-es`・`configs/index/elasticsearch.yaml`。実 ES で統合テスト5件緑＋エンジン end-to-end 動作確認。既定はインメモリ維持で 275 緑不変 | 275+5(es) tests |
