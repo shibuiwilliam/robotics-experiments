@@ -1,0 +1,10 @@
+id: cq_s4_asset_state
+question: "資産V-205の状態（起票された作業指示と適用SOP）は何か？"
+sparql: |
+  PREFIX orx-biz: <https://orx.local/onto/biz#>
+  SELECT ?asset ?wo ?sop WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?wo orx-biz:forAsset ?asset ; orx-biz:appliesSop ?sop .
+    }
+  }
+note: "台帳↔観測の同一化(H2)が無いと、観測された異常を資産個体に結べず答えられない。"

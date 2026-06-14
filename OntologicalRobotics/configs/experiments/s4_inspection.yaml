@@ -1,0 +1,13 @@
+# S4 プラント点検実験（T11, H2 同一性 / H5 信念調停）— 完全オフライン（決定的）
+# 反証: OR-no-identity は台帳↔観測を結べず状態クエリ不能、OR-no-belief は矛盾観測を解けず異常見逃し、
+# OR-sym は署名なく位置曖昧で対応付け失敗、OR-full のみ対応・異常正答最高かつ見逃し0。位置ノイズ掃引。
+name: s4-inspection
+scenario: s4
+world_config: configs/world/s4_inspection.yaml
+conditions: [OR-full, OR-no-identity, OR-no-belief, OR-sym]
+seeds: [401, 402, 403, 404, 405, 406, 407, 408]
+duration_s: 0.0
+knob: position_noise
+knob_values: [0.2, 0.4, 0.6, 0.8]
+params:
+  position_noise: 0.4
