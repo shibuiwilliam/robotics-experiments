@@ -76,6 +76,53 @@ def test_manifest_records_elasticsearch_backend_with_url_and_index(
     assert idx.endswith("-*")
 
 
+# --- M22: embedding fields follow the run's actual embedder, not settings ---
+
+
+class _FakeEmbedder:
+    """Stands in for the run's embedder with a space/dims that DIFFER from
+    settings — the live-mode drift M22 guards against."""
+
+    def __init__(self, space: object, dims: int) -> None:
+        self.space = space
+        self.dims = dims
+
+
+def test_manifest_embedding_fields_follow_embedder_not_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With an embedder supplied, embedding_space/dims and the ES index pattern
+    reflect the EMBEDDER (the store's true namespace), even when settings say
+    something else. This fails on the pre-M22 code (which read settings)."""
+    from mws.core.types import EmbeddingSpace
+
+    # Settings deliberately disagree with the embedder (stale env / drift).
+    monkeypatch.setenv("MWS_VECTOR_BACKEND", "elasticsearch")
+    monkeypatch.setenv("MWS_DEFAULT_EMBEDDING_SPACE", "mock-128-v1")
+    monkeypatch.setenv("MWS_EMBEDDING_DIMS", "128")
+    embedder = _FakeEmbedder(EmbeddingSpace.GEMINI_768_V2, 768)
+
+    manifest = create_manifest(run_id="r1", scenario="test", seed=0, embedder=embedder)
+    assert manifest["embedding_space"] == EmbeddingSpace.GEMINI_768_V2
+    assert manifest["embedding_dims"] == 768
+    # ES index pattern matches the EMBEDDER's space/dims, not settings'.
+    assert manifest["elasticsearch_index"].startswith("mws-vectors-gemini2-768-v2-768d")
+    assert "mock-128" not in manifest["elasticsearch_index"]
+
+
+def test_manifest_falls_back_to_settings_without_embedder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No embedder → settings-based values (backward compatible for the eval
+    CLIs / call sites that have no single embedder)."""
+    monkeypatch.setenv("MWS_VECTOR_BACKEND", "memory")
+    monkeypatch.setenv("MWS_DEFAULT_EMBEDDING_SPACE", "mock-768-v1")
+    monkeypatch.setenv("MWS_EMBEDDING_DIMS", "768")
+    manifest = create_manifest(run_id="r1", scenario="test", seed=0)
+    assert str(manifest["embedding_space"]) == "mock-768-v1"
+    assert manifest["embedding_dims"] == 768
+
+
 def _fake_git(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
     def fake_run(*args, **kwargs):
         return SimpleNamespace(stdout=stdout)

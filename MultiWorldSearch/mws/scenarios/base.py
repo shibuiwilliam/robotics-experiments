@@ -188,10 +188,14 @@ class BaseScenario(ABC):
 
     def _save_results(self, metrics: dict[str, Any]) -> None:
         """Write manifest + metrics + audit to runs/<RUN_ID>/."""
+        # Pass the run's actual embedder so the manifest's embedding space/dims
+        # and ES index pattern match the store the run used (M22), not a
+        # possibly-stale settings default.
         manifest = create_manifest(
             run_id=self.run_id,
             scenario=self.name,
             seed=self.seed,
+            embedder=self.engine.embedder if self.engine is not None else None,
         )
         save_report(
             run_id=self.run_id,
