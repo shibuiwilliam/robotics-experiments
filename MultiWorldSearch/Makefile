@@ -85,8 +85,11 @@ scenario-multi-seed: ## Run S1 with 5 seeds (mean +/- CI for recall/mrr)
 		r = run_multi_seed('maintenance_handoff', seeds=[0,1,2,3,4]); \
 		print(json.dumps({k:v for k,v in r['summary'].items() if 'recall' in k or 'mrr' in k}, indent=2))"
 
-scenario-multi-seed-all: ## Run ALL scenarios across seeds 0-3 with 95% CIs (mock)
-	uv run python -m mws.cli eval multi-seed --seeds 0,1,2,3
+scenario-multi-seed-all: setup ## Build env, run scenario tests, then ALL scenarios across seeds 0-3 with 95% CIs (mock)
+	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic) ==="
+	uv run --no-sync pytest tests/scenarios/ -q
+	@echo "\n=== [2/2] multi-seed run (seeds 0-3, 95% CIs) ==="
+	uv run --no-sync python -m mws.cli eval multi-seed --seeds 0,1,2,3
 
 scenario-multi-seed-live: ## LIVE multi-seed (REAL cloud spend; needs MWS_CONFIRM_LIVE_SPEND=1)
 	@echo "Estimated cost: ~\$$0.008/seed x 7 scenarios x 3 seeds = ~\$$0.025 (real Gemini calls)"
