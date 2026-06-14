@@ -661,8 +661,14 @@ class CollectiveWeakSignalScenario(BaseScenario):
         # --- H5: consolidation metabolism — compression vs recall retention ---
         consolidation_metrics = self._measure_consolidation(defect_query, lot_l_ids, lot_l_recall)
 
+        # G3: privileged-oracle differential (perception tax, H3).
+        from mws.eval.oracle import perception_tax
+
+        tax_results = perception_tax(self._atoms, relevant, retrieval_metrics)
+
         metrics: dict[str, Any] = {
             "retrieval": retrieval_metrics,
+            "perception_tax": tax_results,
             "task": {
                 "signal_purity": signal_purity,
                 "lot_l_discovered": self._lot_l_discovered,

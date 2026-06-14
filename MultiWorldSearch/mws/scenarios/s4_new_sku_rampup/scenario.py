@@ -394,6 +394,12 @@ class NewSkuRampupScenario(BaseScenario):
         transfer_gain = with_demo_rate - without_demo_rate
 
         metrics = {
+            # G3: task-success scenario (skill transfer A/B) — no oracle
+            # retrieval set is defined, so perception tax is N/A by design.
+            "perception_tax": {
+                "applicable": False,
+                "reason": "task-success scenario (skill-transfer A/B); no retrieval relevance set",
+            },
             "task": {
                 "with_demo": self._with_demo,
                 "success_rate": success_rate,

@@ -559,6 +559,12 @@ class CounterfactualSafetyScenario(BaseScenario):
         all_hazards_addressed = all(d["decision"] == "AVOID" for d in unsafe_decisions)
 
         metrics: dict[str, Any] = {
+            # G3: counterfactual safety-decision scenario — no oracle retrieval
+            # relevance set, so perception tax is N/A by design.
+            "perception_tax": {
+                "applicable": False,
+                "reason": "safety-decision scenario (counterfactual rollout); no retrieval relevance set",
+            },
             "task": {
                 "collapse_avoidance": self._collapse_avoided,
                 "counterfactual_atoms_stored": len(self._counterfactual_atoms),

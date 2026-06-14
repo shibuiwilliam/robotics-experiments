@@ -119,13 +119,56 @@ def scenario() -> None:
 @click.option("--name", required=True, help="Scenario name (e.g. maintenance_handoff)")
 @click.option("--seed", default=None, type=int)
 @click.option("--config", default=None, help="Scenario config override")
+@click.option(
+    "--no-acceptance",
+    is_flag=True,
+    help="Skip acceptance assertion (do not fail on unmet criteria).",
+)
 @click.pass_context
-def scenario_run(ctx: click.Context, name: str, seed: int | None, config: str | None) -> None:
-    """Run a verification scenario end-to-end."""
+def scenario_run(
+    ctx: click.Context,
+    name: str,
+    seed: int | None,
+    config: str | None,
+    no_acceptance: bool,
+) -> None:
+    """Run a verification scenario end-to-end.
+
+    Honors the resolved cloud mode (from --cloud-mode or .env). A LIVE run
+    (real Gemini spend) is refused unless MWS_CONFIRM_LIVE_SPEND=1 (G1); the
+    resolved mode/backend/seed are printed first (G2/G5); and the scenario's
+    acceptance criteria are asserted against the produced metrics, exiting
+    non-zero on any miss (G4) unless --no-acceptance.
+    """
+    from mws.core.config import get_settings
+    from mws.core.runguard import format_mode_banner, live_spend_refusal
+    from mws.eval.acceptance import check_acceptance
     from mws.scenarios.runner import run_scenario
 
     effective_seed = seed if seed is not None else ctx.obj["seed"]
-    run_scenario(name=name, seed=effective_seed, config_path=config)
+    settings = get_settings()
+    click.echo(format_mode_banner(settings, effective_seed))
+    refusal = live_spend_refusal(settings, n_scenarios=1)
+    if refusal:
+        raise click.ClickException(refusal)
+
+    result = run_scenario(name=name, seed=effective_seed, config_path=config)
+
+    # G4: assert acceptance criteria against the produced metrics. The mock
+    # pytest suite gates the in-memory path; this gates the live/ES path too.
+    if not no_acceptance:
+        checks = check_acceptance(name, (result or {}).get("metrics", {}))
+        if checks:
+            for c in checks:
+                mark = "PASS" if c.passed else "FAIL"
+                click.echo(f"  [acceptance] {mark}: {c.label}")
+            failed = [c for c in checks if not c.passed]
+            if failed:
+                raise click.ClickException(
+                    f"{name}: {len(failed)}/{len(checks)} acceptance criteria FAILED "
+                    f"({', '.join(c.label for c in failed)})"
+                )
+            click.echo(f"  [acceptance] {name}: all {len(checks)} criteria PASS")
 
 
 @scenario.command("list")
