@@ -5,7 +5,8 @@
 .PHONY: help install format lint lint-fix test test-v test-cq test-arch check \
         demo cq exp-t1 exp-t2 exp-t3 exp-t4 exp-t5 exp-t7 exp-all \
         onboard-demo profile clean \
-        scenario-list scenario-demo scenario-s1 scenario-milestone-a scenario-milestone-all \
+        scenario-list scenario-demo scenario-milestone-a scenario-milestone-all \
+        scenario-s1 scenario-s2 scenario-s3 scenario-s4 scenario-s5 scenario-s6 scenario-s7 \
         scenario-run-all scenario-demo-all scenario-test scenario-validate scenario-all
 
 # .env があれば読み込んで子プロセスへ渡す（OPENAI_API_KEY 等。.env は gitignore 済み）
@@ -13,7 +14,7 @@
 export
 
 help: ## Show this help
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | \
+	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 # ── Setup ──────────────────────────────────────────────────────────
@@ -96,6 +97,36 @@ scenario-s1: ## S1 lot-recall (T8): demo(validate) + experiment + report + tests
 	uv run orx scenario demo s1
 	uv run orx scenario run configs/experiments/s1_lot_recall.yaml
 	uv run pytest tests/scenarios/s1 -q
+
+scenario-s2: ## S2 allergen cross-contamination (T9): demo + experiment + tests
+	uv run orx scenario demo s2
+	uv run orx scenario run configs/experiments/s2_allergen.yaml
+	uv run pytest tests/scenarios/s2 -q
+
+scenario-s3: ## S3 multi-vendor line (T10): demo + experiment + tests
+	uv run orx scenario demo s3
+	uv run orx scenario run configs/experiments/s3_multi_vendor.yaml
+	uv run pytest tests/scenarios/s3 -q
+
+scenario-s4: ## S4 plant inspection (T11): demo + experiment + tests
+	uv run orx scenario demo s4
+	uv run orx scenario run configs/experiments/s4_inspection.yaml
+	uv run pytest tests/scenarios/s4 -q
+
+scenario-s5: ## S5 hospital transport (T12): demo + experiment + tests
+	uv run orx scenario demo s5
+	uv run orx scenario run configs/experiments/s5_hospital.yaml
+	uv run pytest tests/scenarios/s5 -q
+
+scenario-s6: ## S6 recycling sortation (T13): demo + experiment + tests
+	uv run orx scenario demo s6
+	uv run orx scenario run configs/experiments/s6_recycling.yaml
+	uv run pytest tests/scenarios/s6 -q
+
+scenario-s7: ## S7 eldercare ownership (T14): demo + experiment + tests
+	uv run orx scenario demo s7
+	uv run orx scenario run configs/experiments/s7_ownership.yaml
+	uv run pytest tests/scenarios/s7 -q
 
 scenario-run-all: ## Run every scenario experiment (configs/experiments/s*_*.yaml) + report
 	@found=0; \
