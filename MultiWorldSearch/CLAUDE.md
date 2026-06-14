@@ -56,6 +56,7 @@ MWS_RUN_DIR=./runs           # 実験成果物の出力先
 ```
 
 - `MWS_CLOUD_MODE=mock` が既定。**ライブのクラウド利用は明示的に `live` を設定した時だけ。**
+- **spend ゲート（G1）**: ライブ解決された `scenario run`／`scenario-all` は `MWS_CONFIRM_LIVE_SPEND=1` が無いと推定コストを表示して非ゼロ終了する（replay は実課金ゼロのため素通し）。走行前に解決済み `cloud_mode`/embedding/vector backend/seed をバナー表示する（G2/G5）。
 - 鍵が未設定でも `mock` で全パイプラインが動くこと（[5.4](#54-オフラインmock-モード)）。
 
 ### 1.4 MuJoCo / Apple Silicon の注意
@@ -243,8 +244,8 @@ uv run pytest -m elasticsearch  # ES バックエンド統合（`make es-up`＋`
 ## 10. ロギングと可観測性
 
 - 構造化ログ（JSON 行）を基本とし、`RUN_ID` を全ログに付与する。
-- **レイテンシ分解**を計測できるようにする: ローカル ANN / Gemini 埋め込み呼 / Gemini 推論 を区別（p50/p95）。
-- **クラウド呼び出しカウンタ**: 回数・トークン・推定コストを集計し manifest に残す。
+- **レイテンシ分解**を計測できるようにする: ローカル ANN（`local_ann`）/ ES 検索往復（`es_search`）/ Gemini 埋め込み呼（`gemini_embed`）/ Gemini 推論 を区別（p50/p95）。ベクトル検索のバケットはバックエンドが決める（ストアの `latency_bucket` 属性。ES は HTTP 往復なので `local_ann` に混ぜない — G6）。
+- **クラウド呼び出しカウンタ**: 回数・トークン・推定コストを集計し、全走で `metrics["cloud"]` と manifest に残す（mock はゼロ）。
 - 仮想エッジ↔クラウド帯域（送られたはずのバイト数）を計測する仕組みを retrieval/federation に持たせる。
 
 ---

@@ -86,8 +86,13 @@ git_dirty_paths    : [...]                 ← P15
    seed 依存の擬似ランダム値で**意味的品質の指標ではない**（mock で意味を持つのは構造的不変量＝
    H9 の CI 分離・転移 1.0・prefetch 3・各ゲート）。意味的 CI が必要なら
    `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）を使う。
-3. **（既登録）** 直近のライブ `scenario-all` 走で判明した **G1–G5**（コスト未記録／spend ゲート無し／
-   モード不可視／知覚税 S1 限定／ライブ E2E に PASS/FAIL アサート無し）も未対応のまま IMPROVEMENT.md に残る。
+3. **（解決済み・2026-06-14）** G1–G6 はすべて実装・テスト済み（IMPROVEMENT.md §未完課題は空）:
+   - **G1** 全走で `metrics["cloud"]`＋manifest にコスト/呼び出し件数を記録、ライブは `MWS_CONFIRM_LIVE_SPEND` ゲート。
+   - **G2/G5** 走行前バナー（cloud_mode/embedding/vector backend/seed・単一seed明示）。
+   - **G3** 知覚税を S1/S3/S5/S7 に拡張、S2/S4/S6 は `applicable=false`＋理由。
+   - **G4** `scenario run` が受け入れ基準を判定し未達で非ゼロ終了（mock 全7シナリオで PASS を確認）。
+   - **G6** ベクトル検索を `es_search`（ES）/`local_ann`（in-memory・LanceDB）の別バケットで計時。
+   - 検証: ruff クリーン・pyright 0 errors・**pytest 317 passed**（mock、+37 の G テスト）。
 
 ---
 
@@ -98,8 +103,9 @@ git_dirty_paths    : [...]                 ← P15
 ES バックエンド上で 32 ラン・残インデックス 0・manifest 整合（backend＋embedder 実空間）・受け入れ 70 緑。
 バックエンド切替（ES↔in-memory）が結果を変えないことも CI 一致で確認した。
 
-残課題は「結論の信頼性」ではなく「計測網羅性・運用統制」: 本走で新規発見した **G6（ES 検索レイテンシの
-バケット誤分類）** と、ライブ走由来の G1–G5。いずれも IMPROVEMENT.md に登録済み。
+計測網羅性・運用統制の課題（G1–G6: コスト記録/spend ゲート・走行前バナー・知覚税の全シナリオ拡張・
+ライブ E2E アサート・ES レイテンシバケット分離）は**すべて実装・テスト済み**で、IMPROVEMENT.md §未完課題は
+空になった。実装可能な登録課題はすべて消化済みである。
 
 ## 再現
 
