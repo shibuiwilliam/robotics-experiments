@@ -1,345 +1,345 @@
 # PROJECT.md — Multi-World Search (MWS)
 
-> **このドキュメントの役割**
-> 本ドキュメントは MWS プロジェクト**全体の定義**を行う最上位ドキュメントです。「何を・なぜ・何をもって成功とするか」を定めます。
-> 開発規約・ビルド／実行手順・コーディング標準・Claude Code の作業指針などの**開発運用**は、別ドキュメント `CLAUDE.md` に記述します（本ドキュメントには含めません）。
-> 役割分担は [14. ドキュメント構成](#14-ドキュメント構成) を参照してください。
+> **Role of this document**
+> This is the top-level document that defines the **MWS project as a whole**. It states "what, why, and what counts as success."
+> **Development operations** — coding conventions, build/run procedures, coding standards, the Claude Code workflow, etc. — live in a separate document, `CLAUDE.md` (they are not included here).
+> For the division of roles, see [14. Document Structure](#14-document-structure).
 
 ---
 
-## 0. プロジェクト識別情報
+## 0. Project Identification
 
-| 項目 | 内容 |
+| Item | Content |
 |---|---|
-| プロジェクト名 | Multi-World Search（MWS） |
-| 一言定義 | 多数の具身インスタンス（ロボティクス・VLA・業務AIエージェント）が共有する「集団の記憶器官」としての横断検索基盤 |
-| ステータス | 研究プロトタイプ（単一マシン／シミュレーション検証フェーズ） |
-| 検証環境 | MacBook ローカル（物理シミュレーションは MuJoCo） |
-| クラウド依存 | Gemini LLM（Gemini ADK 経由）／ Gemini Embedding 2 のみ。それ以外は全てローカル |
+| Project name | Multi-World Search (MWS) |
+| One-line definition | A cross-cutting retrieval substrate that serves as the "collective memory organ" shared by many embodied instances (robotics, VLA, business AI agents) |
+| Status | Research prototype (single-machine / simulation-verification phase) |
+| Verification environment | Local MacBook (physics simulation via MuJoCo) |
+| Cloud dependency | Gemini LLM (via Gemini ADK) / Gemini Embedding 2 only. Everything else is local |
 
 ---
 
-## 1. ビジョンと課題
+## 1. Vision and Problem
 
-### 1.1 ビジョン
+### 1.1 Vision
 
-ロボティクス、VLA（Vision-Language-Action）、業務AIエージェント、外部業務システムが連携する世界では、複数のインスタンスが同時並行で動き、それぞれが異なるデータを生み出し、消費する。MWS はこの群れ全体が共有する **「集団の海馬（Collective Hippocampus）」** を提供する。すなわち、後付けの検索DBではなく、群れの神経系として機能する共有認知基盤である。
+In a world where robotics, VLA (Vision-Language-Action), business AI agents, and external business systems work together, many instances act in parallel, each producing and consuming different data. MWS provides the **"Collective Hippocampus"** shared by the entire swarm — not a bolt-on retrieval DB, but a shared cognitive substrate that functions as the swarm's nervous system.
 
-### 1.2 解くべき課題
+### 1.2 The Problem to Solve
 
-単一のベクトルDBに全データを入れて RAG する素朴な発想は破綻する。扱うデータの**時間スケール・モダリティ・更新頻度・遅延要求**が桁違いに異なるためである。
+The naive idea of stuffing all data into a single vector DB and doing RAG breaks down, because the **time scales, modalities, update frequencies, and latency requirements** of the data differ by orders of magnitude.
 
-| データ種別 | 主な発生源 | 時間スケール | 主なモダリティ |
+| Data type | Main source | Time scale | Main modalities |
 |---|---|---|---|
-| 物理観測データ | ロボティクス／センサー | ミリ秒〜秒 | 点群・RGB-D・姿勢・接触・テレメトリ |
-| 行動・スキルデータ | VLA／遠隔操作実演 | 秒〜分 | 行動軌跡・方策・アフォーダンス |
-| 業務データ | 外部システム（ERP/WMS/CMMS/MES 等） | 時〜月 | 構造化レコード・トランザクション |
-| 文書知識 | クラウドストア | ほぼ静的 | SOP・マニュアル・SDS・チケット |
+| Physical observation data | Robotics / sensors | ms–s | point clouds, RGB-D, pose, contact, telemetry |
+| Action / skill data | VLA / teleoperated demonstrations | s–min | action trajectories, policies, affordances |
+| Business data | External systems (ERP/WMS/CMMS/MES, etc.) | hours–months | structured records, transactions |
+| Document knowledge | Cloud stores | nearly static | SOPs, manuals, SDS, tickets |
 
-MWS は、これら**性質の異なる4種類のデータ**を、各リソース・各インスタンスが横断的に検索・取得できるようにすることを使命とする。
+MWS's mission is to make these **four kinds of data with fundamentally different natures** searchable and retrievable across resources and across instances.
 
-### 1.3 中核となる4つの問い
+### 1.3 The Four Core Questions
 
-MWS の設計はこの4問への回答として構造化される。
+MWS's design is structured as the answer to these four questions.
 
-1. **アトム**：記憶の最小単位を何とするか
-2. **ワールドモデル**：世界の真実をどこに基盤づけるか
-3. **想起**：どう検索（多重インデックス融合）するか
-4. **代謝**：生データをどう知識へ変える（consolidation）か
-
----
-
-## 2. 目的・成功の定義・スコープ
-
-### 2.1 プロジェクトの目的
-
-1. MWS の中核機構（後述）が **シミュレーション環境で実証可能** であることを示す。
-2. 「複数世界・複数インスタンスが記憶を共有する」という MWS の核心条件を、MacBook 上で本物の条件として再現・計測する。
-3. 業務ユースケースに即した検証シナリオを通じて、MWS の**業務価値**を定量・定性の両面で示す。
-4. 単一マシン制約（特にクラウド埋め込みのレイテンシ問題）に対する**設計上の解**を研究成果として確立する。
-
-### 2.2 成功の定義（高レベル）
-
-- 中核となる研究仮説（[8. 研究仮説](#8-研究仮説)）のうち主要なものについて、肯定／否定いずれであれ**明確な実験的結論**が得られている。
-- 少なくとも [9. 検証シナリオ](#9-検証シナリオ) のシナリオ1（保全の多主体引き継ぎ）が、取込→融合検索→VLA→監査まで end-to-end で貫通している。
-- 評価フレームワーク（[10章](#10-評価フレームワークと成功基準)）の指標が再現可能な形で測定・報告できる。
-- 結果が外的妥当性の脅威（[12章](#12-リスクと外的妥当性の脅威)）とともに正直に文書化されている。
-
-### 2.3 スコープ外（Non-Goals）
-
-明確にスコープ外とすることで、研究の焦点を保つ。
-
-- **実機ロボットでの検証**：本フェーズはシミュレーションのみ。実機展開は対象外。
-- **本番運用グレードの可用性・スケール**：単一マシン・研究プロトタイプであり、分散本番基盤の構築は行わない。
-- **特定ベンダー業務システムへの実接続**：ERP/WMS/CMMS 等は**合成データ／スタブ**で代替する。実システム統合は対象外。
-- **新規 LLM／埋め込みモデルの学習**：基盤モデルはクラウド（Gemini）に依存する。埋め込みは `gemini-embedding-2` 単一で運用し、ローカル生徒モデルの蒸留・整列は本フェーズの対象外とする（クラウド往復のレイテンシは Batch API・バッチ・content-hash キャッシュで抑える）。
-- **UI/UX プロダクト化**：可視化は実験・検証目的に限る。
+1. **Atom**: What is the minimal unit of memory?
+2. **World model**: Where do we ground the truth of the world?
+3. **Recall**: How do we search (multi-index fusion)?
+4. **Metabolism**: How do we turn raw data into knowledge (consolidation)?
 
 ---
 
-## 3. 基本コンセプトと用語
+## 2. Objectives, Definition of Success, Scope
 
-MWS を理解するための中核概念。詳細な用語集は [13章](#13-用語集) を参照。
+### 2.1 Project Objectives
 
-- **記憶アトム（Experience Atom）**：すべてのデータの統一表現単位。「封筒（時空間座標・来歴・モダリティ・埋め込み・信頼度／鮮度・アクセスポリシー）＋モダリティ固有ペイロード」から成る。重い生データ（動画・点群）は参照・要約・埋め込みのみを載せ、本体はオブジェクトストアに置いて遅延取得する。
-- **4Dシーングラフ（World Model）**：検索の真実を基盤づける「3D＋時間」のシーングラフ。物理アトムはこのグラフ上の実体ノード（物体・場所・エージェント）に接続され、同一実体に観測・文書・業務レコード・スキルがぶら下がる。
-- **多重インデックス検索（Multi-Index Retrieval）**：空間／時間／意味／記号・関係／構造化 の5種インデックスを並立させ、クエリプランナが横断融合する。多目的スコア（意味類似・空間近接・時間鮮度・信頼度・タスク関連度）を学習リランカで統合。
-- **消費者適応投影（Consumer-Aware Projection）**：同一アトムでも消費者に応じて返し方を変える（VLA には姿勢＋テンソル、LLM には出典付きテキスト、制御ループには低遅延数値、ダッシュボードには集計値）。
-- **記憶の代謝（Consolidation）**：背景プロセスがエピソード記憶をクラスタリングし、反復パターンを意味記憶・手続き記憶へ蒸留し、重複排除と TTL 剪定を行う。
-- **連合（Federation）**：各インスタンスはローカルに関連部分集合のキャッシュ／インデックスを持ち、クラウドが全体ストアを持つ。タスク計画に基づく予測プリフェッチと検索品質クラス（QoR）でルーティング。*（実装状況: QoR ルーティング・予測プリフェッチともに実装済み・シナリオ3で使用。プリフェッチ有効時はローカル即答カバレッジが群れ全体=3観測者、無効時は1に低下することを反証テストで確認。）*
-- **来歴（Provenance）とガバナンス**：全アトムに生成源、全検索にログを付与。インデックス時点で ABAC を適用し、「いつ何を知っていたか」を事後再構成可能にする。
-- **検索拡張VLA（Retrieval-Augmented Policy）**：行動生成直前に類似エピソード・スキル実演・アフォーダンス・安全制約を検索し、in-context で注入する。
-- **能動的好奇心ループ（Curiosity Loop）**：検索ギャップ（情報の欠落・遮蔽・陳腐化）を満たすために探索タスクを発行し、新規観測でギャップを埋める。
-- **標準クエリ（Standing Query）**：一回限りの想起に加え、条件成立時に通知する購読型クエリ。検索と pub-sub の統合。
+1. Show that MWS's core mechanisms (below) are **demonstrable in a simulation environment**.
+2. Reproduce and measure, on a MacBook and as a genuine condition, the core MWS premise that "multiple worlds and multiple instances share memory."
+3. Through verification scenarios grounded in business use cases, demonstrate MWS's **business value** both quantitatively and qualitatively.
+4. Establish, as a research result, a **design-level answer** to the single-machine constraint (especially the cloud-embedding latency problem).
+
+### 2.2 Definition of Success (high level)
+
+- For the major core research hypotheses ([8. Research Hypotheses](#8-research-hypotheses)), a **clear experimental conclusion** — affirmative or negative — has been obtained.
+- At minimum, Scenario 1 of [9. Verification Scenarios](#9-verification-scenarios) (multi-actor maintenance handoff) runs end-to-end from ingest → fused retrieval → VLA → audit.
+- The metrics of the evaluation framework ([Chapter 10](#10-evaluation-framework-and-success-criteria)) can be measured and reported reproducibly.
+- Results are documented honestly, together with the threats to external validity ([Chapter 12](#12-risks-and-threats-to-external-validity)).
+
+### 2.3 Out of Scope (Non-Goals)
+
+Stating these explicitly keeps the research focused.
+
+- **Verification on real robots**: This phase is simulation only. Real-hardware deployment is out of scope.
+- **Production-grade availability / scale**: This is a single-machine research prototype; we do not build a distributed production platform.
+- **Real integration with specific vendor business systems**: ERP/WMS/CMMS, etc., are replaced with **synthetic data / stubs**. Real system integration is out of scope.
+- **Training new LLM / embedding models**: Foundation models depend on the cloud (Gemini). Embeddings run on a single `gemini-embedding-2`; distillation/alignment of a local student model is out of scope for this phase (cloud round-trip latency is mitigated with the Batch API, batching, and a content-hash cache).
+- **Productizing UI/UX**: Visualization is limited to experimentation/verification purposes.
 
 ---
 
-## 4. システムアーキテクチャ概観
+## 3. Core Concepts and Terminology
 
-MWS は6層から成る（本章は概念定義。実装上のモジュール対応は [7章](#7-リポジトリコンポーネント構成)）。
+The central concepts for understanding MWS. See [Chapter 13](#13-glossary) for the detailed glossary.
+
+- **Experience Atom**: The unified representation for all data. Composed of an "envelope (spatiotemporal coordinates, provenance, modality, embedding, trust/freshness, access policy) + modality-specific payload." Heavy raw data (video, point clouds) carry only a reference, summary, and embedding; the body sits in an object store and is fetched lazily.
+- **4D Scene Graph (World Model)**: The "3D + time" scene graph that grounds the truth for retrieval. Physical atoms are connected to entity nodes (objects, places, agents) on this graph, and observations, documents, business records, and skills all hang off the same entity.
+- **Multi-Index Retrieval**: Five index types — spatial / temporal / semantic / symbolic-relational / structured — run in parallel and a query planner fuses across them. A multi-objective score (semantic similarity, spatial proximity, temporal freshness, trust, task relevance) is combined by a learned reranker.
+- **Consumer-Aware Projection**: The same atom is returned differently per consumer (pose + tensor for VLA, cited text for LLM, low-latency numerics for control loops, aggregates for dashboards).
+- **Memory Metabolism (Consolidation)**: A background process clusters episodic memory, distills recurring patterns into semantic/procedural memory, and performs deduplication and TTL pruning.
+- **Federation**: Each instance holds a local cache/index of the relevant subset; the cloud holds the full store. Routing uses task-plan-based predictive prefetch and a Quality-of-Retrieval (QoR) class. *(Implementation status: QoR routing and predictive prefetch are both implemented and used in Scenario 3. A falsifiability test confirms that with prefetch enabled the local instant-answer coverage equals the whole swarm = 3 observers, dropping to 1 when disabled.)*
+- **Provenance and Governance**: Every atom carries its source; every search is logged. ABAC is applied at index time so that "who knew what, when" can be reconstructed after the fact.
+- **Retrieval-Augmented Policy**: Just before generating an action, similar episodes, skill demonstrations, affordances, and safety constraints are retrieved and injected in-context.
+- **Active Curiosity Loop**: To fill retrieval gaps (missing, occluded, or stale information), exploration tasks are issued and new observations close the gap.
+- **Standing Query**: In addition to one-shot recall, a subscription-style query that notifies when a condition is met. The union of retrieval and pub-sub.
+
+---
+
+## 4. System Architecture Overview
+
+MWS consists of six layers (this chapter is a conceptual definition; for the implementation-module mapping see [Chapter 7](#7-repository--component-structure)).
 
 ```
 +-------------------------------------------------------------+
-|  消費者: ロボ制御 / VLA / 業務AIエージェント(ADK) / 監査・分析  |
+|  Consumers: robot control / VLA / business AI agent (ADK) / audit & analytics  |
 +----------------^----------------------------^---------------+
-                 | 消費者適応投影             | standing query / 好奇心
+                 | consumer-aware projection  | standing query / curiosity
 +----------------+----------------------------+---------------+
-|  (3) 多重インデックス検索エンジン                            |
-|      空間 / 時間 / 意味 / 記号・関係 / 構造化 + 融合リランカ  |
+|  (3) Multi-Index Retrieval Engine                            |
+|      spatial / temporal / semantic / symbolic-relational / structured + fusion reranker  |
 +----------------^--------------------------------------------+
                  |
 +----------------+----------------+  +-------------------------+
-|  (2) 4Dシーングラフ(ワールドモデル)|  | (4) 記憶の代謝(Consolidation)|
+|  (2) 4D Scene Graph (World Model)|  | (4) Memory Metabolism (Consolidation)|
 +----------------^----------------+  +-------------------------+
                  |
 +----------------+--------------------------------------------+
-|  (1) 記憶アトム（統一表現層）＋ ポリグロット永続化           |
+|  (1) Experience Atom (unified representation) + polyglot persistence  |
 +----------------^--------------------------------------------+
                  |
 +----------------+--------------------------------------------+
-|  (5) 連合（エッジ↔クラウド）/ QoR   (6) 来歴・ガバナンス      |
+|  (5) Federation (edge↔cloud) / QoR   (6) Provenance & governance  |
 +-------------------------------------------------------------+
 ```
 
-**ポリグロット永続化（用途別の多重ストレージ）**
+**Polyglot persistence (purpose-specific multi-storage)**
 
-| 対象 | ストレージ種別 |
+| Target | Storage type |
 |---|---|
-| 生 blob／テンソル | オブジェクトストア（ローカルファイル／Parquet 等） |
-| 高頻度テレメトリ | 時系列（DuckDB/Parquet） |
-| 埋め込み | ベクトルDB（ローカル；マルチモーダル対応） |
-| シーングラフ・知識 | グラフDB（組込みプロパティグラフ） |
-| 幾何・空間 | 空間インデックス（KD-tree／占有グリッド） |
-| 業務データ | 合成データ／スタブ（移設せず仮想化接続を模す） |
+| Raw blobs / tensors | Object store (local files / Parquet, etc.) |
+| High-frequency telemetry | Time series (DuckDB/Parquet) |
+| Embeddings | Vector DB (local; multimodal-capable) |
+| Scene graph / knowledge | Graph DB (embedded property graph) |
+| Geometry / space | Spatial index (KD-tree / occupancy grid) |
+| Business data | Synthetic data / stub (no migration; mimics a virtualized connection) |
 
 ---
 
-## 5. 実行環境と技術構成
+## 5. Execution Environment and Tech Stack
 
-### 5.1 環境の基本方針
+### 5.1 Basic Environment Policy
 
-> **LLM と Embedding のみクラウド（Gemini）、それ以外は全てローカル（MacBook）。**
+> **Only the LLM and Embedding are cloud (Gemini); everything else is local (MacBook).**
 
-| 層 | 配置 | 採用技術（想定） |
+| Layer | Placement | Adopted technology (assumed) |
 |---|---|---|
-| 物理シミュレーション | ローカル | MuJoCo（複数世界・複数インスタンス・センサー生成・状態フォーク） |
-| エージェント実行系 | ローカル | Gemini ADK（推論のみクラウド Gemini。検索ツールは MCP 互換で公開済み。A2A 直接通信は未実装 — 協調は共有ストア経由のスティグマジーで実証） |
-| 推論（LLM） | クラウド | Gemini（ADK 経由） |
-| 埋め込み（全用途） | クラウド | Gemini Embedding 2（ネイティブマルチモーダル、768/1536/3072 次元・MRL、文書/クエリの非対称タスク指示、Batch API で非同期・低コスト） |
-| ベクトル検索 | ローカル | **シナリオ実行の既定＝Elasticsearch**（dense_vector+kNN, docker-compose）／LanceDB（組込ANN）／インメモリ（テスト既定・オフライン） — registry で選択 |
-| グラフ | ローカル | NetworkX（試作）→ 組込みプロパティグラフ |
-| 時系列・構造化 | ローカル | DuckDB / Parquet |
-| 空間 | ローカル | scipy KD-tree / Open3D / 占有グリッド |
-| メッセージング | ローカル | ZeroMQ / NATS（複数インスタンス間） |
+| Physics simulation | Local | MuJoCo (multi-world, multi-instance, sensor generation, state forking) |
+| Agent runtime | Local | Gemini ADK (only inference is cloud Gemini. The search tools are exposed MCP-compatibly. A2A direct communication is not implemented — coordination is demonstrated via shared-store stigmergy) |
+| Inference (LLM) | Cloud | Gemini (via ADK) |
+| Embedding (all uses) | Cloud | Gemini Embedding 2 (native multimodal, 768/1536/3072 dims with MRL, asymmetric task instructions for document/query, async and low-cost via Batch API) |
+| Vector search | Local | **Default for scenario runs = Elasticsearch** (dense_vector+kNN, docker-compose) / LanceDB (embedded ANN) / in-memory (test default, offline) — selected via the registry |
+| Graph | Local | NetworkX (prototype) → embedded property graph |
+| Time series / structured | Local | DuckDB / Parquet |
+| Spatial | Local | scipy KD-tree / Open3D / occupancy grid |
+| Messaging | Local | ZeroMQ / NATS (between multiple instances) |
 
-### 5.2 環境が定義する中核的緊張（重要）
+### 5.2 The Core Tension the Environment Defines (important)
 
-「Embedding もクラウド」であるため、**観測のたび・クエリのたびにクラウド往復が発生**する。これはロボティクス検索にとって致命的になりうる。MWS はこれを設計上の中心課題として扱う：
+Because "Embedding is also cloud," **a cloud round-trip happens on every observation and every query**. This can be fatal for robotics retrieval. MWS treats this as a central design problem:
 
-- **索引化（文書側）はオフライン**に寄せ、Batch API で非同期・低コスト化する。
-- **ホットパス（テキストクエリ）のクラウド往復は、content-hash キャッシュ・単発マルチ Content バッチ・非同期インデクサで抑える**（ローカル生徒モデルは導入しない）。
-- それでも残るクエリ時のクラウド遅延（実測 p50 〜400ms）は既知の制約として計測・開示する。高頻度の制御ループへの適合は本フェーズのスコープ外。
+- **Indexing (the document side) is pushed offline**, made async and low-cost with the Batch API.
+- **Cloud round-trips on the hot path (text queries) are suppressed with a content-hash cache, single-shot multi-Content batching, and an async indexer** (no local student model is introduced).
+- The cloud latency that remains at query time (measured p50 ~400 ms) is measured and disclosed as a known constraint. Fitting high-frequency control loops is out of scope for this phase.
 
-### 5.3 シミュレーションの特権の活用
+### 5.3 Exploiting the Privilege of Simulation
 
-シミュレーションは**真値（ground truth）**を持つため、検索の正解関連性ラベルを自動生成できる。これにより人手アノテーションなしで定量評価（Recall@k 等）が可能となる。実機では得られないこの特権を、評価設計の柱とする。
-
----
-
-## 6. 研究を貫く独創的アイデア
-
-MWS の新規性の核（詳細は実験計画ドキュメントへ）。
-
-1. **特権オラクル差分評価**：真値を使う上限検索器と実パイプラインの差として「知覚・記述・埋め込みの劣化（知覚税）」を純粋に分離計測する。
-2. **単一クラウド埋め込み＋往復削減**：埋め込みは `gemini-embedding-2` 一本に統一し、文書/クエリの非対称タスク指示で品質を引き出しつつ、content-hash キャッシュ・単発マルチ Content バッチ・Batch API でクラウド往復のコストとレイテンシを抑える。
-3. **反事実シミュレーション検索**：MuJoCo の状態をフォークしてロールアウトし、結果を検索可能アトム化する。シミュレータが検索バックエンドを兼ね、「想像された未来」を想起する。
-4. **記憶的スティグマジー**：直接通信なし・共有ストア経由のみで群れの協調が創発するかを検証する。
-5. **時間膨張ワールド**：一部の世界を高速に回し「月相当」の緩慢イベントを生成し、ミリ秒〜月の多時間スケール問題を単一マシンで再現する。
+Because simulation has **ground truth**, we can auto-generate the correct relevance labels for retrieval. This enables quantitative evaluation (Recall@k, etc.) without human annotation. We make this privilege — unavailable on real hardware — a pillar of the evaluation design.
 
 ---
 
-## 7. リポジトリ／コンポーネント構成
+## 6. The Original Ideas Running Through the Research
 
-責務単位のコンポーネント分解（**ディレクトリ詳細・命名規約・依存管理などは CLAUDE.md**）。
+The core of MWS's novelty (details in the experiment-plan document).
+
+1. **Privileged-oracle differential evaluation**: Isolate and measure the "degradation from perception, description, and embedding (the perception tax)" purely, as the gap between a ground-truth upper-bound retriever and the real pipeline.
+2. **Single cloud embedding + round-trip reduction**: Unify embeddings on a single `gemini-embedding-2`, drawing out quality with asymmetric document/query task instructions, while suppressing the cost and latency of cloud round-trips with a content-hash cache, single-shot multi-Content batching, and the Batch API.
+3. **Counterfactual simulation retrieval**: Fork MuJoCo state, roll it out, and turn the result into a searchable atom. The simulator doubles as a retrieval backend, recalling an "imagined future."
+4. **Memory stigmergy**: Test whether swarm coordination emerges with no direct communication, only via a shared store.
+5. **Time-dilated worlds**: Spin some worlds fast to generate "month-equivalent" slow events, reproducing the ms-to-month multi-time-scale problem on a single machine.
+
+---
+
+## 7. Repository / Component Structure
+
+Responsibility-level decomposition (**directory details, naming conventions, dependency management, etc., are in CLAUDE.md**).
 
 ```
 mws/
-├── core/            # 記憶アトムのスキーマ、封筒、来歴、アクセスポリシー
-├── worldmodel/      # 4Dシーングラフ（実体ノード・関係・時間）
-├── storage/         # ポリグロット永続化アダプタ(vector/graph/timeseries/spatial/blob)
-├── embedding/       # Gemini Embedding 2（単一モデル）、content-hash キャッシュ、非同期インデクサ
-├── retrieval/       # 多重インデックス検索、クエリプランナ、融合リランカ、消費者適応投影
-├── consolidation/   # episodic→semantic 蒸留、重複排除、TTL剪定
-├── federation/      # エッジ↔クラウド、QoRルーティング、予測プリフェッチ
-├── reactive/        # standing query(pub-sub)、好奇心ループ
-├── agents/          # Gemini ADK エージェント定義、A2A、MWS検索ツール(MCP互換)公開
-├── vla/             # 検索拡張VLA、スキル実演アトムの想起・注入
-├── sim/             # MuJoCo 世界・センサー・複数インスタンス・状態フォーク
-├── business/        # 合成業務データ(ERP/WMS/CMMS/MES/SOP/SDS) 生成・スタブ
-├── scenarios/       # 検証シナリオ実装(§9)
-├── eval/            # 指標、関連性ラベル自動生成、レイテンシ分解、レポート
-└── configs/         # 世界・実験・モデルの設定
+├── core/            # Experience atom schema, envelope, provenance, access policy
+├── worldmodel/      # 4D scene graph (entity nodes, relations, time)
+├── storage/         # Polyglot persistence adapters (vector/graph/timeseries/spatial/blob)
+├── embedding/       # Gemini Embedding 2 (single model), content-hash cache, async indexer
+├── retrieval/       # Multi-index search, query planner, fusion reranker, consumer-aware projection
+├── consolidation/   # episodic→semantic distillation, dedup, TTL pruning
+├── federation/      # edge↔cloud, QoR routing, predictive prefetch
+├── reactive/        # standing query (pub-sub), curiosity loop
+├── agents/          # Gemini ADK agent definitions, A2A, MWS search tools (MCP-compatible) exposure
+├── vla/             # retrieval-augmented VLA, recall/injection of skill-demo atoms
+├── sim/             # MuJoCo worlds, sensors, multiple instances, state forking
+├── business/        # synthetic business data (ERP/WMS/CMMS/MES/SOP/SDS) generation, stubs
+├── scenarios/       # verification-scenario implementations (§9)
+├── eval/            # metrics, auto relevance-label generation, latency decomposition, reports
+└── configs/         # world / experiment / model configuration
 ```
 
-各コンポーネントの責務概要（実装規約は CLAUDE.md）：
+Responsibility summary per component (implementation rules are in CLAUDE.md):
 
-- **core / worldmodel / storage**：データ基盤。アトムを正規化し、実体に接続し、用途別に永続化する。
-- **embedding / retrieval / consolidation**：認知層。索引・想起・知識化を担う。
-- **federation / reactive**：分散と反応性。配置・先回り・購読・能動探索。
-- **agents / vla / sim / business / scenarios / eval**：実験層。消費者・身体・外部世界・検証・計測。
+- **core / worldmodel / storage**: The data foundation. Normalize atoms, connect them to entities, persist per purpose.
+- **embedding / retrieval / consolidation**: The cognitive layer. Index, recall, and turn into knowledge.
+- **federation / reactive**: Distribution and reactivity. Placement, look-ahead, subscription, active exploration.
+- **agents / vla / sim / business / scenarios / eval**: The experiment layer. Consumers, bodies, the external world, verification, measurement.
 
 ---
 
-## 8. 研究仮説
+## 8. Research Hypotheses
 
-実験は仮説検証として設計する（反証可能な形で記述）。
+Experiments are designed as hypothesis tests (stated falsifiably).
 
-| ID | 仮説 | 主に検証するシナリオ |
+| ID | Hypothesis | Mainly verified by scenario |
 |---|---|---|
-| H1 | 共有記憶により、未経験インスタンスのタスク性能が向上する（転移） | 4, 1 |
-| H2 | 直接通信なし・共有ストア経由のみで群れの協調が創発する（スティグマジー） | 5, 3 |
-| H3 | オラクル検索と実パイプライン検索の差として知覚税を定量化できる | 1, 全般 |
-| H4 | 世界変化で陳腐ヒット率が上がり、TTL・信頼度・再観測がそれを回復する（鮮度） | 2, 7 |
-| H5 | consolidation はストア膨張を抑えつつタスク関連 recall を保持する | 3 |
-| H6 | 検索ギャップ→探索の好奇心ループがタスク失敗率を下げる | 5, 6 |
-| ~~H7~~ | ~~教師(Gemini)/生徒(local) 二層埋め込み~~ → **撤回**: 埋め込みを `gemini-embedding-2` 単一に統一（生徒層は廃止。往復削減はキャッシュ/バッチ/Batch API で対応） | — |
-| H8 | 消費者適応投影が消費者ごとの効用を上げる | 1, 7 |
-| H9 | 来歴重み付き多観測者融合が単一観測より姿勢推定を改善する | 2 |
+| H1 | Shared memory improves the task performance of an inexperienced instance (transfer) | 4, 1 |
+| H2 | Swarm coordination emerges with no direct communication, only via a shared store (stigmergy) | 5, 3 |
+| H3 | The perception tax can be quantified as the gap between oracle retrieval and real-pipeline retrieval | 1, general |
+| H4 | World change raises the stale-hit rate, and TTL, trust, and re-observation recover it (freshness) | 2, 7 |
+| H5 | Consolidation curbs store bloat while preserving task-relevant recall | 3 |
+| H6 | A retrieval-gap → exploration curiosity loop lowers the task failure rate | 5, 6 |
+| ~~H7~~ | ~~Two-tier teacher(Gemini)/student(local) embedding~~ → **withdrawn**: embeddings unified on a single `gemini-embedding-2` (the student tier is dropped; round-trip reduction is handled by cache/batch/Batch API) | — |
+| H8 | Consumer-aware projection raises utility for each consumer | 1, 7 |
+| H9 | Provenance-weighted multi-observer fusion improves pose estimation over a single observation | 2 |
 
 ---
 
-## 9. 検証シナリオ
+## 9. Verification Scenarios
 
-業務文脈の中で4種データが必然的に交差し、かつ MuJoCo で再現・計測できるシナリオ群。詳細設計は別ドキュメント。
+A set of scenarios in which the four data types necessarily intersect within a business context and which can be reproduced and measured in MuJoCo. Detailed design is in a separate document.
 
-1. **設備保全の多主体引き継ぎ（フラッグシップ）**：異常検知→観測＋マニュアル＋CMMS＋在庫＋シフトの融合想起→指示生成→異形態ロボがスキル想起で施工。全工程に監査ログ。
-2. **物理と原本記録の調停**：ロボ観測と ERP/WMS 記録の食い違いを、来歴・信頼度・鮮度・観測者一致度から裁定し、書き戻し／差異起票する。「物理は真実、記録は記録、乖離を MWS が裁定」。
-3. **群れによる弱信号の集合的発見**：単独では無害な観測を consolidation が群れ・時間横断で束ね、業務データと相関させ潜在パターン（不良ロット等）を表面化、standing query を登録。
-4. **新規SKU・新規現場の即時立ち上げ（転移）**：一度の実演／探索がスキル・地図アトムとして群れ全体に再利用される。
-5. **インシデント対応のリアルタイム協調**：standing query 発火→SDS／平面図／名簿の融合想起→通知＋ロボ派遣。遮蔽領域は好奇心ループで偵察し計画を確定。
-6. **反実仮想に基づく現場安全判断**：危険操作の直前にデジタルツインをフォークしロールアウト、結果アトムを想起して安全行動を選択。MuJoCo が反実仮想エンジンを兼ねる。
-7. **注文から充足までのエンドツーエンド**：外部受注→物理在庫をロボ観測で確認→ピッキングVLA→例外処理（破損→再発注・通知）→ERP更新。複数外部システム横断の統括。
+1. **Multi-actor maintenance handoff (flagship)**: Anomaly detection → fused recall of observation + manual + CMMS + inventory + shift → instruction generation → a differently-embodied robot performs the work via skill recall. Audit log over the whole process.
+2. **Reconciling physical reality with the system of record**: Adjudicate discrepancies between robot observations and ERP/WMS records using provenance, trust, freshness, and observer agreement, then write back / file a discrepancy ticket. "Physics is the truth, records are records, and MWS adjudicates the divergence."
+3. **Collective discovery of weak signals by the swarm**: Consolidation bundles individually-harmless observations across the swarm and across time, correlates them with business data, surfaces a latent pattern (e.g., a defective lot), and registers a standing query.
+4. **Instant rampup of a new SKU / new site (transfer)**: A single demonstration/exploration is reused across the whole swarm as skill/map atoms.
+5. **Real-time coordination for incident response**: Standing query fires → fused recall of SDS / floor plan / roster → notify + dispatch robots. Occluded areas are scouted via the curiosity loop to finalize the plan.
+6. **Counterfactual-based on-site safety decision**: Just before a dangerous operation, fork the digital twin and roll out, then recall the result atom to choose a safe action. MuJoCo doubles as the counterfactual engine.
+7. **End-to-end order to fulfillment**: External order → confirm physical inventory via robot observation → picking VLA → exception handling (damage → reorder/notify) → ERP update. Orchestration across multiple external systems.
 
-**機構カバレッジ**（◎主／○従）
+**Mechanism coverage** (◎ primary / ○ secondary)
 
-| 機構 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| Mechanism | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|
-| クロスモーダル／ソース融合 | ◎ | ○ | ◎ | ○ | ◎ | ○ | ○ |
-| 検索拡張VLA／スキル伝播 | ◎ |  |  | ◎ | ○ | ○ | ○ |
-| 多インスタンス引き継ぎ／協調 | ◎ | ○ | ○ | ◎ | ◎ |  | ○ |
-| 物理対記録の整合／鮮度 | ○ | ◎ | ○ |  | ○ |  | ◎ |
-| 多観測者融合 |  | ◎ | ○ |  | ○ |  |  |
-| consolidation |  |  | ◎ | ○ |  |  |  |
-| standing query |  |  | ○ |  | ◎ |  | ○ |
-| 能動的好奇心 |  |  |  | ○ | ◎ | ○ |  |
-| 反実仮想／sim検索 |  |  |  |  |  | ◎ |  |
-| 来歴／監査 | ◎ | ○ | ○ |  | ○ | ○ | ○ |
-| 外部システム書き戻し | ○ | ◎ |  |  |  |  | ◎ |
+| Cross-modal / source fusion | ◎ | ○ | ◎ | ○ | ◎ | ○ | ○ |
+| Retrieval-augmented VLA / skill propagation | ◎ |  |  | ◎ | ○ | ○ | ○ |
+| Multi-instance handoff / coordination | ◎ | ○ | ○ | ◎ | ◎ |  | ○ |
+| Physical-vs-record consistency / freshness | ○ | ◎ | ○ |  | ○ |  | ◎ |
+| Multi-observer fusion |  | ◎ | ○ |  | ○ |  |  |
+| Consolidation |  |  | ◎ | ○ |  |  |  |
+| Standing query |  |  | ○ |  | ◎ |  | ○ |
+| Active curiosity |  |  |  | ○ | ◎ | ○ |  |
+| Counterfactual / sim retrieval |  |  |  |  |  | ◎ |  |
+| Provenance / audit | ◎ | ○ | ○ |  | ○ | ○ | ○ |
+| External-system write-back | ○ | ◎ |  |  |  |  | ◎ |
 
 ---
 
-## 10. 評価フレームワークと成功基準
+## 10. Evaluation Framework and Success Criteria
 
-### 10.1 指標カテゴリ
+### 10.1 Metric Categories
 
-- **検索品質**：Recall@k / MRR / nDCG（sim 真値から関連性を自動定義）。
-- **タスク**：成功率・完了時間・経路長・衝突数・サンプル効率。
-- **システム**：e2e レイテンシ p50/p95（ローカルANN／Gemini埋め込み呼／Gemini推論に分解）、クラウド呼数・コスト、仮想エッジ↔クラウド帯域、ローカルメモリ／インデックス成長曲線。
-- **多インスタンス**：転移ゲイン・協調ゲイン・陳腐ヒット率・競合解決精度。
-- **consolidation**：圧縮率・recall 保持・レイテンシ対ストアサイズ。
+- **Retrieval quality**: Recall@k / MRR / nDCG (relevance auto-defined from sim ground truth).
+- **Task**: success rate, completion time, path length, collision count, sample efficiency.
+- **System**: e2e latency p50/p95 (decomposed into local ANN / Gemini embedding call / Gemini inference), cloud-call count & cost, virtual edge↔cloud bandwidth, local memory / index growth curves.
+- **Multi-instance**: transfer gain, coordination gain, stale-hit rate, conflict-resolution accuracy.
+- **Consolidation**: compression ratio, recall retention, latency vs. store size.
 
-### 10.2 統計規律
+### 10.2 Statistical Discipline
 
-複数 seed × 複数 world で信頼区間を報告。指標は事前登録（pre-register）してチェリーピッキングを防ぐ。
+Report confidence intervals over multiple seeds × multiple worlds. Pre-register metrics to prevent cherry-picking.
 
-### 10.3 フェーズ別 go/no-go ゲート
+### 10.3 Per-Phase Go/No-Go Gates
 
-| フェーズ | ゲート条件 |
+| Phase | Gate condition |
 |---|---|
-| Phase 0 | クロスモーダル想起が動作し、レイテンシ内訳が取得できる |
-| Phase 1 | 知覚税が定量化でき、MRL 次元の品質/レイテンシ曲線が描ける |
-| Phase 2 | 双子インスタンス転移ゲインが有意に測定できる |
-| Phase 3 | consolidation の圧縮↔recall パレートが描け、鮮度回復が示せる |
-| Phase 4 | 好奇心ループ・standing query・反実仮想検索が閉ループで動作 |
-| Phase 5 | ストレス／アブレーションで各機構の寄与が分離され、論文化可能 |
+| Phase 0 | Cross-modal recall works and the latency breakdown can be captured |
+| Phase 1 | The perception tax can be quantified and MRL-dimension quality/latency curves can be drawn |
+| Phase 2 | Twin-instance transfer gain can be measured significantly |
+| Phase 3 | A consolidation compression↔recall Pareto can be drawn and freshness recovery can be shown |
+| Phase 4 | The curiosity loop, standing query, and counterfactual retrieval work as a closed loop |
+| Phase 5 | Stress/ablation isolates each mechanism's contribution, ready for write-up |
 
 ---
 
-## 11. 開発フェーズとロードマップ
+## 11. Development Phases and Roadmap
 
-| フェーズ | 目的 | 主担当機構 | 主シナリオ |
+| Phase | Goal | Main mechanisms | Main scenarios |
 |---|---|---|---|
-| Phase 0 | ハーネス・スキーマ・ベースライン | core / worldmodel / storage / embedding | — |
-| Phase 1 | クロスモーダル検索品質・知覚税 | retrieval / embedding | 1 |
-| Phase 2 | 双子インスタンス転移（核心） | federation / vla | 4, 1 |
-| Phase 3 | スティグマジー・統合・鮮度 | consolidation / federation | 3, 2 |
-| Phase 4 | 好奇心・standing query・投影・反実仮想 | reactive / retrieval / sim | 5, 6, 7 |
-| Phase 5 | ストレス・アブレーション・執筆 | eval | 全般 |
+| Phase 0 | Harness, schema, baseline | core / worldmodel / storage / embedding | — |
+| Phase 1 | Cross-modal retrieval quality, perception tax | retrieval / embedding | 1 |
+| Phase 2 | Twin-instance transfer (the core) | federation / vla | 4, 1 |
+| Phase 3 | Stigmergy, consolidation, freshness | consolidation / federation | 3, 2 |
+| Phase 4 | Curiosity, standing query, projection, counterfactual | reactive / retrieval / sim | 5, 6, 7 |
+| Phase 5 | Stress, ablation, write-up | eval | general |
 
-縦の貫通線として Phase 0→1 の直後にシナリオ1の end-to-end 最小実装を通し、MWS 全層を一度貫く方針とする。
+As a vertical slice, right after Phase 0→1 we push a minimal end-to-end implementation of Scenario 1 to pierce all MWS layers once.
 
 ---
 
-## 12. リスクと外的妥当性の脅威
+## 12. Risks and Threats to External Validity
 
-| リスク | 内容 | 対策 |
+| Risk | Description | Mitigation |
 |---|---|---|
-| Sim-to-real ギャップ | sim 観測がクリーンすぎ知覚税を過小評価 | センサーノイズ・部分観測・ドメインランダム化を注入 |
-| クラウド非決定性 | Gemini のレート制限・コスト・揺らぎ | Batch API・キャッシュ・seed 固定・コスト常時記録 |
-| 単一マシン資源競合 | レイテンシ計測の歪み | 計測の隔離・CPUピン留め・負荷下計測の併記 |
-| 埋め込み空間非互換 | モデル更新で座標空間が変わり再索引が必要 | 埋め込みバージョニングを明示的実験対象化 |
-| スコープ膨張 | 7シナリオ全部を同時に追う | フェーズと go/no-go ゲートで段階管理 |
+| Sim-to-real gap | Sim observations are too clean and underestimate the perception tax | Inject sensor noise, partial observation, domain randomization |
+| Cloud nondeterminism | Gemini rate limits, cost, jitter | Batch API, cache, fixed seed, always record cost |
+| Single-machine resource contention | Distorted latency measurement | Isolate measurement, pin CPU, report under-load measurements too |
+| Embedding-space incompatibility | A model update changes the coordinate space and forces re-indexing | Make embedding versioning an explicit experimental target |
+| Scope creep | Chasing all 7 scenarios at once | Manage in stages with phases and go/no-go gates |
 
 ---
 
-## 13. 用語集
+## 13. Glossary
 
-| 用語 | 定義 |
+| Term | Definition |
 |---|---|
-| MWS | Multi-World Search。本プロジェクトの共有横断検索基盤 |
-| 記憶アトム | データの統一表現単位（封筒＋ペイロード） |
-| 4Dシーングラフ | 3D＋時間で構成される世界モデルの背骨 |
-| 多重インデックス検索 | 空間/時間/意味/記号/構造化の5種を融合する検索 |
-| 消費者適応投影 | 消費者に応じてアトムの返し方を変える機構 |
-| consolidation | episodic→semantic への記憶の代謝（蒸留・剪定） |
-| 連合 | エッジ↔クラウドの分散・キャッシュ・QoRルーティング |
-| QoR | Quality of Retrieval。遅延・鮮度・権威性などの検索品質契約 |
-| 来歴 | アトムの生成源・検索ログ。監査と再構成の基盤 |
-| standing query | 条件成立時に通知する購読型クエリ |
-| 好奇心ループ | 検索ギャップを探索タスクで埋める能動機構 |
-| 検索拡張VLA | 行動生成前に関連経験・スキル・制約を注入する方策 |
-| 知覚税 | 知覚・記述・埋め込みの劣化による検索品質低下分 |
-| スティグマジー | 共有環境（記憶）を介した間接的協調 |
-| VLA | Vision-Language-Action モデル |
+| MWS | Multi-World Search. This project's shared cross-cutting retrieval substrate |
+| Experience atom | The unified representation of data (envelope + payload) |
+| 4D scene graph | The backbone of the world model, composed of 3D + time |
+| Multi-index retrieval | Retrieval fusing five types: spatial / temporal / semantic / symbolic / structured |
+| Consumer-aware projection | The mechanism that changes how an atom is returned per consumer |
+| Consolidation | The episodic→semantic metabolism of memory (distillation, pruning) |
+| Federation | Edge↔cloud distribution, caching, QoR routing |
+| QoR | Quality of Retrieval. The retrieval-quality contract: latency, freshness, authority, etc. |
+| Provenance | An atom's source and the search log. The basis for audit and reconstruction |
+| Standing query | A subscription-style query that notifies when a condition is met |
+| Curiosity loop | The active mechanism that fills retrieval gaps with exploration tasks |
+| Retrieval-augmented VLA | A policy that injects relevant experiences, skills, and constraints before generating an action |
+| Perception tax | The retrieval-quality loss due to degradation in perception, description, and embedding |
+| Stigmergy | Indirect coordination via a shared environment (memory) |
+| VLA | Vision-Language-Action model |
 | ADK | Gemini Agent Development Kit |
 
 ---
 
-## 14. ドキュメント構成
+## 14. Document Structure
 
-| ドキュメント | 役割 | 含むもの | 含まないもの |
+| Document | Role | Contains | Does not contain |
 |---|---|---|---|
-| **PROJECT.md**（本書） | プロジェクト全体定義 | ビジョン・目的・スコープ・概念・アーキ概観・環境・仮説・シナリオ・評価・ロードマップ・リスク・用語 | 開発規約・ビルド手順・コーディング標準 |
-| **CLAUDE.md**（次に作成） | 開発運用指針 | ディレクトリ規約・依存管理・実行／テスト手順・コーディング標準・Claude Code の作業方針・ツール使用方針 | プロジェクト戦略・仮説定義 |
-| 実験計画ドキュメント（別途） | 実験詳細 | 各仮説の IV/DV・条件表・手順・指標定義 | — |
-| シナリオ設計書（別途） | シナリオ詳細 | アクター責務・データフロー・クエリ仕様・世界定義・業務データスキーマ | — |
+| **PROJECT.md** (this doc) | Whole-project definition | Vision, objectives, scope, concepts, architecture overview, environment, hypotheses, scenarios, evaluation, roadmap, risks, glossary | Dev conventions, build procedures, coding standards |
+| **CLAUDE.md** | Development-operations guide | Directory conventions, dependency management, run/test procedures, coding standards, the Claude Code workflow, tool-usage policy | Project strategy, hypothesis definitions |
+| Experiment-plan document (separate) | Experiment details | IV/DV per hypothesis, condition tables, procedures, metric definitions | — |
+| Scenario-design document (separate) | Scenario details | Actor responsibilities, data flow, query specs, world definitions, business-data schema | — |
