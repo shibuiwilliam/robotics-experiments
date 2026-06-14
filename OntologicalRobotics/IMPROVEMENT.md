@@ -81,14 +81,14 @@
   | S4 | T11 | ❌ 未着手 | X4 ID無し台帳アンカリング・2視点・矛盾観測の信念調停・SOP起票連鎖 |
   | S5 | T12 | ❌ 未着手 | **新規 `ontology/domains/normative.ttl`**（deontic）・X2/X3/X5・custody連鎖・監査可能性指標 |
   | S6 | T13 | ✅ 完了 | （ゲート閉。OR-full コスト最小/高コスト誤り0、OR-vec誤レーン・OR-sym崩壊。OR-sym/OR-vec はシナリオ条件 ADR-017） |
-  | S7 | T14 | ❌ 未着手 | X4・X5・所有(情報的関係)＋最終目撃＋視覚署名の三系統融合・誤配送採点 |
+  | S7 | T14 | ✅ 完了 | （ゲート閉。OR-full 誤配送0/成功0.35、B0/OR-vec 誤配送0.83+、OR-sym 署名なく確認1.0。X4/X5） |
 
-- **必須要件（全件実装）**: 上表の **❌ 未着手 3 件（S7, S4, S5）を必ず全て実装する**（S3✅）。
+- **必須要件（全件実装）**: 上表の **❌ 未着手 2 件（S4, S5）を必ず全て実装する**（S3✅ S7✅）。
   各々 §3.3 の全成果物（suite code・world/exp config・語彙＋SHACL＋CQ・oracle 真値導出・反証テスト・
   replay同一性・メタモルフィック・demo・登録・ゲート）を揃え、`make scenario-validate` で緑になること。
   途中打ち切り（一部のみ実装）は本項目の未達とする。
 - **実装順序（SCENARIOS.md §5 厳守）**: **Tier A**: S1✅ → S2✅ → S6✅ → **M-Scenario-A ✅**（達成）。
-  **Tier B**: S3✅ → S7 → S4（次）。**Tier C**: S5（規範層 normative.ttl・Tier A/B ゲート閉後）。
+  **Tier B**: S3✅ → S7✅ → S4（次）。**Tier C**: S5（規範層 normative.ttl・Tier A/B ゲート閉後）。
 - **横断インフラ**（共有・再利用・コピペ禁止）: X2 接触蒸留（S2/S5）, X3 状態リセット（S2/S5）,
   X4 ID無し同一性（S4/S6/S7）, X5 人間アクタ（S5/S7）, X6 非対称コスト（S6）。X1 は実装済（S1）。
 - **完了定義**: 全7シナリオで `make scenario-validate`（demo の反証 green ＋ tests/scenarios 緑）が通り、
@@ -216,7 +216,7 @@
 | M-2 tasks/suites 整合 | ✅ 解決 | ADR-016（宣言spec方針）。PROJECT.md は改変せず解釈を記録 |
 | M-4 生成物の残骸 | ✅ 解決 | reports/*.md と mappings/proposals/ を .gitignore、追跡解除、fuzz残骸削除 |
 | L-1 空.gitkeep | ✅ 解決 | 中身のあるディレクトリの .gitkeep 削除 |
-| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（**4/7**: S1,S2,S3,S6✅・M-Scenario-A✅） | **残 3 件 S7→S4→S5 を必ず実装**。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented |
+| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（**5/7**: S1,S2,S3,S6,S7✅・M-Scenario-A✅） | **残 2 件 S4→S5 を必ず実装**。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented |
 | M-3 ハードケース n=1 | ⏳ 各シナリオで対応 | 受入文言に射程明記済。各シナリオ世界で複数ハードケース化 |
 | L-2 シナリオCQ（S2–S7） | ⏳ 各シナリオで対応 | 各シナリオ実装時に語彙＋CQ＋SHACL をセットで追加（SCENARIOS.md §6） |
 | 本丸: live計測 | ⏳ 別件 | OPENAI_API_KEY＋コスト承認が前提。H1–H7 のagent検証はこれで初実施 |

@@ -1,0 +1,13 @@
+id: cq_s7_ownership
+question: "各入居者は何を所有し、その最終目撃ゾーンはどこか（所有×時空間）？"
+sparql: |
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX orx-biz: <https://orx.local/onto/biz#>
+  PREFIX orx-st: <https://orx.local/onto/st#>
+  SELECT ?resident ?item ?zone WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?resident rdf:type orx-biz:Resident ; orx-biz:owns ?item .
+      ?item orx-st:lastSeenZone ?zone .
+    }
+  }
+note: "所有(記号)と最終目撃(時空間)の結合。OR-full の解決に必須。B0/OR-vec はこの経路を持たない。"
