@@ -78,6 +78,10 @@ def _ensure_loaded() -> None:
         from orx.exp.suites.s2_allergen import runner as _s2
 
         _s2.register_self()
+    if "s3" not in _REGISTRY:
+        from orx.exp.suites.s3_multi_vendor import runner as _s3
+
+        _s3.register_self()
     if "s6" not in _REGISTRY:
         from orx.exp.suites.s6_recycling import runner as _s6
 

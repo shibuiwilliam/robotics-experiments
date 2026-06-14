@@ -57,3 +57,21 @@ orx-sh:RegulatedClassShape a sh:NodeShape ;
         sh:nodeKind sh:IRI ;
         sh:message "RegulatedClass は disposalRoute をちょうど1つ持つ（規制規則の一意性）"@ja ;
     ] .
+
+# --- S3 多ベンダー製造ライン（T10） ---
+@prefix orx-cap: <https://orx.local/onto/cap#> .
+
+orx-sh:ProcessRequirementShape a sh:NodeShape ;
+    sh:targetClass orx-cap:ProcessRequirement ;
+    sh:property [
+        sh:path orx-cap:requiresPayloadKg ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:double ;
+        sh:message "ProcessRequirement は requiresPayloadKg をちょうど1つ持つ（工程の重量要件）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-cap:requiresMaterial ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "ProcessRequirement は requiresMaterial をちょうど1つ持つ（把持面素材）"@ja ;
+    ] .
