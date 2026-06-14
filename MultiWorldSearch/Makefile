@@ -1,5 +1,5 @@
 .PHONY: help install dev format lint typecheck test test-live test-scenarios \
-       check scenario-list scenario-run scenario-all eval clean
+       check scenario-list scenario-run scenario-all eval clean es-up es-down test-es
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -38,6 +38,17 @@ test-live: ## Run live cloud tests (requires GOOGLE_API_KEY)
 
 test-scenarios: ## Run only scenario acceptance tests
 	uv run pytest tests/scenarios/ -v
+
+# ── Elasticsearch (optional vector backend) ────────────────────────
+
+es-up: ## Start local Elasticsearch (docker-compose) and wait for health
+	docker compose up -d --wait elasticsearch
+
+es-down: ## Stop and remove local Elasticsearch
+	docker compose down
+
+test-es: ## Run Elasticsearch integration tests (needs `make es-up` + --extra es)
+	uv run pytest -m elasticsearch -v
 
 check: format lint typecheck test ## Run all quality checks (format + lint + typecheck + test)
 

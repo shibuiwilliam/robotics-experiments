@@ -176,7 +176,34 @@ MWS_CLOUD_MODE=live
 GOOGLE_API_KEY=your-key
 ```
 
-Only `mws/embedding/` (teacher) and `mws/agents/` (LLM) make cloud calls.
+Only `mws/embedding/` and `mws/agents/` (LLM) make Gemini calls.
+
+## Vector backends
+
+The semantic index has three interchangeable backends (same interface);
+the in-memory default keeps tests offline and deterministic:
+
+| `vector_backend` | What | When |
+|---|---|---|
+| `memory` (default) | brute-force cosine | tests, small corpora |
+| `lancedb` | embedded ANN on disk | larger local corpora |
+| `elasticsearch` | `dense_vector` + kNN | server-backed scale / ops consolidation |
+
+### Elasticsearch (optional)
+
+```bash
+make es-up                 # start Elasticsearch via docker-compose (waits for health)
+uv sync --extra es         # install the elasticsearch client
+make test-es               # run the ES integration tests (-m elasticsearch)
+make es-down               # stop + remove
+
+# Build the offline index on Elasticsearch:
+uv run python -m mws.cli index build --config mws/configs/index/elasticsearch.yaml
+```
+
+The ES tests are marked `elasticsearch` and **deselected by default** (they
+skip cleanly if the server is unreachable), so the standard suite never needs
+Docker. Index names are namespaced by embedding space + dims (space discipline).
 
 ## Eval
 

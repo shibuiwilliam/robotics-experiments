@@ -146,7 +146,7 @@ MWS は6層から成る（本章は概念定義。実装上のモジュール対
 | エージェント実行系 | ローカル | Gemini ADK（推論のみクラウド Gemini。検索ツールは MCP 互換で公開済み。A2A 直接通信は未実装 — 協調は共有ストア経由のスティグマジーで実証） |
 | 推論（LLM） | クラウド | Gemini（ADK 経由） |
 | 埋め込み（全用途） | クラウド | Gemini Embedding 2（ネイティブマルチモーダル、768/1536/3072 次元・MRL、文書/クエリの非対称タスク指示、Batch API で非同期・低コスト） |
-| ベクトル検索 | ローカル | LanceDB / Qdrant / FAISS（候補） |
+| ベクトル検索 | ローカル | 既定=インメモリ／LanceDB（組込ANN）／Elasticsearch（dense_vector+kNN, docker-compose）— registry で選択 |
 | グラフ | ローカル | NetworkX（試作）→ 組込みプロパティグラフ |
 | 時系列・構造化 | ローカル | DuckDB / Parquet |
 | 空間 | ローカル | scipy KD-tree / Open3D / 占有グリッド |

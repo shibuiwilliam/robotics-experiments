@@ -1,9 +1,15 @@
 """Vector store adapters for semantic search.
 
-Two interchangeable backends with the same interface:
+Three interchangeable backends with the same interface
+(``add`` / ``search`` → cosine similarity / ``remove`` / ``size``):
+
 - ``VectorStore`` — dependency-light in-memory brute-force cosine (default).
-- ``LanceDBVectorStore`` — real LanceDB ANN index, selected via the store
-  registry / index config. Use for larger corpora.
+- ``LanceDBVectorStore`` — real LanceDB ANN index on disk (embedded).
+- ``ElasticsearchVectorStore`` — Elasticsearch ``dense_vector`` + kNN, run via
+  ``docker-compose.yml``. Selected with ``vector_backend="elasticsearch"``.
+
+Backends are chosen through the store registry / index config; the in-memory
+default keeps tests deterministic and offline.
 """
 
 from __future__ import annotations
@@ -153,3 +159,127 @@ class LanceDBVectorStore:
     @property
     def size(self) -> int:
         return int(self._table.count_rows())
+
+
+def _es_index_name(prefix: str, embedding_space: EmbeddingSpace, dims: int) -> str:
+    """Index name namespaced by embedding space + dims (CLAUDE.md §6).
+
+    Different models/dims/schemes must never share an index, so the space tag
+    and dims are baked into the index name. ES index names must be lowercase.
+    """
+    space = str(embedding_space).replace("_", "-").lower()
+    return f"{prefix}-{space}-{dims}d"
+
+
+class ElasticsearchVectorStore:
+    """Elasticsearch-backed vector store (``dense_vector`` + kNN).
+
+    Same interface as :class:`VectorStore`. Vectors are L2-normalized on add
+    and the index uses cosine similarity, so kNN scores map back to cosine in
+    [-1, 1] (ES returns ``(cosine + 1) / 2`` in [0, 1]; we invert it). The
+    document id is the ``atom_id`` so re-adding replaces the row (idempotent).
+
+    Run the server with ``docker-compose up -d`` (see docker-compose.yml).
+    Requires the optional ``es`` extra (``elasticsearch`` client).
+    """
+
+    def __init__(
+        self,
+        embedding_space: EmbeddingSpace,
+        dims: int,
+        url: str = "http://localhost:9200",
+        index_prefix: str = "mws-vectors",
+        refresh: str = "true",
+    ) -> None:
+        try:
+            from elasticsearch import Elasticsearch
+        except ImportError as exc:  # pragma: no cover - exercised when extra missing
+            raise ImportError(
+                "ElasticsearchVectorStore needs the 'es' extra. Install with: uv sync --extra es"
+            ) from exc
+
+        self.embedding_space = embedding_space
+        self.dims = dims
+        self._url = url
+        self._index = _es_index_name(index_prefix, embedding_space, dims)
+        # refresh="true" on writes makes them immediately searchable
+        # (read-after-write); set "false" for bulk loads where latency matters.
+        self._refresh = refresh
+        self._client = Elasticsearch(url)
+        self._ensure_index()
+        logger.info("Using Elasticsearch vector backend", url=url, index=self._index, dims=dims)
+
+    def _ensure_index(self) -> None:
+        if self._client.indices.exists(index=self._index):
+            return
+        self._client.indices.create(
+            index=self._index,
+            mappings={
+                "properties": {
+                    "vector": {
+                        "type": "dense_vector",
+                        "dims": self.dims,
+                        "index": True,
+                        "similarity": "cosine",
+                    }
+                }
+            },
+        )
+
+    def add(
+        self,
+        atom_id: str,
+        vector: np.ndarray,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if vector.shape != (self.dims,):
+            raise ValueError(f"Expected {self.dims}-d vector, got {vector.shape}")
+        norm = np.linalg.norm(vector)
+        if norm > 0:
+            vector = vector / norm
+        # doc id == atom_id → re-adding replaces the doc (idempotent ingest).
+        self._client.index(
+            index=self._index,
+            id=atom_id,
+            document={"vector": vector.astype(np.float32).tolist()},
+            refresh=self._refresh,
+        )
+
+    def search(
+        self,
+        query_vector: np.ndarray,
+        top_k: int = 10,
+    ) -> list[tuple[str, float]]:
+        if self.size == 0:
+            return []
+        norm = np.linalg.norm(query_vector)
+        if norm > 0:
+            query_vector = query_vector / norm
+        resp = self._client.search(
+            index=self._index,
+            knn={
+                "field": "vector",
+                "query_vector": query_vector.astype(np.float32).tolist(),
+                "k": top_k,
+                "num_candidates": max(top_k * 10, 100),
+            },
+            size=top_k,
+            source=False,
+        )
+        # ES cosine score is (cosine + 1) / 2 ∈ [0, 1]; invert to cosine [-1, 1]
+        # so results match the in-memory / LanceDB stores.
+        return [(hit["_id"], 2.0 * float(hit["_score"]) - 1.0) for hit in resp["hits"]["hits"]]
+
+    def remove(self, atom_id: str) -> None:
+        import contextlib
+
+        from elasticsearch import NotFoundError
+
+        # already absent → idempotent remove
+        with contextlib.suppress(NotFoundError):
+            self._client.delete(index=self._index, id=atom_id, refresh=self._refresh)
+
+    @property
+    def size(self) -> int:
+        self._client.indices.refresh(index=self._index)
+        return int(self._client.count(index=self._index)["count"])

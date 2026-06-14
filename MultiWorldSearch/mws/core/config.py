@@ -45,6 +45,10 @@ class MWSSettings(BaseSettings):
         default=64,
         description="Max texts per single embedding API request (IMPROVEMENT E2)",
     )
+    elasticsearch_url: str = Field(
+        default="http://localhost:9200",
+        description="Elasticsearch URL for the optional ES vector backend (docker-compose).",
+    )
     llm_max_concurrency: int = Field(
         default=4,
         description="Max concurrent real LLM step calls (Backlog B; 1 = sequential)",

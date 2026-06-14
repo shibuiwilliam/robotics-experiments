@@ -1,0 +1,21 @@
+# Index configuration using the Elasticsearch vector backend.
+# Start the server first:  make es-up   (see docker-compose.yml)
+# Then:  uv run python -m mws.cli index build --config mws/configs/index/elasticsearch.yaml
+index:
+  embedding_space: "mock-128-v1"
+  embedding_dims: 128
+  vector_backend: "elasticsearch"   # dense_vector + kNN via docker-compose
+  graph_backend: "networkx"
+  timeseries_backend: "duckdb"
+  spatial_backend: "kdtree"
+
+fusion:
+  method: "rrf"  # reciprocal rank fusion
+  weights:
+    semantic: 0.4
+    spatial: 0.2
+    temporal: 0.2
+    symbolic: 0.1
+    structured: 0.1
+    relational: 0.1
+  top_k: 10
