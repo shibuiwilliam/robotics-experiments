@@ -94,9 +94,12 @@ class BaseScenario(ABC):
         """Phase 7: Compute metrics, return results dict."""
 
     def teardown(self) -> None:
-        """Phase 8: Release resources. Default: flush audit."""
+        """Phase 8: Release resources. Default: flush audit + drop per-run
+        external stores (e.g. the Elasticsearch index for this run)."""
         if self.audit:
             self.audit.flush()
+        if self.engine is not None:
+            self.engine.stores.close()
 
     # --- Infrastructure helpers ---
 
@@ -153,6 +156,8 @@ class BaseScenario(ABC):
         stores = StoreRegistry(
             embedding_space=embedder.space,
             embedding_dims=embedder.dims,
+            vector_backend=self.settings.vector_backend,
+            elasticsearch_url=self.settings.elasticsearch_url,
         )
         self.engine = RetrievalEngine(
             stores=stores,

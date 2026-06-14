@@ -44,6 +44,7 @@
 | P9 (06-11) | E1–E4 gemini-embedding-2 公式準拠（非対称接頭辞 A/B +0.056・バッチ・Batch API・v2）＋監査が実リーク9件検出→修正 | 255 tests |
 | P10 (06-12) | M15–M18 — manifest 完全化＋コミット・llm_calls.jsonl 記録・取込全面バッチ（-48%）・v2 live CI | 263 tests |
 | P11 (06-12) | M19 **3点照合監査**・**REPLAY**（記録応答の決定的リプレイ、S1 全ゲート再現・LLM呼0）・**重みスイープ**（事前登録→現行確定＋R@5 構造上限の発見）・**並列 act**（S1 -65%/S5 -72%、レース排除・順序決定性維持） | 276 tests |
+| P14 (06-14) | **シナリオ実行を ES バックエンド既定化**（B方針）— `MWSSettings.vector_backend` 既定 `elasticsearch`、pytest は conftest で `memory` 強制（モックテスト境界）。ES ストアはインスタンスごと一意インデックス＋`close()/drop()` で後始末（engine/federated/consolidation の混在防止）。`make scenario-all`/`scenario-multi-seed-all` は `setup`(--extra es)＋`es-reset`（クリーン起動＝初期化）を事前依存に。実 ES で `make scenario-all` 完走・インデックス0残（teardown 検証）。既定テストは memory のまま 275 緑 | 275 tests |
 | P13 (06-14) | **Elasticsearch ベクトルバックエンドを追加**（`vector_backend="elasticsearch"`、`dense_vector`+kNN）— `docker-compose.yml`（ES8 単一ノード）・`ElasticsearchVectorStore`（VectorStore と同一IF・空間名前空間化・冪等add）・registry/config/index_builder 配線・`es` extra・`elasticsearch` pytest marker（既定除外）・`make es-up/es-down/test-es`・`configs/index/elasticsearch.yaml`。実 ES で統合テスト5件緑＋エンジン end-to-end 動作確認。既定はインメモリ維持で 275 緑不変 | 275+5(es) tests |
 | P12 (06-14) | **埋め込みを `gemini-embedding-2` 単一に統一** — 教師/生徒二層・H7・`LocalStudentEmbedder`・`sentence-transformers`（student extra）・`eval h7` CLI・student マーカー・GEMMA/MINILM 空間・`student_model` 設定を撤去。factory は live=gemini / mock=決定的スタンドインに単純化。docs（PROJECT/CLAUDE）整合 | 275 tests |
 

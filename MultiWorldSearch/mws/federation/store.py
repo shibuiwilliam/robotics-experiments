@@ -33,11 +33,15 @@ class InstanceStore:
         embedding_dims: int,
         embedder: Embedder,
         embed_document_fn: Any | None = None,
+        vector_backend: str = "memory",
+        elasticsearch_url: str = "http://localhost:9200",
     ) -> None:
         self.instance_id = instance_id
         self.stores = StoreRegistry(
             embedding_space=embedding_space,
             embedding_dims=embedding_dims,
+            vector_backend=vector_backend,
+            elasticsearch_url=elasticsearch_url,
         )
         self.embedder = embedder
         #: Tracked embedding path supplied by the owning FederatedStore — a
@@ -99,9 +103,13 @@ class FederatedStore:
         cost_tracker: Any | None = None,
         latency_tracker: Any | None = None,
         bandwidth_meter: Any | None = None,
+        vector_backend: str = "memory",
+        elasticsearch_url: str = "http://localhost:9200",
     ) -> None:
         self._instances: dict[str, InstanceStore] = {}
         self._embedder = embedder
+        self._vector_backend = vector_backend
+        self._elasticsearch_url = elasticsearch_url
         # Measurement plumbing (IMPROVEMENT M12): federated query embeddings
         # are real cloud calls in live mode and must be counted/timed like the
         # engine's. The content-hash cache prevents re-embedding repeated
@@ -159,10 +167,17 @@ class FederatedStore:
             embedding_dims=embedding_dims,
             embedder=self._embedder,
             embed_document_fn=self._embed_document,
+            vector_backend=self._vector_backend,
+            elasticsearch_url=self._elasticsearch_url,
         )
         self._instances[instance_id] = inst
         logger.debug("Federation: added instance", instance_id=instance_id)
         return inst
+
+    def close(self) -> None:
+        """Drop every instance's per-run external store (e.g. ES indices)."""
+        for inst in self._instances.values():
+            inst.stores.close()
 
     def get_instance(self, instance_id: str) -> InstanceStore | None:
         return self._instances.get(instance_id)

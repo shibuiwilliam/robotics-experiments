@@ -47,8 +47,16 @@ class StoreRegistry:
                 embedding_space=embedding_space, dims=embedding_dims, db_path=lancedb_path
             )
         elif vector_backend == "elasticsearch":
+            import uuid
+
+            # Unique index per registry instance → isolation matching the
+            # in-memory store (engine, federated instances and consolidation
+            # re-index must not share one index). Dropped by close().
             self.vector = ElasticsearchVectorStore(
-                embedding_space=embedding_space, dims=embedding_dims, url=elasticsearch_url
+                embedding_space=embedding_space,
+                dims=embedding_dims,
+                url=elasticsearch_url,
+                index_suffix=uuid.uuid4().hex[:12],
             )
         else:
             self.vector = VectorStore(embedding_space=embedding_space, dims=embedding_dims)
@@ -62,3 +70,12 @@ class StoreRegistry:
         self.graph = GraphStore()
         self.spatial = SpatialIndex()
         self.blob = BlobStore(base_path=blob_path)
+
+    def close(self) -> None:
+        """Release external resources (e.g. drop a per-run Elasticsearch index).
+
+        Safe to call on any backend — no-op for the in-memory/LanceDB stores.
+        """
+        drop = getattr(self.vector, "drop", None)
+        if callable(drop):
+            drop()

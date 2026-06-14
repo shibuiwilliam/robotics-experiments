@@ -7,13 +7,20 @@ documents, and skill demonstrations into a shared searchable memory.
 ## Quickstart
 
 ```bash
-# One command: set up the env, run scenario acceptance tests, then run all 7
-# scenarios end-to-end (mock by default — no cloud keys needed).
+# One command: set up the env, initialize a clean Elasticsearch cluster, run
+# the scenario acceptance tests, then run all 7 scenarios end-to-end on the ES
+# vector backend. Needs Docker (for ES); embeddings are mock unless live.
 make scenario-all
 
 # View run artifacts
 cat runs/maintenance_handoff-0-*/metrics.json
 ```
+
+> Scenario **runs** use the Elasticsearch vector backend (the default for
+> `mws scenario run`); `make scenario-all` / `scenario-multi-seed-all`
+> initialize a clean cluster first via docker-compose. The **test suite**
+> always uses the in-memory backend, so `uv run pytest` stays offline and
+> needs no Docker.
 
 Prefer the individual steps?
 
@@ -181,14 +188,19 @@ Only `mws/embedding/` and `mws/agents/` (LLM) make Gemini calls.
 
 ## Vector backends
 
-The semantic index has three interchangeable backends (same interface);
-the in-memory default keeps tests offline and deterministic:
+The semantic index has three interchangeable backends (same interface).
+Scenario runs default to **Elasticsearch**; the **pytest suite** is forced to
+**in-memory** so tests stay offline and deterministic (`MWS_VECTOR_BACKEND`
+overrides the default):
 
-| `vector_backend` | What | When |
+| `vector_backend` | What | Used by |
 |---|---|---|
-| `memory` (default) | brute-force cosine | tests, small corpora |
+| `elasticsearch` (scenario default) | `dense_vector` + kNN (docker-compose) | `mws scenario run`, `make scenario-all` |
+| `memory` (test default) | brute-force cosine | the pytest suite, small corpora |
 | `lancedb` | embedded ANN on disk | larger local corpora |
-| `elasticsearch` | `dense_vector` + kNN | server-backed scale / ops consolidation |
+
+Each scenario run/store gets its own ES index (isolation) and drops it on
+teardown; `make scenario-all` initializes a clean cluster first (`es-reset`).
 
 ### Elasticsearch (optional)
 

@@ -161,14 +161,20 @@ class LanceDBVectorStore:
         return int(self._table.count_rows())
 
 
-def _es_index_name(prefix: str, embedding_space: EmbeddingSpace, dims: int) -> str:
+def _es_index_name(
+    prefix: str, embedding_space: EmbeddingSpace, dims: int, suffix: str | None = None
+) -> str:
     """Index name namespaced by embedding space + dims (CLAUDE.md §6).
 
     Different models/dims/schemes must never share an index, so the space tag
-    and dims are baked into the index name. ES index names must be lowercase.
+    and dims are baked into the index name. An optional ``suffix`` makes the
+    index unique per store instance, so two stores in the same run (e.g. the
+    engine and a federated instance) stay isolated — mirroring the in-memory
+    store, where each object is independent. ES index names must be lowercase.
     """
     space = str(embedding_space).replace("_", "-").lower()
-    return f"{prefix}-{space}-{dims}d"
+    base = f"{prefix}-{space}-{dims}d"
+    return f"{base}-{suffix.lower()}" if suffix else base
 
 
 class ElasticsearchVectorStore:
@@ -190,6 +196,7 @@ class ElasticsearchVectorStore:
         url: str = "http://localhost:9200",
         index_prefix: str = "mws-vectors",
         refresh: str = "true",
+        index_suffix: str | None = None,
     ) -> None:
         try:
             from elasticsearch import Elasticsearch
@@ -201,13 +208,17 @@ class ElasticsearchVectorStore:
         self.embedding_space = embedding_space
         self.dims = dims
         self._url = url
-        self._index = _es_index_name(index_prefix, embedding_space, dims)
+        self._index = _es_index_name(index_prefix, embedding_space, dims, index_suffix)
         # refresh="true" on writes makes them immediately searchable
         # (read-after-write); set "false" for bulk loads where latency matters.
         self._refresh = refresh
         self._client = Elasticsearch(url)
         self._ensure_index()
         logger.info("Using Elasticsearch vector backend", url=url, index=self._index, dims=dims)
+
+    def drop(self) -> None:
+        """Delete this store's index (call on teardown to bound index growth)."""
+        self._client.indices.delete(index=self._index, ignore_unavailable=True)
 
     def _ensure_index(self) -> None:
         if self._client.indices.exists(index=self._index):
