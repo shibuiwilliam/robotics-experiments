@@ -22,6 +22,8 @@ _REQUIRED_FIELDS = (
     "embedding_space",
     "embedding_dims",
     "embedding_batch_size",
+    "vector_backend",
+    "git_dirty_paths",
     "model_ids",
     "python_version",
     "dependency_versions",
@@ -41,6 +43,39 @@ def test_manifest_contains_all_reproducibility_fields() -> None:
         assert manifest["dependency_versions"][dep] not in ("", None)
 
 
+# --- M21: which vector backend produced the run ---
+
+
+def test_manifest_records_memory_backend_without_es_noise(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pytest suite is forced to in-memory (conftest); the manifest says so
+    and carries no misleading ES-only fields."""
+    monkeypatch.setenv("MWS_VECTOR_BACKEND", "memory")
+    manifest = create_manifest(run_id="r1", scenario="test", seed=0)
+    assert manifest["vector_backend"] == "memory"
+    assert "elasticsearch_url" not in manifest
+    assert "elasticsearch_index" not in manifest
+
+
+def test_manifest_records_elasticsearch_backend_with_url_and_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ES runs additionally record the URL and the index naming convention
+    (a `*` pattern — per-run indices are uuid-suffixed and ephemeral). No live
+    Elasticsearch is needed: create_manifest only reads settings."""
+    monkeypatch.setenv("MWS_VECTOR_BACKEND", "elasticsearch")
+    monkeypatch.setenv("MWS_ELASTICSEARCH_URL", "http://es-host:9200")
+    monkeypatch.setenv("MWS_DEFAULT_EMBEDDING_SPACE", "gemini2-768-v2")
+    monkeypatch.setenv("MWS_EMBEDDING_DIMS", "768")
+    manifest = create_manifest(run_id="r1", scenario="test", seed=0)
+    assert manifest["vector_backend"] == "elasticsearch"
+    assert manifest["elasticsearch_url"] == "http://es-host:9200"
+    idx = manifest["elasticsearch_index"]
+    assert idx.startswith("mws-vectors-gemini2-768-v2-768d")
+    assert idx.endswith("-*")
+
+
 def _fake_git(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
     def fake_run(*args, **kwargs):
         return SimpleNamespace(stdout=stdout)
@@ -50,7 +85,11 @@ def _fake_git(monkeypatch: pytest.MonkeyPatch, stdout: str) -> None:
 
 def test_git_state_clean_tree(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_git(monkeypatch, "")
-    assert get_git_state() == {"git_dirty": False, "git_untracked_tree": False}
+    assert get_git_state() == {
+        "git_dirty": False,
+        "git_untracked_tree": False,
+        "git_dirty_paths": [],
+    }
 
 
 def test_git_state_dirty_tracked_changes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -58,6 +97,15 @@ def test_git_state_dirty_tracked_changes(monkeypatch: pytest.MonkeyPatch) -> Non
     state = get_git_state()
     assert state["git_dirty"] is True
     assert state["git_untracked_tree"] is False
+    # M20: the manifest alone shows WHAT was dirty.
+    assert state["git_dirty_paths"] == [" M mws/cli.py", "?? notes.txt"]
+
+
+def test_git_state_dirty_paths_are_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    _fake_git(monkeypatch, "".join(f" M f{i}.py\n" for i in range(25)))
+    state = get_git_state()
+    assert len(state["git_dirty_paths"]) == 21  # 20 paths + 1 truncation marker
+    assert state["git_dirty_paths"][-1].startswith("... (+5 more)")
 
 
 def test_git_state_entirely_untracked_tree(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,6 +115,7 @@ def test_git_state_entirely_untracked_tree(monkeypatch: pytest.MonkeyPatch) -> N
     state = get_git_state()
     assert state["git_dirty"] is True
     assert state["git_untracked_tree"] is True
+    assert state["git_dirty_paths"] == ["?? ./"]
 
 
 def test_git_state_unavailable_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,4 +123,8 @@ def test_git_state_unavailable_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         raise FileNotFoundError("git not found")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert get_git_state() == {"git_dirty": None, "git_untracked_tree": None}
+    assert get_git_state() == {
+        "git_dirty": None,
+        "git_untracked_tree": None,
+        "git_dirty_paths": None,
+    }

@@ -28,13 +28,20 @@ def get_git_sha() -> str:
         return "unknown"
 
 
+#: Cap on how many dirty paths the manifest records (IMPROVEMENT M20). The
+#: git_dirty flag already signals dirtiness; this list is for diagnosis, so a
+#: bounded sample is enough — a truncation marker is appended if exceeded.
+_MAX_DIRTY_PATHS = 20
+
+
 def get_git_state() -> dict[str, Any]:
-    """Working-tree state for the CURRENT directory subtree (IMPROVEMENT M15).
+    """Working-tree state for the CURRENT directory subtree (IMPROVEMENT M15/M20).
 
     A SHA alone is misleading when the tree is dirty — or worse, entirely
-    untracked (then the SHA describes none of the code that ran). Both
-    conditions are recorded machine-readably so a manifest can never imply
-    more reproducibility than it has.
+    untracked (then the SHA describes none of the code that ran). The dirty
+    flag, the untracked-tree flag, AND the first ``_MAX_DIRTY_PATHS`` dirty
+    paths are recorded machine-readably so a manifest alone explains a
+    ``git_dirty=true`` without re-running ``git status``.
     """
     try:
         result = subprocess.run(
@@ -44,12 +51,19 @@ def get_git_state() -> dict[str, Any]:
             check=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return {"git_dirty": None, "git_untracked_tree": None}
+        return {"git_dirty": None, "git_untracked_tree": None, "git_dirty_paths": None}
     lines = [line for line in result.stdout.splitlines() if line.strip()]
     untracked_tree = any(
         line.startswith("??") and line.split(maxsplit=1)[1] in ("./", ".") for line in lines
     )
-    return {"git_dirty": bool(lines), "git_untracked_tree": untracked_tree}
+    dirty_paths = lines[:_MAX_DIRTY_PATHS]
+    if len(lines) > _MAX_DIRTY_PATHS:
+        dirty_paths = [*dirty_paths, f"... (+{len(lines) - _MAX_DIRTY_PATHS} more)"]
+    return {
+        "git_dirty": bool(lines),
+        "git_untracked_tree": untracked_tree,
+        "git_dirty_paths": dirty_paths,
+    }
 
 
 def _model_ids() -> dict[str, str]:
@@ -78,6 +92,31 @@ def _dependency_versions() -> dict[str, str]:
     return versions
 
 
+def _vector_backend_info(settings: Any) -> dict[str, Any]:
+    """Which vector store produced this run (IMPROVEMENT M21).
+
+    The backend now varies per run (Elasticsearch default for scenario runs,
+    in-memory for the pytest suite, LanceDB optional), so the manifest must say
+    which one ran. For Elasticsearch the URL and the index NAMING CONVENTION
+    are recorded — not a concrete index name, because each store instance gets
+    a unique per-run uuid-suffixed index that is dropped on teardown, so a
+    single name would be both stale and incomplete. The ``*`` pattern matches
+    the run's (many, ephemeral) indices in the cluster.
+    """
+    info: dict[str, Any] = {"vector_backend": settings.vector_backend}
+    if settings.vector_backend == "elasticsearch":
+        from mws.storage.vector import DEFAULT_ES_INDEX_PREFIX, _es_index_name
+
+        base = _es_index_name(
+            DEFAULT_ES_INDEX_PREFIX,
+            settings.default_embedding_space,
+            settings.embedding_dims,
+        )
+        info["elasticsearch_url"] = settings.elasticsearch_url
+        info["elasticsearch_index"] = f"{base}-*"  # per-run uuid-suffixed
+    return info
+
+
 def create_manifest(
     run_id: str,
     scenario: str,
@@ -102,6 +141,7 @@ def create_manifest(
         "embedding_space": settings.default_embedding_space,
         "embedding_dims": settings.embedding_dims,
         "embedding_batch_size": settings.embedding_batch_size,
+        **_vector_backend_info(settings),
         "model_ids": _model_ids(),
         "python_version": _python_version(),
         "dependency_versions": _dependency_versions(),
