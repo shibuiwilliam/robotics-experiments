@@ -32,12 +32,12 @@ def _load_scenario_config(config_path: str) -> dict:
     return {}
 
 
-def run_scenario(name: str, seed: int = 0, config_path: str | None = None) -> None:
-    """Run a named scenario via the registry."""
+def run_scenario(name: str, seed: int = 0, config_path: str | None = None) -> dict:
+    """Run a named scenario via the registry; return its result dict (G4)."""
     from mws.scenarios.registry import run_scenario as registry_run
 
     # Resolve config
     effective_config = config_path or _DEFAULT_CONFIGS.get(name, "")
     config = _load_scenario_config(effective_config) if effective_config else {}
 
-    registry_run(name=name, seed=seed, config=config)
+    return registry_run(name=name, seed=seed, config=config)

@@ -719,6 +719,13 @@ class PhysicalRecordReconciliationScenario(BaseScenario):
         write_back_error = abs(write_back_count - self._gt)
 
         metrics: dict[str, Any] = {
+            # G3: pose-fusion/reconciliation scenario (H9) — the headline metric
+            # is fusion error vs single-observer, not retrieval recall; no oracle
+            # retrieval relevance set, so perception tax is N/A by design.
+            "perception_tax": {
+                "applicable": False,
+                "reason": "multi-observer fusion scenario (H9); metric is fusion error, no retrieval relevance set",
+            },
             "fusion": {
                 "fusion_estimate": self._fusion_estimate if not self._fusion_failed else None,
                 "fusion_error": fusion_error,

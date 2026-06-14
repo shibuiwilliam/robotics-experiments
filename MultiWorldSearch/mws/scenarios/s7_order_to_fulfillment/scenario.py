@@ -614,6 +614,10 @@ class OrderToFulfillmentScenario(BaseScenario):
         combined_results = self.engine.search(combined_query)
         retrieved_ids = [r.atom_id for r in combined_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)
+        # G3: privileged-oracle differential (perception tax, H3).
+        from mws.eval.oracle import perception_tax
+
+        tax_results = perception_tax(self._atoms, relevant, retrieval_metrics)
 
         # Task-specific metrics
         ghost_inventory_detected = any(
@@ -647,6 +651,7 @@ class OrderToFulfillmentScenario(BaseScenario):
 
         metrics = {
             "retrieval": retrieval_metrics,
+            "perception_tax": tax_results,
             "task": {
                 "ghost_inventory_detected": ghost_inventory_detected,
                 "wms_write_back": wms_write_back,

@@ -33,6 +33,9 @@ class VectorStore:
     index. LanceDBVectorStore swaps in a real ANN index for larger scale.
     """
 
+    #: Latency bucket for `search` (G6): an in-process scan is genuinely local.
+    latency_bucket = "local_ann"
+
     def __init__(self, embedding_space: EmbeddingSpace, dims: int) -> None:
         self.embedding_space = embedding_space
         self.dims = dims
@@ -96,6 +99,9 @@ class LanceDBVectorStore:
     *similarity* (1 - distance) to match the in-memory store. Re-adding an
     atom_id replaces the prior row.
     """
+
+    #: Latency bucket for `search` (G6): embedded on-disk ANN, still local.
+    latency_bucket = "local_ann"
 
     def __init__(
         self,
@@ -193,6 +199,10 @@ class ElasticsearchVectorStore:
     Run the server with ``docker-compose up -d`` (see docker-compose.yml).
     Requires the optional ``es`` extra (``elasticsearch`` client).
     """
+
+    #: Latency bucket for `search` (G6): an HTTP round-trip to ES, NOT local —
+    #: tracked separately so the §10 decomposition isn't read as local ANN.
+    latency_bucket = "es_search"
 
     def __init__(
         self,

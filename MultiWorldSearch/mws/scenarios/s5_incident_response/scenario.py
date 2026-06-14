@@ -449,6 +449,11 @@ class IncidentResponseScenario(BaseScenario):
         eval_results = self.engine.search(eval_query)
         retrieved_ids = [r.atom_id for r in eval_results]
         retrieval_metrics = self._retrieval_metrics(retrieved_ids, relevant)
+        # G3: privileged-oracle differential (perception tax, H3) — this is a
+        # retrieval-bearing scenario, so the oracle↔pipeline gap is defined.
+        from mws.eval.oracle import perception_tax
+
+        tax_results = perception_tax(self._atoms, relevant, retrieval_metrics)
 
         # Task-specific metrics
         plan = self._incident_plan
@@ -459,6 +464,7 @@ class IncidentResponseScenario(BaseScenario):
 
         metrics: dict[str, Any] = {
             "retrieval": retrieval_metrics,
+            "perception_tax": tax_results,
             "task": {
                 "standing_query_fired": self._standing_query_fired,
                 "recon_dispatched": self._recon_dispatched,

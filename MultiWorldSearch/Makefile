@@ -67,13 +67,18 @@ scenario-list: ## List all available scenarios
 scenario-run: ## Run a scenario (usage: make scenario-run NAME=maintenance_handoff SEED=0)
 	uv run python -m mws.cli scenario run --name $(NAME) --seed $(or $(SEED),0)
 
-scenario-all: setup es-reset ## Build env, init ES, run scenario tests, then all 7 scenarios on the ES backend (seed 0)
+# NOTE: cloud mode is resolved from .env / --cloud-mode (default mock). If it
+# resolves to LIVE, each run prints a ⚠ banner and is REFUSED unless
+# MWS_CONFIRM_LIVE_SPEND=1 (G1/G2). Runs are single-seed point estimates — use
+# scenario-multi-seed-all for 95% CIs (G5). The [2/2] leg asserts each
+# scenario's acceptance criteria and fails on a miss (G4).
+scenario-all: setup es-reset ## Build env, init ES, run scenario tests, then all 7 scenarios on ES (seed 0; mock unless .env=live + MWS_CONFIRM_LIVE_SPEND=1)
 	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic, in-memory) ==="
 	uv run --no-sync pytest tests/scenarios/ -q
-	@echo "\n=== [2/2] end-to-end scenario runs (Elasticsearch vector backend) ==="
+	@echo "\n=== [2/2] end-to-end scenario runs (Elasticsearch vector backend; acceptance-gated, G4) ==="
 	@for s in $$(uv run --no-sync python -m mws.cli scenario list); do \
 		echo "\n--- $$s ---" ; \
-		uv run --no-sync python -m mws.cli scenario run --name "$$s" --seed 0 ; \
+		uv run --no-sync python -m mws.cli scenario run --name "$$s" --seed 0 || exit 1 ; \
 	done
 
 # ── Sim / Index / Eval ─────────────────────────────────────────────

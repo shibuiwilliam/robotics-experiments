@@ -269,8 +269,12 @@ class RetrievalEngine:
         if query.text:
             emb_result = self._embed_text(query.text)
             vec = np.array(emb_result.vector, dtype=np.float32)
+            # G6: time the vector search under the BACKEND's own bucket. An ES
+            # query is an HTTP round-trip (es_search), not local ANN — keeping
+            # them distinct stops the §10 latency decomposition being misread.
+            vbucket = getattr(self.stores.vector, "latency_bucket", "local_ann")
             if self._latency is not None:
-                with self._latency.track("local_ann"):
+                with self._latency.track(vbucket):
                     ranked_lists["semantic"] = self.stores.vector.search(vec, top_k=query.top_k * 3)
             else:
                 ranked_lists["semantic"] = self.stores.vector.search(vec, top_k=query.top_k * 3)
