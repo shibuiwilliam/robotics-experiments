@@ -126,3 +126,27 @@ orx-biz:assignedRoom a owl:DatatypeProperty ;
     rdfs:domain orx-biz:Resident ; rdfs:range xsd:string ;
     rdfs:label "居室"@ja ;
     rdfs:comment "配送先（業務-物理クエリの解）"@ja .
+
+# --- S4 プラント点検（T11, H2/H5） ---
+orx-biz:Asset a owl:Class ;
+    rdfs:subClassOf orx-upper:PhysicalObject ;
+    rdfs:label "資産台帳個体（P&ID）"@ja ;
+    rdfs:comment "資産台帳・P&ID上の設備個体。知覚個体と ID無しでアンカリングする"@ja .
+
+orx-biz:inSystem a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Asset ; rdfs:range xsd:string ;
+    rdfs:label "所属系統"@ja ;
+    rdfs:comment "系統トポロジ（SOP引当のキー）"@ja .
+
+orx-biz:WorkOrder a owl:Class ;
+    rdfs:subClassOf orx-upper:InformationEntity ;
+    rdfs:label "作業指示"@ja .
+
+orx-biz:forAsset a owl:ObjectProperty ;
+    rdfs:domain orx-biz:WorkOrder ; rdfs:range orx-biz:Asset ;
+    rdfs:label "対象資産"@ja .
+
+orx-biz:appliesSop a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:WorkOrder ; rdfs:range xsd:string ;
+    rdfs:label "適用SOP"@ja ;
+    rdfs:comment "異常→該当系統SOP→作業指示の連鎖の結果"@ja .

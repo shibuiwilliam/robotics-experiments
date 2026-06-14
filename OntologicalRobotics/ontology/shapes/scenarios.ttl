@@ -94,3 +94,28 @@ orx-sh:OwnsShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:message "owns の値は PersonalItem 型でなければならない（所有関係の整合）"@ja ;
     ] .
+
+# --- S4 プラント点検（T11） ---
+orx-sh:AssetShape a sh:NodeShape ;
+    sh:targetClass orx-biz:Asset ;
+    sh:property [
+        sh:path orx-biz:inSystem ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "Asset は inSystem をちょうど1つ持つ（系統トポロジ＝SOP引当キー）"@ja ;
+    ] .
+
+orx-sh:WorkOrderShape a sh:NodeShape ;
+    sh:targetClass orx-biz:WorkOrder ;
+    sh:property [
+        sh:path orx-biz:forAsset ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "WorkOrder は forAsset をちょうど1つ持つ（対象資産の一意性）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-biz:appliesSop ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:message "WorkOrder は appliesSop をちょうど1つ持つ（適用SOP）"@ja ;
+    ] .
