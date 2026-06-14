@@ -58,6 +58,21 @@ ES バックエンドの実 run（例 `incident_response-0-*`）の成果物で�
 - **G2/G5（バナー）・G4（受け入れアサート）**: `mws scenario run` 経路で機能（mock 全7シナリオで acceptance PASS を別途確認済み）。
   なお本 multi-seed-all の [2/2] は `eval multi-seed` 経路のため G4 のper-run アサートは通らない（§5-2 参照）。
 
+## 3b. `make scenario-all`（単一seed・ES）でのゲート実走（本依頼で実行）
+
+multi-seed-all が通さない経路（G1 spend ゲート・G4 per-run 受け入れアサート）を `scenario-all` で実走確認:
+
+- **G1 spend ゲート（実走）**: 素の `scenario run`（`.env` 由来で **live 解決**）は実行を**拒否**し `exit=1`・
+  クラウド呼び出し **0**:
+  `Error: Refusing to run LIVE … cloud_mode=live and MWS_CONFIRM_LIVE_SPEND!=1. Estimated cost: ~$0.008 …`。
+  前回の無確認実課金は再発防止された。本検証は `MWS_CLOUD_MODE=mock make scenario-all`（$0）で実行。
+- **G4 受け入れアサート（実走）**: `[2/2]` の全7シナリオで受け入れ基準ゲートが緑（`all N criteria PASS`）。
+  例: maintenance(4/4)・incident(5/5)・order(2/2)・physical_record(2/2)・new_sku(2/2)・counterfactual(2/2)・
+  collective(4/4)。1基準でも未達なら `scenario-all` は非ゼロ終了する。
+- **G2/G5 バナー**: 7/7 走で `[MWS] cloud_mode=mock | embedding=mock | vector_backend=elasticsearch | seed=0 …` を表示。
+- **G6/G1 成果物（全7 ES走）**: 全走で `system.es_search_*` 計上・`local_ann` 不在、`manifest.cloud`／`metrics.cloud`
+  にコスト台帳（`llm_calls_real=0`）。**[1/2] 受け入れテスト 91 passed**。
+
 ## 4. 横断的検証
 
 - **ベクトルバックエンド（Elasticsearch）**: 全 32 ランで ES（dense_vector+kNN）を使用（48 ストア）。残インデックス **0**。
