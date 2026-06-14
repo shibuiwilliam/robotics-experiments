@@ -1,13 +1,12 @@
-# REPORT.md — MWS `make scenario-multi-seed-all` 検証レポート（seeds 0–3・mock・ES）
+# REPORT.md — MWS `make scenario-multi-seed-all` 検証レポート（seeds 0–3・mock・ES・G1–G6 完了後）
 
 **日付**: 2026-06-14
 **コマンド**: `make scenario-multi-seed-all`（`setup` → `es-reset` → 受け入れテスト → seeds 0–3 マルチシード集計）
-**モード**: `MWS_CLOUD_MODE=mock`（埋め込みは MockEmbedder・**クラウド非接触＝$0**）／**ベクトルバックエンド = Elasticsearch**（docker-compose, dense_vector + kNN/HNSW）
-**結果**: **受け入れテスト 70 passed**（in-memory・決定的）＋ **seeds 0–3 × 7 シナリオ完走（32 ラン・48 ES ストア・exit 0）**・実行後 ES 残インデックス **0**・全 manifest が backend／embedder 実空間を整合記録
+**モード**: `MWS_CLOUD_MODE=mock`（埋め込みは MockEmbedder・**実クラウド非接触＝実課金 $0**）／**ベクトルバックエンド = Elasticsearch**（docker-compose, dense_vector + kNN/HNSW）
+**結果**: **受け入れテスト 91 passed**（in-memory・決定的）＋ **seeds 0–3 × 7 シナリオ完走（32 ラン・48 ES ストア・exit 0）**・実行後 ES 残インデックス **0**・全 manifest が backend／embedder 実空間／cloud コストを整合記録
 
-> 直近の **ライブ** `make scenario-all` 走の詳細・コスト開示と、そこで判明した運用ギャップ
-> （G1–G5）は [IMPROVEMENT.md](IMPROVEMENT.md) に登録済み。本走はその姉妹である
-> **mock・マルチシード（統計的裏付け）走**の記録である。
+> 本走は G1–G6（コスト記録・spend ゲート・走行前バナー・知覚税拡張・ライブ E2E アサート・ES レイテンシ
+> バケット分離）の実装完了後の初の multi-seed 検証走であり、新機能が実走で機能することを確認する。
 
 ---
 
@@ -17,13 +16,11 @@
 |----|------|------|
 | 環境構築 | `setup`（dev+live+es 同期） | OK |
 | ES 初期化 | `es-reset`（volume wipe → up --wait） | Healthy |
-| [1/2] 受け入れテスト | `pytest tests/scenarios/`（mock・in-memory・決定的） | **70 passed** |
+| [1/2] 受け入れテスト | `pytest tests/scenarios/`（mock・in-memory・決定的） | **91 passed** |
 | [2/2] マルチシード | seeds 0–3 × 7 シナリオ を **ES バックエンド**で実行 | **32 ラン・48 ストア完走（exit 0）** |
 | 後始末 | 各ストアの ES インデックスを teardown で drop | **残 0** |
-| 再現性 | 全 run の manifest が backend＋embedder 実空間を記録 | 整合（下記 §3） |
-| コスト | mock（クラウド呼び出しなし） | **$0** |
-
----
+| 再現性 | 全 run の manifest が backend＋embedder 実空間＋cloud を記録 | 整合 |
+| コスト | mock（実クラウド呼び出しなし） | **実課金 $0**（`cloud.llm_calls_real=0`） |
 
 ## 2. マルチシード CI（mock 埋め込み・seeds 0–3・ES バックエンド）
 
@@ -32,86 +29,71 @@
 | S1 設備保全 | Recall@10 | 0.775 [0.695, 0.855] |
 | S1 | 知覚税@10（H3） | 0.225 [0.145, 0.305] |
 | S3 弱信号 | Recall@10 | 0.462 [0.362, 0.561] |
-| S3 | prefetch カバレッジ | **3.000 [3.000, 3.000]** |
+| **S3** | **知覚税@10（H3・G3 で新規算出）** | **0.308 [0.208, 0.408]** |
 | S5 インシデント | Recall@10 | 0.786 [0.654, 0.917] |
+| **S5** | **知覚税@10（H3・G3 で新規算出）** | **0.214 [0.083, 0.346]** |
 | S7 受注充足 | Recall@10 | 0.750 [0.662, 0.838] |
+| **S7** | **知覚税@10（H3・G3 で新規算出）** | **0.250 [0.162, 0.338]** |
 | S4 新規SKU | 転移ゲイン（H1） | **1.000 [1.000, 1.000]** |
 | S2 物理↔記録（H9） | 融合誤差 | **0.718 [0.702, 0.733]** |
 | S2 | 最良単一観測誤差 | 0.800 [0.769, 0.831] |
-| S2 | 等重み対照（誤差） | 0.887 [0.860, 0.914] |
 
 - **H9 は CI 分離で支持**: 融合 0.718 [0.702, 0.733] ＜ 最良単一 0.800 [0.769, 0.831]（区間が重ならない）。
-  等重み対照 0.887 は単一観測にも劣るため、勝因は逆分散重みであって定数ではない。
-- **H1 転移 1.000±0**・**prefetch カバレッジ 3.0±0** はシード間で完全安定。
-- これらの値は P14/P15 の in-memory／ES 走と**完全一致**しており、**バックエンド・走を跨いだ決定性**が保たれている。
+- **H1 転移 1.000±0** はシード間で完全安定。
+- **H3 知覚税が4シナリオに拡張（G3）**: S1 0.225・S3 0.308・S5 0.214・S7 0.250。従来 S1 のみだった特権オラクル差分が、
+  検索中心シナリオ全体で CI 付きで定量化できるようになった（PROJECT.md は H3 を「1, 全般」と位置づける）。
+- R@10・H9・転移の値は P14–P17 走と**完全一致**（バックエンド・走を跨いだ決定性）。
 
----
+## 3. G1–G6 の実走検証（本走の成果物で確認）
 
-## 3. manifest 自己記述の検証（P15/P16）
+ES バックエンドの実 run（例 `incident_response-0-*`）の成果物で、新機能が実際に機能していることを確認:
 
-本走の 32 ラン manifest がすべて整合的に記録（例: `maintenance_handoff-3-*`）:
-
-```
-vector_backend     : elasticsearch
-embedding_space    : gemini2-768-v1        ← embedder 実体由来（P16）
-elasticsearch_index: mws-vectors-gemini2-768-v1-768d-*   ← 同じ space/dims から導出
-git_dirty_paths    : [...]                 ← P15
-```
-
-`embedding_space` と `elasticsearch_index` が**同一 space/dims から導かれており食い違わない**ことを
-実走で確認（P16 の狙い）。`make scenario-multi-seed-all` 単独で、どのバックエンド・どの埋め込み空間で
-走ったかが manifest から判別できる。
-
----
+- **G1（コスト記録）**: `manifest.cloud` と `metrics.cloud` に同一のクラウド使用ledgerが記録される —
+  `embedding_requests=7, embedding_texts=19, embedding_tokens=561, llm_calls=8（real=0/modeled=8）,
+  estimated_cost_usd=0.00158`。**`llm_calls_real=0`** が mock＝実課金ゼロを正しく示す。
+- **G3（知覚税拡張）**: `metrics.perception_tax` に `oracle`/`tax` が入る（従来 S1 のみ → S1/S3/S5/S7）。
+  非該当の S2/S4/S6 は `perception_tax.applicable=false`＋理由。
+- **G6（レイテンシバケット分離）**: ES 走の system 指標に **`es_search_p50=5.77ms`** が独立計上され、
+  `local_embed=0.086ms`（埋め込み）と区別される。**ES の HTTP 往復が `local_ann` に混ざらない**（G6 の狙い）。
+- **G2/G5（バナー）・G4（受け入れアサート）**: `mws scenario run` 経路で機能（mock 全7シナリオで acceptance PASS を別途確認済み）。
+  なお本 multi-seed-all の [2/2] は `eval multi-seed` 経路のため G4 のper-run アサートは通らない（§5-2 参照）。
 
 ## 4. 横断的検証
 
-- **ベクトルバックエンド（Elasticsearch）**: 全 32 ランで ES（dense_vector+kNN）を使用（48 ストア）。
-  コーパス規模（17–31 件）では HNSW が実質厳密一致（CI が in-memory と完全一致）。**残インデックス 0**。
-- **反証可能ゲート**: 受け入れテスト 70 件が全緑。「壊し方」テスト（観測抑止で融合失敗／ノイズ増で発見失敗／
-  把持力上限引き下げでスキル転移失敗／鮮度逆転で上書き不成立 等）が機能。
-- **決定性**: mock 埋め込み＋固定 seed のため、ES 走と in-memory 走、本走と前走が同一値。
-
----
+- **ベクトルバックエンド（Elasticsearch）**: 全 32 ランで ES（dense_vector+kNN）を使用（48 ストア）。残インデックス **0**。
+- **反証可能ゲート**: 受け入れテスト 91 件が全緑。「壊し方」テストが機能。
+- **決定性**: mock 埋め込み＋固定 seed のため ES 走と in-memory 走、本走と前走が同一値。
 
 ## 5. 限界・取得できていないデータ（→ IMPROVEMENT.md に登録）
 
-1. **G6（Medium・計測の妥当性）【本走で新規発見】** — **ES バックエンド時、ベクトル検索のレイテンシが
-   `local_ann` バケットで計時される**。本走（ES）の実測 `local_ann_p50 = 4.25ms`（in-memory 走の
-   約 0.04ms の **~100倍**）は、実体が ES への **HTTP 往復**であって「local ANN」ではない。
-   `engine.search` が `stores.vector.search` を一律 `local_ann` で計時するため、バックエンドにより
-   バケットの意味が変わり、レイテンシ分解（CLAUDE.md §10）が誤読されうる。
-   → **ES 検索は独立バケット（例 `es_search`）で計時**し、バックエンドを区別すべき。
-2. **（注記・スコープ）** `scenario-multi-seed-all` は **mock 埋め込み**のため retrieval recall は
-   seed 依存の擬似ランダム値で**意味的品質の指標ではない**（mock で意味を持つのは構造的不変量＝
-   H9 の CI 分離・転移 1.0・prefetch 3・各ゲート）。意味的 CI が必要なら
-   `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）を使う。
-3. **（解決済み・2026-06-14）** G1–G6 はすべて実装・テスト済み（IMPROVEMENT.md §未完課題は空）:
-   - **G1** 全走で `metrics["cloud"]`＋manifest にコスト/呼び出し件数を記録、ライブは `MWS_CONFIRM_LIVE_SPEND` ゲート。
-   - **G2/G5** 走行前バナー（cloud_mode/embedding/vector backend/seed・単一seed明示）。
-   - **G3** 知覚税を S1/S3/S5/S7 に拡張、S2/S4/S6 は `applicable=false`＋理由。
-   - **G4** `scenario run` が受け入れ基準を判定し未達で非ゼロ終了（mock 全7シナリオで PASS を確認）。
-   - **G6** ベクトル検索を `es_search`（ES）/`local_ann`（in-memory・LanceDB）の別バケットで計時。
-   - 検証: ruff クリーン・pyright 0 errors・**pytest 317 passed**（mock、+37 の G テスト）。
-
----
+1. **G7（Medium・コスト精度）【本走で新規発見】** — `cloud.estimated_cost_usd` が **real 呼び出しと
+   modeled（コストモデルのみ・非課金）呼び出しのトークンを合算**している。本走（mock）では
+   `llm_calls_real=0` なのに `estimated_cost_usd=0.00158`＞0 となり、**実課金ゼロの走が非ゼロの推定額を表示**する。
+   ライブ走でも modeled ステップのトークンが混ざるため、headline のコスト額が**実際の課金額を上回る**。
+   サマリは `llm_calls_real`/`llm_calls_modeled` を分離している（M8）のに金額は未分離。
+   → **real 呼び出し由来のみの `estimated_cost_usd_real` を併記**（または金額を real 限定に）し、コスト台帳を実課金と一致させる。
+2. **（仕様・要記録）** `make scenario-multi-seed-all` の [2/2] は `eval multi-seed` を使い、G4 の per-run
+   受け入れアサート（`scenario run --assert` 経路）を通らない。CI 集計が目的のため設計どおりだが、
+   **multi-seed 集計に受け入れ判定を組み込むかは将来検討**（現状は `scenario-all` がゲート役）。
+3. **（注記・スコープ）** mock 埋め込みのため retrieval recall は seed 依存の擬似乱数で**意味的品質の指標ではない**。
+   意味的 CI は `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）で取得する。
 
 ## 6. 総合判定
 
-**`make scenario-multi-seed-all` は環境構築から ES クラスター初期化・受け入れテスト・seeds 0–3 集計までを
-一括で完走し、全シナリオが各仮説の支持証拠を生んだ（H9 は CI 分離、H1 転移・prefetch は完全安定）。**
-ES バックエンド上で 32 ラン・残インデックス 0・manifest 整合（backend＋embedder 実空間）・受け入れ 70 緑。
-バックエンド切替（ES↔in-memory）が結果を変えないことも CI 一致で確認した。
+**`make scenario-multi-seed-all` は環境構築から ES 初期化・受け入れテスト・seeds 0–3 集計までを一括完走し、
+全シナリオが各仮説の支持証拠を生んだ（H9 CI 分離、H1 転移安定、H3 知覚税が4シナリオに拡張）。**
+G1–G6 の新機能（cloud コスト台帳・perception_tax 拡張・`es_search` バケット）は実 ES 走で機能を確認。
+ES 上で 32 ラン・残 0・manifest 整合・受け入れ 91 緑。
 
-計測網羅性・運用統制の課題（G1–G6: コスト記録/spend ゲート・走行前バナー・知覚税の全シナリオ拡張・
-ライブ E2E アサート・ES レイテンシバケット分離）は**すべて実装・テスト済み**で、IMPROVEMENT.md §未完課題は
-空になった。実装可能な登録課題はすべて消化済みである。
+本走で新規に見つかったのは **G7（estimated_cost_usd が real/modeled を合算しコスト精度を欠く）** の1件で、
+IMPROVEMENT.md に登録した。結論の信頼性に関わる問題はなく、コスト計測精度の課題である。
 
 ## 再現
 
 ```bash
 make scenario-multi-seed-all          # 環境構築→ES初期化→受け入れテスト→seeds0-3集計（ES）
 make es-down                          # 後片付け（ES 停止）
-cat runs/<RUN_ID>/manifest.json       # backend / embedder 実空間 / es index 規約 / dirty パス
+cat runs/<RUN_ID>/manifest.json       # backend / embedder 実空間 / cloud コスト台帳 / es index 規約
+cat runs/<RUN_ID>/metrics.json        # system.es_search_p50_ms（G6）/ perception_tax（G3）/ cloud（G1）
 MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live  # 意味的な live CI（実費）
 ```

@@ -7,7 +7,15 @@
 
 ## 未完課題
 
-**なし。** 実装可能な登録課題はすべて消化済み・外部要因ブロックもゼロ。
+> 2026-06-14 `make scenario-multi-seed-all`（G1–G6 完了後の検証走）で判明したコスト計測精度のギャップ。
+> 詳細・数値は `REPORT.md` を参照。「結論の信頼性」ではなく「コスト台帳の精度」の課題。
+
+### G7 — `estimated_cost_usd` が real/modeled 呼び出しを合算し実課金額と一致しない（中・コスト精度）
+- **現状**: `CloudCostTracker.estimated_cost_usd` は real（実課金）と modeled（コストモデルのみ・非課金）の両方のトークンを合算する。mock 走では `llm_calls_real=0` なのに `estimated_cost_usd≈0.0016`＞0 となり（2026-06-14 multi-seed-all で確認）、**実課金ゼロの走が非ゼロの推定額を表示**する。ライブ走でも modeled ステップが混ざり headline 額が実課金を上回る。サマリは件数を `llm_calls_real`/`llm_calls_modeled` に分離している（M8）のに金額は未分離で、CLAUDE.md §5.1/§10 の「実クラウド spend を計測」と齟齬。
+- **修正案**: real 呼び出し由来のトークンのみから `estimated_cost_usd_real` を算出して併記する（既存 `estimated_cost_usd` は「modeled込み推定」と明記）。埋め込みは live のみ real 計上（mock embed は modeled 扱い）。
+- **受け入れ基準**: mock/replay 走の `cloud.estimated_cost_usd_real == 0`／ライブ走では real 呼び出しのトークンのみが `*_real` に反映されるテスト（mock・決定的）。
+
+---
 
 直近で消化した課題（2026-06-14, G1–G6・計測網羅性/コスト統制）— 詳細は `git log` と `REPORT.md`:
 
