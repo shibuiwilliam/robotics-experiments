@@ -31,11 +31,6 @@ live = [
     "google-genai>=1.0,<2",
     "google-adk>=1.0,<2",
 ]
-# H7 student path: real on-device embedder (EmbeddingGemma via
-# sentence-transformers). Isolated so the default install stays light.
-student = [
-    "sentence-transformers>=3.0,<7",
-]
 
 [project.scripts]
 mws = "mws.cli:main"
@@ -63,6 +58,5 @@ reportAttributeAccessIssue = "warning"  # MuJoCo / LanceDB stubs are incomplete
 testpaths = ["tests"]
 markers = [
     "live: tests requiring live cloud access (deselect by default)",
-    "student: tests requiring the local student model download (deselect by default)",
 ]
-addopts = "-m 'not live and not student' --tb=short -q"
+addopts = "-m 'not live' --tb=short -q"

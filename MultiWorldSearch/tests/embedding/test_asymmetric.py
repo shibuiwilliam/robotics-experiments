@@ -82,11 +82,11 @@ def test_teacher_default_space_is_v2() -> None:
     assert str(teacher.space) == "gemini2-768-v2"
 
 
-def test_factory_live_teacher_uses_v2_space() -> None:
+def test_factory_live_uses_v2_space() -> None:
     from mws.embedding.factory import create_embedder
 
     settings = MWSSettings(cloud_mode=CloudMode.LIVE, google_api_key="test-key-not-real")
-    teacher = create_embedder(settings, role="teacher")
+    teacher = create_embedder(settings)
     assert teacher.space == EmbeddingSpace.GEMINI_768_V2
 
 

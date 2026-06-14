@@ -143,13 +143,9 @@ class BaseScenario(ABC):
         if world is not None:
             self.scene_graph = build_scene_graph_from_world(world, world_id=world_id)
 
-        # Init retrieval engine
-        # In live mode, use Gemini Embedding 2 (teacher) for real cloud calls.
-        # In mock mode, use the deterministic local embedder (student).
-        from mws.core.types import CloudMode
-
-        emb_role = "teacher" if self.settings.cloud_mode == CloudMode.LIVE else "student"
-        embedder = create_embedder(self.settings, role=emb_role)
+        # Init retrieval engine. One real embedding model: gemini-embedding-2
+        # in live mode; the deterministic MockEmbedder stand-in in mock mode.
+        embedder = create_embedder(self.settings)
         # Single source of truth for the index's space/dims is the EMBEDDER —
         # tagging stores from settings can drift (e.g. a stale env var after a
         # space bump) and silently break embedding reuse (caught by the

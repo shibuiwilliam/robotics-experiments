@@ -141,10 +141,10 @@ def test_instance_ingest_fallback_embed_is_cost_counted() -> None:
 
     cost = CloudCostTracker()
     fed = FederatedStore(embedder=MockEmbedder(seed=0), cost_tracker=cost)
-    # Deliberately tag the instance store with a DIFFERENT space (same
+    # Deliberately tag the instance store with a DIFFERENT space tag (same
     # dims) than the embedder produces — reuse can never hit, forcing the
     # fallback embed.
-    fed.add_instance("r1", EmbeddingSpace.GEMMA_128, 128)
+    fed.add_instance("r1", EmbeddingSpace.MOCK_768, 128)
 
     atom = ExperienceAtom(
         modality=Modality.TELEMETRY,
@@ -155,7 +155,7 @@ def test_instance_ingest_fallback_embed_is_cost_counted() -> None:
     fed.ingest("r1", atom)
     assert cost.embedding_requests == 1, "fallback embed bypassed the cost tracker"
     # Same text again (other instance) → shared content-hash cache, no new call
-    fed.add_instance("r2", EmbeddingSpace.GEMMA_128, 128)
+    fed.add_instance("r2", EmbeddingSpace.MOCK_768, 128)
     atom2 = ExperienceAtom(
         modality=Modality.TELEMETRY,
         coord=SpatiotemporalCoord(x=0.0, y=0.0, z=0.0, timestamp=2.0),

@@ -52,7 +52,7 @@ def get_git_state() -> dict[str, Any]:
     return {"git_dirty": bool(lines), "git_untracked_tree": untracked_tree}
 
 
-def _model_ids(settings: Any) -> dict[str, str]:
+def _model_ids() -> dict[str, str]:
     """Model identifiers from their single sources of truth (no duplicated strings)."""
     from mws.agents.live import GEMINI_LLM_MODEL
     from mws.embedding.teacher import GEMINI_EMBEDDING_MODEL
@@ -60,7 +60,6 @@ def _model_ids(settings: Any) -> dict[str, str]:
     return {
         "embedding": GEMINI_EMBEDDING_MODEL,
         "llm": GEMINI_LLM_MODEL,
-        "student": settings.student_model,
     }
 
 
@@ -103,7 +102,7 @@ def create_manifest(
         "embedding_space": settings.default_embedding_space,
         "embedding_dims": settings.embedding_dims,
         "embedding_batch_size": settings.embedding_batch_size,
-        "model_ids": _model_ids(settings),
+        "model_ids": _model_ids(),
         "python_version": _python_version(),
         "dependency_versions": _dependency_versions(),
     }

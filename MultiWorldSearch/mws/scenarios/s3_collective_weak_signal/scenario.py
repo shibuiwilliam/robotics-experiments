@@ -129,11 +129,8 @@ class CollectiveWeakSignalScenario(BaseScenario):
         self._init_run(seed, config, world=self._world, world_id="inspection_floor")
 
         # Create federated store: each robot has its own local store (H2 stigmergy)
-        # Use same embedder/space/dims as the main engine for consistency
-        from mws.core.types import CloudMode
-
-        fed_role = "teacher" if self.settings.cloud_mode == CloudMode.LIVE else "student"
-        fed_embedder = create_embedder(self.settings, role=fed_role)
+        # Use the same single embedder (gemini-embedding-2 live / mock) as the engine
+        fed_embedder = create_embedder(self.settings)
         self._federated = FederatedStore(
             embedder=fed_embedder,
             cost_tracker=self.cost,

@@ -45,10 +45,6 @@ class MWSSettings(BaseSettings):
         default=64,
         description="Max texts per single embedding API request (IMPROVEMENT E2)",
     )
-    student_model: str = Field(
-        default="google/embeddinggemma-300m",
-        description="Local student embedding model id (H7). Requires the 'student' extra.",
-    )
     llm_max_concurrency: int = Field(
         default=4,
         description="Max concurrent real LLM step calls (Backlog B; 1 = sequential)",
