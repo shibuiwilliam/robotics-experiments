@@ -161,6 +161,11 @@ class LanceDBVectorStore:
         return int(self._table.count_rows())
 
 
+#: Default ES index-name prefix (shared so the manifest can report the naming
+#: convention without duplicating the literal — IMPROVEMENT M21).
+DEFAULT_ES_INDEX_PREFIX = "mws-vectors"
+
+
 def _es_index_name(
     prefix: str, embedding_space: EmbeddingSpace, dims: int, suffix: str | None = None
 ) -> str:
@@ -194,7 +199,7 @@ class ElasticsearchVectorStore:
         embedding_space: EmbeddingSpace,
         dims: int,
         url: str = "http://localhost:9200",
-        index_prefix: str = "mws-vectors",
+        index_prefix: str = DEFAULT_ES_INDEX_PREFIX,
         refresh: str = "true",
         index_suffix: str | None = None,
     ) -> None:
