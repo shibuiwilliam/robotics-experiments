@@ -92,8 +92,10 @@ def _dependency_versions() -> dict[str, str]:
     return versions
 
 
-def _vector_backend_info(settings: Any) -> dict[str, Any]:
-    """Which vector store produced this run (IMPROVEMENT M21).
+def _vector_backend_info(
+    settings: Any, embedding_space: Any, embedding_dims: int
+) -> dict[str, Any]:
+    """Which vector store produced this run (IMPROVEMENT M21/M22).
 
     The backend now varies per run (Elasticsearch default for scenario runs,
     in-memory for the pytest suite, LanceDB optional), so the manifest must say
@@ -102,16 +104,17 @@ def _vector_backend_info(settings: Any) -> dict[str, Any]:
     a unique per-run uuid-suffixed index that is dropped on teardown, so a
     single name would be both stale and incomplete. The ``*`` pattern matches
     the run's (many, ephemeral) indices in the cluster.
+
+    The index pattern is built from the SAME space/dims the manifest reports
+    (the embedder's, when known — M22), so embedding_space and the index can
+    never disagree, even in live mode where the embedder's space differs from
+    settings.default_embedding_space.
     """
     info: dict[str, Any] = {"vector_backend": settings.vector_backend}
     if settings.vector_backend == "elasticsearch":
         from mws.storage.vector import DEFAULT_ES_INDEX_PREFIX, _es_index_name
 
-        base = _es_index_name(
-            DEFAULT_ES_INDEX_PREFIX,
-            settings.default_embedding_space,
-            settings.embedding_dims,
-        )
+        base = _es_index_name(DEFAULT_ES_INDEX_PREFIX, embedding_space, embedding_dims)
         info["elasticsearch_url"] = settings.elasticsearch_url
         info["elasticsearch_index"] = f"{base}-*"  # per-run uuid-suffixed
     return info
@@ -122,14 +125,30 @@ def create_manifest(
     scenario: str,
     seed: int,
     extra: dict[str, Any] | None = None,
+    embedder: Any | None = None,
 ) -> dict[str, Any]:
     """Create a run manifest with config, git state, deps, models, and settings.
 
     CLAUDE.md §9: a manifest must identify the code (SHA + dirty/untracked
-    flags), the models, the embedding space, the seed, the cloud mode, and the
-    settings that shape measurements (batch size) — sufficient to reproduce.
+    flags + dirty paths), the models, the embedding space, the vector backend,
+    the seed, the cloud mode, and the settings that shape measurements (batch
+    size) — sufficient to reproduce.
+
+    The embedding space/dims (and the ES index pattern derived from them) come
+    from the run's actual ``embedder`` when supplied — the single source of
+    truth that the vector store and ES index are namespaced by (CLAUDE.md §6).
+    Without an embedder, they fall back to ``settings.default_embedding_space``
+    / ``settings.embedding_dims``. Passing the embedder avoids the live-mode
+    drift where the embedder uses gemini2-768-v2 but a stale env makes settings
+    report a different space (IMPROVEMENT M22).
     """
     settings = get_settings()
+    if embedder is not None:
+        embedding_space: Any = embedder.space
+        embedding_dims = embedder.dims
+    else:
+        embedding_space = settings.default_embedding_space
+        embedding_dims = settings.embedding_dims
     manifest = {
         "run_id": run_id,
         "scenario": scenario,
@@ -138,10 +157,10 @@ def create_manifest(
         **get_git_state(),
         "seed": seed,
         "cloud_mode": settings.cloud_mode,
-        "embedding_space": settings.default_embedding_space,
-        "embedding_dims": settings.embedding_dims,
+        "embedding_space": embedding_space,
+        "embedding_dims": embedding_dims,
         "embedding_batch_size": settings.embedding_batch_size,
-        **_vector_backend_info(settings),
+        **_vector_backend_info(settings, embedding_space, embedding_dims),
         "model_ids": _model_ids(),
         "python_version": _python_version(),
         "dependency_versions": _dependency_versions(),

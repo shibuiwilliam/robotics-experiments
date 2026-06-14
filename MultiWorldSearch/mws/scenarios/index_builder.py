@@ -230,7 +230,9 @@ def build_index_batch_api(
     if "JOB_STATE_SUCCEEDED" not in state:
         # Not done (or failed): record what we know; resumable via --resume-job.
         summary["resumable"] = "JOB_STATE_FAILED" not in state
-        manifest = create_manifest(run_id=run_id, scenario="index_build_batch", seed=seed)
+        manifest = create_manifest(
+            run_id=run_id, scenario="index_build_batch", seed=seed, embedder=teacher
+        )
         save_report(run_id=run_id, manifest=manifest, metrics=summary)
         logger.info("Batch index build not complete", **summary)
         return summary
@@ -282,7 +284,9 @@ def build_index_batch_api(
             "sync_embedding_requests_during_ingest": engine._cost.embedding_requests,
         }
     )
-    manifest = create_manifest(run_id=run_id, scenario="index_build_batch", seed=seed)
+    manifest = create_manifest(
+        run_id=run_id, scenario="index_build_batch", seed=seed, embedder=teacher
+    )
     save_report(run_id=run_id, manifest=manifest, metrics=summary)
     logger.info("Batch index build complete", **summary)
 
