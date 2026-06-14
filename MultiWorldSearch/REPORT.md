@@ -1,104 +1,92 @@
-# REPORT.md — MWS Scenario Validation Report
+# REPORT.md — MWS Multi-Seed Validation Report
 
-**Date**: 2026-06-12（P11 完了後の検証本走）
-**Command**: `make scenario-all`（live）＋ `mws eval reconcile`（3点照合監査）
-**Mode**: `MWS_CLOUD_MODE=live` — 実 Gemini Embedding 2（768d・v2 非対称タスク指示）＋ gemini-3.5-flash（ADK・並列ステップ実行）
-**Manifest**: git `77b7ee3d6ec1` · seed 0 · `gemini2-768-v2` · batch=64 · モデルID/依存バージョン記録
-**Result**: **7/7 scenarios PASS — エラー 0** · スイート **276 passed**（mock・両シェル決定的） · ruff clean · pyright 0 errors
+**Date**: 2026-06-14（`make scenario-multi-seed-all`・ES バックエンド既定化後）
+**Command**: `make scenario-multi-seed-all`（環境構築 → ES クラスター初期化 → 受け入れテスト → seeds 0–3 マルチシード）
+**Mode**: `MWS_CLOUD_MODE=mock`（埋め込みは MockEmbedder・クラウド非接触）／**vector backend = Elasticsearch**（docker-compose, dense_vector+kNN）
+**Result**: **受け入れテスト 70 passed**（in-memory・決定的）＋ **マルチシード seeds 0–3 × 7 シナリオ完走**（ES 上で 32 run・48 ベクトルストア）・実行後 ES インデックス残 **0**
 
-**Run IDs**: S1 `maintenance_handoff-0-7c4df7b7` · S2 `physical_record_reconciliation-0-1eb9411b` · S3 `collective_weak_signal-0-ce075d03` · S4 `new_sku_rampup-0-10221ac2`（対照 `-9dfd0a9d`） · S5 `incident_response-0-40594ac4` · S6 `counterfactual_safety-0-2efcb857` · S7 `order_to_fulfillment-0-786f61e9`
-
-> **manifest の正直さについての注記**: 本走の manifest は `git_dirty: true` を記録している。
-> 原因は実走時点で REPORT.md（本ファイル）が作業ツリーから削除されていたこと——コードは
-> コミット `77b7ee3` と完全一致であり、計測には影響しない。dirty フラグが「ドキュメント
-> 1 ファイルの削除」まで正確に拾った事例（どのパスが dirty かは manifest からは読めない
-> — IMPROVEMENT M20 として登録）。
+> 本走は P14（シナリオ実行の ES バックエンド既定化）の検証。`make scenario-multi-seed-all`
+> が「環境構築（`uv sync` ＋ `--extra es`）→ クリーンな ES クラスター初期化（`es-reset`）→
+> 受け入れテスト（mock・in-memory）→ マルチシード集計（ES バックエンド）」を一括実行する。
 
 ---
 
-## 🧾 突き合わせ監査 — 3点照合ゼロ差分
+## 実行サマリー
 
-```
-$ mws eval reconcile --log <run.log> --runs <8 run IDs>
-actual : embedding_requests=64  llm_calls_real=18  llm_calls_recorded=18
-counted: embedding_requests=64  llm_calls_real=18  llm_calls_recorded=18
-delta  : 0 / 0 / 0  →  reconciled: true
-```
+| 段 | 内容 | 結果 |
+|----|------|------|
+| 環境構築 | `setup`（dev+live+es 同期） | OK |
+| ES 初期化 | `es-reset`（volume wipe → up --wait） | Healthy |
+| [1/2] 受け入れテスト | `pytest tests/scenarios/`（mock・in-memory・決定的） | **70 passed** |
+| [2/2] マルチシード | seeds 0–3 × 7 シナリオを **ES バックエンド**で実行 | 32 run 完走 |
+| 後始末 | 各ストアの ES インデックスを teardown で drop | **残 0** |
+| コスト | mock（クラウド呼び出しなし） | **$0** |
 
-ログのマーカー行・metrics カウンタ・llm_calls.jsonl 記録行という**独立生成された3ソース**が
-全件一致。metrics に計上されていないクラウド呼び出しも、記録されていない応答も存在しない。
+## バックエンド検証（本走の主眼）
 
-## エグゼクティブサマリー（live・実測）
+**Elasticsearch バックエンドは in-memory（厳密総当たり）と同一の検索結果を返した。**
+同一条件（mock 埋め込み・seeds 0–3）で vector backend だけを切り替えて比較:
 
-| 指標 | 値 |
-|------|----|
-| 完了 | 7/7（＋S4 A/B 対照） |
-| Gemini Embedding 2 | **64 リクエスト / 163 テキスト**（3点照合済み） |
-| 実 ADK LLM 呼 | **18**（S1:9 / S5:8 / S7:1 — 全件実測トークン・全応答記録） |
-| クラウドコスト | **$0.00457** |
-| 帯域（実/仮想） | 912 KB / 166 KB |
-| act（並列実行） | S1 16.8s（9呼）/ S5 11.0s（8呼）— 逐次時代の ~35s から半減以下を維持 |
-| perceive | 全シナリオ **0.43–0.99 秒**（バッチ取込） |
+| 指標（S1） | Elasticsearch | in-memory |
+|-----------|--------------|-----------|
+| Recall@10 | 0.775 [0.695, 0.855] | **0.775 [0.695, 0.855]** |
+| Recall@5 | 0.425 [0.345, 0.505] | **0.425 [0.345, 0.505]** |
+| 知覚税@10 | 0.225 [0.145, 0.305] | **0.225 [0.145, 0.305]** |
 
-> **記録が揺らぎを即答した（M16/M19 の実証）**: 実 LLM 呼が前走 17→今走 **18**。
-> `llm_calls.jsonl` の `purpose: plan` レコードを読むと、今走の LLM は **8 ステップ計画**
-> （"Isolate and lock-out pump_07" 〜）を生成しており（前走は 7）、+1 呼はその分。
-> エビデンスゲートは 8/8 通過。検証に要したのは記録ファイルを 1 つ読むことだけ。
+この規模（17–31 件のコーパス、`num_candidates ≥ 文書数`）では ES の近似 kNN（HNSW）が
+実質厳密に一致する。**バックアンド切替が検索品質を変えない**ことを確認した。
 
-## シナリオ別結果（全ゲート・反証テスト緑）
+## マルチシード CI（mock 埋め込み・seeds 0–3・ES バックエンド）
 
-| Sc | agent_mode | 主要結果 |
-|----|-----------|----------|
-| S1 | live(並列) | R@10 **0.90**・MRR 1.0・知覚税@10 **0.10**・relational_hits 1・**8/8 ステップ**（計画記録済み）・スキル転移 True（信頼度 0.88） |
-| S2 | modeled | 融合誤差 0.048・MC 融合優越（等重み対照は敗北）・WMS **50→30 書き戻し**（誤差0）・差異チケット |
-| S3 | modeled | **lot_L 発見**（margin 2・純度 0.6・recall 1.0）・QoR・prefetch カバレッジ 3・SQ 登録 |
-| S4 | modeled | 転移ゲイン **1.00**（実演あり 1.0 / なし 0.0） |
-| S5 | live(並列) | R@10 **1.00**・SQ 自動発火・偵察派遣・**8/8**（実 ADK・応答記録） |
-| S6 | modeled | 計算リスク 0.80/0.615 → **AVOID×2**・反実仮想アトム想起可能 |
-| S7 | live | R@10 **1.00**・E2E **1.00**・鮮度ゲート→WMS 書き戻し→再発注→実 ADK 通知 |
+| シナリオ | 指標 | mean [95% CI] |
+|---------|------|---------------|
+| S1 設備保全 | Recall@10 | 0.775 [0.695, 0.855] |
+| S1 | 知覚税@10（H3） | 0.225 [0.145, 0.305] |
+| S3 弱信号 | Recall@10 | 0.462 [0.362, 0.561] |
+| S3 | prefetch カバレッジ | **3.000 [3.000, 3.000]** |
+| S5 インシデント | Recall@10 | 0.786 [0.654, 0.917] |
+| S7 受注充足 | Recall@10 | 0.750 [0.662, 0.838] |
+| S4 新規SKU | 転移ゲイン（H1） | **1.000 [1.000, 1.000]** |
+| S2 物理↔記録（H9） | 融合誤差 | **0.718 [0.702, 0.733]** |
+| S2 | 最良単一観測誤差 | 0.800 [0.769, 0.831] |
+| S2 | 等重み対照（誤差） | 0.887 [0.860, 0.914] |
 
-## レイテンシ分解（per-call 実測）
+**H9 は CI 分離で支持**: 融合 0.718 [0.702, 0.733] ＜ 最良単一 0.800 [0.769, 0.831]（区間が重ならない）。
+さらに**等重み対照 0.887 は単一観測にも劣る**ため、勝因は逆分散重みであって定数ではない。
+**H1 転移ゲイン 1.000±0**・**prefetch カバレッジ 3.0±0** はシード間で完全安定。
 
-| バケット | p50 | 備考 |
-|----------|----:|------|
-| local ANN | ~0.04 ms | |
-| Gemini embed | ~370–410 ms | リクエスト単位（バッチ込み） |
-| Gemini infer | ~3.7–3.9 s | per-call は不変、並列実行で wall-clock のみ短縮 |
-| perceive | 0.43–0.99 s | 全シナリオでバッチ取込が持続 |
+> **CI が以前の live レポート（R@10 0.90・CI幅0）より低く・広い理由**は ES ではなく
+> **mock 埋め込みが seed 依存**だから。`MockEmbedder` は content＋seed からベクトルを生成するため、
+> seed ごとに擬似ランダムな座標になり recall がばらつく。つまりこの recall 値は
+> **「mock モードの検索」**であって意味的検索品質の主張ではない（後述の制約）。
 
-## 検証体制（P11 までに常設化した保証）
+## 反証可能ゲート（全シナリオ・mock で緑）
 
-- **3点照合監査**（`eval reconcile`）— 本走ゼロ差分。記録脚の欠落/過剰も検出（反証テスト付き）。
-- **応答記録＋決定的リプレイ** — 18/18 記録。`MWS_LLM_REPLAY` で LLM 呼ゼロの再現実行が可能（前走で S1 全ゲート同一を実証済み）。
-- **完全 manifest** — SHA・dirty/untracked・モデルID・バッチサイズ・依存バージョン。本走は dirty=true を**正直に**記録（原因は本ファイルの削除、コードは一致）。
-- **事前登録実験** — E1 接頭辞 A/B（+0.056）・融合重みスイープ（現行確定・R@5 構造上限 93% の発見）。
-  - 注: H7（教師/生徒二層）は P12 で撤回。埋め込みは `gemini-embedding-2` 単一に統一済み。
-- **live multi-seed CI（v2）** — 知覚税 0.100±0・H9 CI 分離・転移 1.000±0。
-
-## 仮説検証（全9仮説＋E1・実験的結論あり）
-
-H1 支持 / H2 支持 / H3 計測（0.100±0）/ H4 支持 / H5 支持（25.8%・1.00）/ H6 支持 /
-~~H7~~（P12 で撤回: 埋め込みを gemini-embedding-2 単一に統一）/ H8 支持 / H9 支持（CI 分離）/ E1 支持（+0.056）。
+受け入れテスト 70 件が全て緑。各シナリオの「壊し方」テスト（観測抑止で融合失敗・ノイズ増で
+発見失敗・把持力上限引き下げでスキル転移失敗・鮮度逆転で上書き不成立 等）が引き続き機能している。
 
 ## 取れていないログ/データ（IMPROVEMENT に登録）
 
-1. **M20（Low）** — manifest は `git_dirty: true/false` を記録するが、**どのパスが dirty かは記録しない**。本走の dirty 原因（REPORT.md 削除）の特定には manifest の外（`git status`）が必要だった。dirty パスの先頭 N 件を `git_dirty_paths` として記録すれば manifest 単体で閉じる。
+1. **M21（Medium・再現性）** — **manifest が `vector_backend` を記録しない**。シナリオ実行の既定が
+   ES になり、テストは in-memory、と**バックエンドが走りごとに変わる**ようになったのに、
+   `runs/<RUN_ID>/manifest.json` は embedding 系しか記録せず、その run が ES / in-memory /
+   LanceDB のどれで動いたかを成果物から判別できない。`vector_backend`（ES 時は url/index も）を
+   manifest に追加すべき。
+2. **（注記・スコープ）** `scenario-multi-seed-all` は **mock 埋め込み**のため、retrieval recall は
+   seed 依存の擬似ランダム値で**意味的品質の指標ではない**。ES バックエンド上での**意味的**な
+   CI が必要なら `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）を使う。
+   mock で意味を持つのは構造的不変量（H9 の CI 分離・転移 1.0・prefetch 3・各ゲート）。
 
 ## 制約（既知）
 
-R@5 は構造上限（5/n_relevant）の 93% — 重みでは動かない（事前登録スイープで確定）。
-小規模コーパスで MRR 飽和。S6 ルールベース・VLA は力/軌道モデル・業務系スタブ。
-A2A 未実装。埋め込みは gemini-embedding-2 単一（P12: 生徒層/H7 撤去）。Batch API token_count None。
+mock 埋め込みの recall は意味品質ではない（上記）。R@5 は構造上限（5/n_relevant）の影響を受ける。
+S6 ルールベース・VLA は力/軌道モデル・業務系スタブ。A2A 未実装。`mws scenario run` 単体も既定 ES（Docker）必須。
 
 ## 再現
 
 ```bash
-make scenario-all 2> run.log                      # live 実走（ログ捕捉）
-uv run python -m mws.cli eval reconcile \
-  --log run.log --runs <run IDs>                   # 3点照合（非0で失敗）
-cat runs/<RUN_ID>/llm_calls.jsonl                  # 実 LLM 応答の記録
-MWS_LLM_REPLAY=runs/<RUN_ID>/llm_calls.jsonl \
-  MWS_CLOUD_MODE=live uv run python -m mws.cli \
-  scenario run --name maintenance_handoff --seed 0 # 決定的リプレイ（LLM 呼 0）
-uv run pytest                                      # 276 tests（mock・決定的）
+make scenario-multi-seed-all          # 環境構築→ES初期化→受け入れテスト→seeds0-3集計（ES）
+make es-down                          # 後片付け（ES 停止）
+# 意味的な live CI（実費）:
+MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live
 ```

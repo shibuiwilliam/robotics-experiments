@@ -8,6 +8,12 @@
 
 ## 1. 未完課題
 
+### M21 — manifest が `vector_backend` を記録しない（**Medium・再現性**）
+
+- **現状**: P14 でシナリオ実行の vector backend が走りごとに変わる（CLI 既定=Elasticsearch、pytest=in-memory、`MWS_VECTOR_BACKEND` で上書き可）。にもかかわらず `runs/<RUN_ID>/manifest.json` は embedding 系（model_ids・space・dims・batch_size）しか記録せず、**その run が ES / in-memory / LanceDB のどれで動いたかを成果物から判別できない**。2026-06-14 の `scenario-multi-seed-all` 検証では、ES と in-memory の同値性を別途実行して確認する必要があった（manifest 単独では不明）。
+- **修正案**: `create_manifest` に `vector_backend`（＋ ES 時は `elasticsearch_url` と実 index 名）を追加。`settings.vector_backend` から取得。
+- **受け入れ基準**: manifest 単独から「どのベクトルバックエンドで走ったか」が読める。テスト付き。
+
 ### M20 — manifest が「何が dirty か」を記録しない（**Low・再現性の最後の一歩**）
 
 - **現状**: manifest は `git_dirty: bool` を記録するが、dirty な**パス一覧は記録しない**。2026-06-12 の検証本走で `git_dirty: true` が記録された際、原因（REPORT.md が作業ツリーから削除されていた — コードは SHA と一致、計測影響なし）の特定に manifest の外（`git status`）が必要だった。
