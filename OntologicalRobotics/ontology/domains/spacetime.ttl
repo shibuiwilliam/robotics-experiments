@@ -71,3 +71,9 @@ orx-st:possiblyContaminatedBy a owl:ObjectProperty ;
 orx-st:DisposalLane a owl:Class ;
     rdfs:subClassOf orx-st:Zone ;
     rdfs:label "処理レーン"@ja .
+
+# --- S7 最終目撃（T14, 時空間チャネル） ---
+orx-st:lastSeenZone a owl:DatatypeProperty ;
+    rdfs:domain orx-upper:PhysicalObject ; rdfs:range xsd:string ;
+    rdfs:label "最終目撃ゾーン"@ja ;
+    rdfs:comment "個体が最後に観測されたゾーン（所有解決の時空間チャネル）"@ja .

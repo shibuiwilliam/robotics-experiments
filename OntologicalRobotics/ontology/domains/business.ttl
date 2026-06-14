@@ -106,3 +106,23 @@ orx-biz:disposalRoute a owl:ObjectProperty ;
 orx-biz:routedTo a owl:ObjectProperty ;
     rdfs:domain orx-upper:PhysicalObject ;
     rdfs:label "割当レーン"@ja .
+
+# --- S7 介護施設「所有」（T14, H2/H4/H6） ---
+orx-biz:Resident a owl:Class ;
+    rdfs:subClassOf orx-upper:Agent ;
+    rdfs:label "入居者"@ja .
+
+orx-biz:PersonalItem a owl:Class ;
+    rdfs:subClassOf orx-upper:PhysicalObject ;
+    rdfs:label "個人持ち物"@ja ;
+    rdfs:comment "入居者が所有する小物。所有は観測不可能な情報的関係"@ja .
+
+orx-biz:owns a owl:ObjectProperty ;
+    rdfs:domain orx-biz:Resident ; rdfs:range orx-biz:PersonalItem ;
+    rdfs:label "所有"@ja ;
+    rdfs:comment "知覚不可能な情報的関係。台帳でのみ確定する（H6）"@ja .
+
+orx-biz:assignedRoom a owl:DatatypeProperty ;
+    rdfs:domain orx-biz:Resident ; rdfs:range xsd:string ;
+    rdfs:label "居室"@ja ;
+    rdfs:comment "配送先（業務-物理クエリの解）"@ja .

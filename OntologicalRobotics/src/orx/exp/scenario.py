@@ -86,6 +86,10 @@ def _ensure_loaded() -> None:
         from orx.exp.suites.s6_recycling import runner as _s6
 
         _s6.register_self()
+    if "s7" not in _REGISTRY:
+        from orx.exp.suites.s7_ownership import runner as _s7
+
+        _s7.register_self()
 
 
 def get(scenario_id: str) -> ScenarioSpec:
