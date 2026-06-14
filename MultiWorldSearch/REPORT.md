@@ -68,12 +68,10 @@ git_dirty_paths    : [" M MultiWorldSearch/blog.ja.md", ...]
 
 ## 取れていないログ/データ（IMPROVEMENT に登録）
 
-1. **M22（Low・再現性の精度）** — manifest の `embedding_space` と `elasticsearch_index` は
-   `settings.default_embedding_space` 由来だが、**実際のベクトルストアは embedder の空間/次元**
-   （単一情報源、`BaseScenario._init_run`）で名前空間化される。mock では一致する（MockEmbedder が
-   settings の空間を使う）が、**live では embedder が常に `gemini2-768-v2`/768 を使う**ため、
-   `MWS_DEFAULT_EMBEDDING_SPACE` が未設定/古いと manifest の `elasticsearch_index` 規約が実 index と
-   食い違いうる（P9 の空間ドリフトと同種）。`create_manifest` は embedder の実空間/次元を記録すべき。
+1. ~~**M22（Low・再現性の精度）** — manifest の embedding_space/elasticsearch_index が settings 由来~~
+   → **解決済み（P16）**。`create_manifest` に optional `embedder` を追加し、scenario・index_builder は
+   実 embedder を渡すようになった。manifest の `embedding_space`/`embedding_dims`/`elasticsearch_index` は
+   embedder の実空間/次元に追従し、live の空間ドリフトでも実 index と一致する（反証テスト付き）。
 2. **（注記・スコープ）** `scenario-multi-seed-all` は mock 埋め込みのため retrieval recall は
    seed 依存の擬似ランダム値で**意味的品質の指標ではない**。意味的 CI が必要なら
    `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）を使う。
