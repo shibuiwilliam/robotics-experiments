@@ -222,8 +222,9 @@ uv run python -m mws.cli agent serve --config configs/agents/ops_agent.yaml
 - 速いこと。重い sim・索引はフィクスチャで小規模化する。
 
 ```bash
-uv run pytest                 # 既定（mock・決定的）
+uv run pytest                 # 既定（mock・決定的。live と elasticsearch は除外）
 uv run pytest -m live         # ライブ・クラウド（明示時のみ）
+uv run pytest -m elasticsearch  # ES バックエンド統合（`make es-up`＋`uv sync --extra es`。既定除外）
 ```
 
 ---

@@ -1,0 +1,37 @@
+# Local Elasticsearch for the MWS semantic vector backend (optional).
+#
+#   make es-up        # start (waits for green-ish health)
+#   make es-down      # stop + remove
+#   MWS_ELASTICSEARCH_URL=http://localhost:9200 \
+#     uv run pytest -m elasticsearch   # run the ES integration tests
+#
+# Single-node, security DISABLED — this is a local dev/research box on a
+# MacBook, not a production cluster (PROJECT.md §2.3 Non-Goals: no production
+# availability/scale). Do not expose this port publicly.
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: mws-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      # Keep the JVM heap modest so it fits a laptop.
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - mws-es-data:/usr/share/elasticsearch/data
+
+volumes:
+  mws-es-data:

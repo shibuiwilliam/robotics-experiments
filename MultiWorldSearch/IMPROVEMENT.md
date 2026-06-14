@@ -1,8 +1,8 @@
-# IMPROVEMENT.md — 未完課題（2026-06-12 P11 完了後）
+# IMPROVEMENT.md — 未完課題（2026-06-14 P13 完了後）
 
 > **本書の位置づけ**
 > 未完の修正・改善課題**のみ**を保持する。完了済み課題の詳細は **git 履歴の本ファイル**と **REPORT.md** を参照。
-> 現状: live 7/7 PASS・**3点照合監査ゼロ差分**（embedding 64/64・実LLM 17/17・記録 17/17）・リプレイ実証済み・並列 act（S1 -65%/S5 -72%）・mock **276 tests** 両シェル緑・manifest 完全再現可能。
+> 現状: live 7/7 PASS・**3点照合監査ゼロ差分**・埋め込みは `gemini-embedding-2` 単一（P12）・ベクトルバックエンドは memory/LanceDB/**Elasticsearch** から選択可（P13）・mock **275 tests** 両シェル緑（＋ES統合5件、`make es-up` 時）・manifest 完全再現可能。
 
 ---
 
@@ -44,6 +44,7 @@
 | P9 (06-11) | E1–E4 gemini-embedding-2 公式準拠（非対称接頭辞 A/B +0.056・バッチ・Batch API・v2）＋監査が実リーク9件検出→修正 | 255 tests |
 | P10 (06-12) | M15–M18 — manifest 完全化＋コミット・llm_calls.jsonl 記録・取込全面バッチ（-48%）・v2 live CI | 263 tests |
 | P11 (06-12) | M19 **3点照合監査**・**REPLAY**（記録応答の決定的リプレイ、S1 全ゲート再現・LLM呼0）・**重みスイープ**（事前登録→現行確定＋R@5 構造上限の発見）・**並列 act**（S1 -65%/S5 -72%、レース排除・順序決定性維持） | 276 tests |
+| P13 (06-14) | **Elasticsearch ベクトルバックエンドを追加**（`vector_backend="elasticsearch"`、`dense_vector`+kNN）— `docker-compose.yml`（ES8 単一ノード）・`ElasticsearchVectorStore`（VectorStore と同一IF・空間名前空間化・冪等add）・registry/config/index_builder 配線・`es` extra・`elasticsearch` pytest marker（既定除外）・`make es-up/es-down/test-es`・`configs/index/elasticsearch.yaml`。実 ES で統合テスト5件緑＋エンジン end-to-end 動作確認。既定はインメモリ維持で 275 緑不変 | 275+5(es) tests |
 | P12 (06-14) | **埋め込みを `gemini-embedding-2` 単一に統一** — 教師/生徒二層・H7・`LocalStudentEmbedder`・`sentence-transformers`（student extra）・`eval h7` CLI・student マーカー・GEMMA/MINILM 空間・`student_model` 設定を撤去。factory は live=gemini / mock=決定的スタンドインに単純化。docs（PROJECT/CLAUDE）整合 | 275 tests |
 
 詳細: `git log --follow IMPROVEMENT.md` / 各走の数値は REPORT.md。

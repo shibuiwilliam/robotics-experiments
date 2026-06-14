@@ -31,6 +31,10 @@ live = [
     "google-genai>=1.0,<2",
     "google-adk>=1.0,<2",
 ]
+# Optional Elasticsearch vector backend (run the server via docker-compose.yml).
+es = [
+    "elasticsearch>=8,<9",
+]
 
 [project.scripts]
 mws = "mws.cli:main"
@@ -58,5 +62,6 @@ reportAttributeAccessIssue = "warning"  # MuJoCo / LanceDB stubs are incomplete
 testpaths = ["tests"]
 markers = [
     "live: tests requiring live cloud access (deselect by default)",
+    "elasticsearch: tests requiring a running Elasticsearch (docker-compose; deselect by default)",
 ]
-addopts = "-m 'not live' --tb=short -q"
+addopts = "-m 'not live and not elasticsearch' --tb=short -q"

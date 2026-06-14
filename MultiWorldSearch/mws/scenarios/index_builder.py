@@ -47,8 +47,9 @@ def build_index(config_path: str, seed: int = 0, steps: int = 100) -> dict[str, 
     index_cfg = _load_index_config(config_path)
     vector_backend = str(index_cfg.get("vector_backend", "memory"))
     timeseries_backend = str(index_cfg.get("timeseries_backend", "memory"))
-    # LanceDB is a disk format; map the config name onto the registry switch.
-    vector_backend = "lancedb" if vector_backend == "lancedb" else "memory"
+    # Map config names onto the registry switch (unknown → in-memory default).
+    if vector_backend not in ("lancedb", "elasticsearch"):
+        vector_backend = "memory"
     timeseries_backend = "duckdb" if timeseries_backend == "duckdb" else "memory"
 
     embedder = create_embedder(settings)
@@ -59,6 +60,7 @@ def build_index(config_path: str, seed: int = 0, steps: int = 100) -> dict[str, 
         embedding_dims=embedder.dims,
         vector_backend=vector_backend,
         timeseries_backend=timeseries_backend,
+        elasticsearch_url=settings.elasticsearch_url,
     )
     engine = RetrievalEngine(stores=stores, embedder=embedder)
 
