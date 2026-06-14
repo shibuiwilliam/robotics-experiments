@@ -232,7 +232,7 @@ uv run pytest -m elasticsearch  # ES バックエンド統合（`make es-up`＋`
 ## 9. 再現性と実験規律
 
 - **すべての実行に seed。** 乱数源（Python/NumPy/シミュレータ）を一括初期化する。
-- **Run manifest 必須。** 各実行は `runs/<RUN_ID>/manifest.json` に、使用設定・git SHA・依存バージョン・モデル ID・埋め込み空間・seed・クラウドモードを記録する。
+- **Run manifest 必須。** 各実行は `runs/<RUN_ID>/manifest.json` に、使用設定・git SHA・**git dirty/untracked 状態と dirty パス一覧**・依存バージョン・モデル ID・埋め込み空間・**ベクトルバックエンド**（ES 時は url＋index 命名規約）・seed・クラウドモードを記録する。manifest 単独で「どのコード・モデル・設定・バックエンドで走ったか」を再構成できること。フィールドは追記のみ（既存キーを削除・改名しない）。
 - **指標は事前登録。** 比較に使う指標は実行前に宣言し、後付けのチェリーピッキングを避ける（`PROJECT.md` §10）。
 - **結果は追記のみ。** `runs/` を上書き／削除しない。
 - **統計**: 複数 seed×複数 world で実行し、信頼区間付きで報告する。

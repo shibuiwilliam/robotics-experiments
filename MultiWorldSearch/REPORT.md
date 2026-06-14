@@ -67,11 +67,9 @@
 
 ## 取れていないログ/データ（IMPROVEMENT に登録）
 
-1. **M21（Medium・再現性）** — **manifest が `vector_backend` を記録しない**。シナリオ実行の既定が
-   ES になり、テストは in-memory、と**バックエンドが走りごとに変わる**ようになったのに、
-   `runs/<RUN_ID>/manifest.json` は embedding 系しか記録せず、その run が ES / in-memory /
-   LanceDB のどれで動いたかを成果物から判別できない。`vector_backend`（ES 時は url/index も）を
-   manifest に追加すべき。
+1. ~~**M21（Medium・再現性）** — manifest が `vector_backend` を記録しない~~ → **解決済み（P15）**。
+   `create_manifest` が `vector_backend`（ES 時は `elasticsearch_url`＋index 命名規約）と
+   `git_dirty_paths` を記録するようになり、manifest 単独でバックエンド・dirty 内容まで判別可能。
 2. **（注記・スコープ）** `scenario-multi-seed-all` は **mock 埋め込み**のため、retrieval recall は
    seed 依存の擬似ランダム値で**意味的品質の指標ではない**。ES バックエンド上での**意味的**な
    CI が必要なら `MWS_CONFIRM_LIVE_SPEND=1 make scenario-multi-seed-live`（live・gemini-embedding-2）を使う。
