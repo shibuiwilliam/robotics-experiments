@@ -8,8 +8,12 @@
 
 ## 1. 未完課題
 
-**なし（実装可能な登録課題はすべて消化済み・P1–P15）。** 外部要因ブロックも現在ゼロ。
-新たな課題が出たら本節に追記する。
+### M22 — manifest の embedding_space / elasticsearch_index が settings 由来（**Low・再現性の精度**）
+
+- **現状**: `create_manifest` の `embedding_space`・`embedding_dims`・`elasticsearch_index`（P15）は `settings.default_embedding_space` / `settings.embedding_dims` から取る。しかし**実際のベクトルストア／ES インデックスは embedder の空間・次元**（単一情報源、`BaseScenario._init_run` が `embedder.space`/`embedder.dims` で `StoreRegistry` を構築）で名前空間化される。
+- **影響**: mock では一致（MockEmbedder が settings 空間を使う）。だが **live では embedder が常に `gemini2-768-v2`/768d** を使うため、`MWS_DEFAULT_EMBEDDING_SPACE` が未設定/古い shell だと manifest の `embedding_space` と `elasticsearch_index` 規約が**実体と食い違う**（P9 の空間ドリフトと同種の latent な不整合）。2026-06-14 のマルチシード検証では mock のため一致したが、live で再現する恐れ。
+- **修正案**: manifest の埋め込み系フィールドを **embedder の実空間/次元から**記録する（create_manifest に embedder か space/dims を渡す、または scenario が manifest 生成時に embedder 値を `extra` で上書き）。
+- **受け入れ基準**: live 実行の manifest の `embedding_space`/`elasticsearch_index` が実際に使われた ES index と一致する。テスト付き。
 
 ---
 
