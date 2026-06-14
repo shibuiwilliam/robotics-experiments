@@ -1,5 +1,5 @@
 .PHONY: help install dev setup format lint typecheck test test-live test-scenarios \
-       check scenario-list scenario-run scenario-all eval clean es-up es-down test-es
+       check scenario-list scenario-run scenario-all eval clean es-up es-down es-reset test-es
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -13,8 +13,8 @@ install: ## Install runtime dependencies
 dev: ## Install runtime + dev dependencies
 	uv sync --extra dev
 
-setup: ## Sync the full env (runtime + dev + live) for tests and live runs
-	uv sync --extra dev --extra live
+setup: ## Sync the full env (runtime + dev + live + es) for tests, live runs, and ES
+	uv sync --extra dev --extra live --extra es
 
 # ── Quality ────────────────────────────────────────────────────────
 
@@ -50,6 +50,10 @@ es-up: ## Start local Elasticsearch (docker-compose) and wait for health
 es-down: ## Stop and remove local Elasticsearch
 	docker compose down
 
+es-reset: ## Initialize a CLEAN Elasticsearch cluster (wipe volume, then start + wait)
+	docker compose down -v
+	docker compose up -d --wait elasticsearch
+
 test-es: ## Run Elasticsearch integration tests (needs `make es-up` + --extra es)
 	uv run pytest -m elasticsearch -v
 
@@ -63,10 +67,10 @@ scenario-list: ## List all available scenarios
 scenario-run: ## Run a scenario (usage: make scenario-run NAME=maintenance_handoff SEED=0)
 	uv run python -m mws.cli scenario run --name $(NAME) --seed $(or $(SEED),0)
 
-scenario-all: setup ## Build env, run scenario acceptance tests, then run all 7 scenarios (seed 0)
-	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic) ==="
+scenario-all: setup es-reset ## Build env, init ES, run scenario tests, then all 7 scenarios on the ES backend (seed 0)
+	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic, in-memory) ==="
 	uv run --no-sync pytest tests/scenarios/ -q
-	@echo "\n=== [2/2] end-to-end scenario runs ==="
+	@echo "\n=== [2/2] end-to-end scenario runs (Elasticsearch vector backend) ==="
 	@for s in $$(uv run --no-sync python -m mws.cli scenario list); do \
 		echo "\n--- $$s ---" ; \
 		uv run --no-sync python -m mws.cli scenario run --name "$$s" --seed 0 ; \
@@ -85,10 +89,10 @@ scenario-multi-seed: ## Run S1 with 5 seeds (mean +/- CI for recall/mrr)
 		r = run_multi_seed('maintenance_handoff', seeds=[0,1,2,3,4]); \
 		print(json.dumps({k:v for k,v in r['summary'].items() if 'recall' in k or 'mrr' in k}, indent=2))"
 
-scenario-multi-seed-all: setup ## Build env, run scenario tests, then ALL scenarios across seeds 0-3 with 95% CIs (mock)
-	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic) ==="
+scenario-multi-seed-all: setup es-reset ## Build env, init ES, run scenario tests, then ALL scenarios across seeds 0-3 (95% CIs) on the ES backend
+	@echo "\n=== [1/2] scenario acceptance tests (mock, deterministic, in-memory) ==="
 	uv run --no-sync pytest tests/scenarios/ -q
-	@echo "\n=== [2/2] multi-seed run (seeds 0-3, 95% CIs) ==="
+	@echo "\n=== [2/2] multi-seed run (seeds 0-3, 95% CIs, Elasticsearch vector backend) ==="
 	uv run --no-sync python -m mws.cli eval multi-seed --seeds 0,1,2,3
 
 scenario-multi-seed-live: ## LIVE multi-seed (REAL cloud spend; needs MWS_CONFIRM_LIVE_SPEND=1)

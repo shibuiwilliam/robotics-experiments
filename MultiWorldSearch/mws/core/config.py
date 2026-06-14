@@ -45,9 +45,17 @@ class MWSSettings(BaseSettings):
         default=64,
         description="Max texts per single embedding API request (IMPROVEMENT E2)",
     )
+    vector_backend: str = Field(
+        default="elasticsearch",
+        description=(
+            "Vector store backend for scenario runs: 'elasticsearch' (default; "
+            "requires a running cluster via docker-compose), 'lancedb', or "
+            "'memory'. The pytest suite forces 'memory' (offline/deterministic)."
+        ),
+    )
     elasticsearch_url: str = Field(
         default="http://localhost:9200",
-        description="Elasticsearch URL for the optional ES vector backend (docker-compose).",
+        description="Elasticsearch URL for the ES vector backend (docker-compose).",
     )
     llm_max_concurrency: int = Field(
         default=4,

@@ -136,6 +136,8 @@ class CollectiveWeakSignalScenario(BaseScenario):
             cost_tracker=self.cost,
             latency_tracker=self.latency,
             bandwidth_meter=self.bandwidth,
+            vector_backend=self.settings.vector_backend,
+            elasticsearch_url=self.settings.elasticsearch_url,
         )
         for rid in ("robot_1", "robot_2", "robot_3"):
             # Instance stores are tagged with the EMBEDDER's space/dims —
@@ -568,6 +570,8 @@ class CollectiveWeakSignalScenario(BaseScenario):
         post_stores = StoreRegistry(
             embedding_space=self.engine.embedder.space,
             embedding_dims=self.engine.embedder.dims,
+            vector_backend=self.settings.vector_backend,
+            elasticsearch_url=self.settings.elasticsearch_url,
         )
         post_engine = RetrievalEngine(
             stores=post_stores,
@@ -579,6 +583,7 @@ class CollectiveWeakSignalScenario(BaseScenario):
             post_engine.ingest(atom)
 
         post_ids = {r.atom_id for r in post_engine.search(defect_query)}
+        post_stores.close()  # drop the per-run consolidation index (ES)
         summary_lot_l_ids = {s.atom_id for s in summaries if "lot_L" in s.tags}
         surviving_ids = {a.atom_id for a in consolidated_atoms}
         relevant_after = (lot_l_ids | summary_lot_l_ids) & surviving_ids
@@ -599,6 +604,13 @@ class CollectiveWeakSignalScenario(BaseScenario):
             "lot_l_recall_after": round(recall_after, 4),
             "recall_retention": round(recall_retention, 4),
         }
+
+    def teardown(self) -> None:
+        """Drop the federated per-instance stores (e.g. ES indices) on top of
+        the base teardown (audit flush + main engine store)."""
+        if self._federated is not None:
+            self._federated.close()
+        super().teardown()
 
     def golden_eval(self) -> tuple[RetrievalQuery, set[str]]:
         """Golden evaluation pair (defect query + sim-truth relevance) —

@@ -24,3 +24,8 @@ def _scrub_mws_env(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPat
     for var in list(os.environ):
         if var.startswith(_SCRUB_PREFIX) or var in _SCRUB_VARS:
             monkeypatch.delenv(var, raising=False)
+    # The default vector backend is Elasticsearch (a running cluster), but the
+    # test suite must stay offline and deterministic — force the in-memory
+    # store for every non-live test. This is the "mock test" boundary: only
+    # the pytest suite uses memory; real scenario runs use ES.
+    monkeypatch.setenv("MWS_VECTOR_BACKEND", "memory")
