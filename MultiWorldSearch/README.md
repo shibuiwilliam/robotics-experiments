@@ -7,20 +7,21 @@ documents, and skill demonstrations into a shared searchable memory.
 ## Quickstart
 
 ```bash
-# 1. Install (requires Python 3.11+, uv)
-uv sync --extra dev
+# One command: set up the env, run scenario acceptance tests, then run all 7
+# scenarios end-to-end (mock by default — no cloud keys needed).
+make scenario-all
 
-# 2. Run all tests (mock mode, no cloud keys needed)
-uv run pytest
-
-# 3. Run Scenario 1 (flagship demo)
-uv run python -m mws.cli scenario run --name maintenance_handoff --seed 0
-
-# 4. List all available scenarios
-uv run python -m mws.cli scenario list
-
-# 5. View run artifacts
+# View run artifacts
 cat runs/maintenance_handoff-0-*/metrics.json
+```
+
+Prefer the individual steps?
+
+```bash
+uv sync --extra dev                                                # install
+uv run pytest                                                      # all tests (mock)
+uv run python -m mws.cli scenario run --name maintenance_handoff --seed 0  # one scenario
+uv run python -m mws.cli scenario list                            # list scenarios
 ```
 
 ## Scenarios
