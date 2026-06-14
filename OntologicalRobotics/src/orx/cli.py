@@ -244,12 +244,17 @@ def scenario_demo(
 @scenario_app.command("milestone")
 def scenario_milestone(
     name: str = typer.Argument("M-Scenario-A", help="マイルストーン名（既定: M-Scenario-A）"),
+    tier: str = typer.Option("a", "--tier", help="対象: a=Tier A(S1,S2,S6) / all=全7シナリオ"),
 ) -> None:
-    """Tier A（S1,S2,S6）の3シナリオ×全条件の比較レポートを生成する（M-Scenario-A）。"""
+    """シナリオ×全条件の比較レポートを生成する（既定: Tier A = M-Scenario-A）。"""
     from orx.exp import scenario as scn
 
+    targets = {"a": scn.TIER_A, "all": scn.TIER_ALL}
+    if tier not in targets:
+        _fail(f"未知の tier {tier!r}（a / all）")
+        return
     try:
-        _runs, milestone = scn.run_milestone(scn.TIER_A, runs_root(), progress=typer.echo)
+        _runs, milestone = scn.run_milestone(targets[tier], runs_root(), progress=typer.echo)
     except (ConfigError, ValueError, FileNotFoundError) as exc:
         _fail(str(exc))
         return

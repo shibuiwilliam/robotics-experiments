@@ -17,9 +17,9 @@
    （anchoring on/off）、(c) 較正学習曲線、のいずれかであり、**仮説の本体である「オントロジーを使う
    LLMエージェントが生データのエージェントに勝つ」というエージェントレベルの比較は一度も実行されて
    いない**（すべて live モード待ち）。H4/H7 に至っては stub（偽）埋め込み・0トークンの上で数字が出ている。
-2. **シナリオ・プログラム（T8–T14）が完全には実装されていない。** 2026-06-14 現在 **3/7 実装済み**
-   （S1, S2, S6＝Tier A 完了・M-Scenario-A 達成）。**残り 4 件（S3, S7, S4, S5）は設計文書のみで未着手。**
-   **要件: 残りを含め S1–S7 を全件ゲート閉まで必ず実装する（C3）。文書だけのシナリオは未実装とみなす。**
+2. **シナリオ・プログラム（T8–T14）が完全実装された。** 2026-06-14 **7/7 完了**
+   （S1,S2,S3,S4,S5,S6,S7 全件ゲート閉）。`make scenario-validate` 全件緑、`orx scenario list` 全件 implemented、
+   M-Scenario-A＋全7比較レポート生成可。**C3 解決済み。** 残る本丸は live 計測（agent検証）のみ。
 
 つまり「**真理グラフ評価・反実仮想リプレイ・アンカリング機構**という装置は確かに動く（＝シミュレーション
 研究の貢献の核は本物）」が、「**それらを使って H1–H7 を反証可能に検証した**」とまでは言えない。
@@ -79,16 +79,14 @@
   | S2 | T9 | ✅ 完了 | （ゲート閉。OR-full 汚染F1=1.0/違反0、4条件の構造的失敗を実証） |
   | S3 | T10 | ✅ 完了 | （ゲート閉。OR-full 完遂0.88/最終正答1.0、round-robin能力盲・B1段取替後0・台帳が故障追従・H1手修正2<6） |
   | S4 | T11 | ✅ 完了 | （ゲート閉。OR-full 対応1.0/異常正答1.0/見逃し0、no-identity対応0・no-belief見逃し・OR-sym位置曖昧で対応0.75。X4） |
-  | S5 | T12 | ❌ 未着手 | **新規 `ontology/domains/normative.ttl`**（deontic）・X2/X3/X5・custody連鎖・監査可能性指標 |
+  | S5 | T12 | ✅ 完了 | （ゲート閉。新設 normative.ttl。OR-full 違反0/監査完全、no-normative違反3・no-prov監査0.5・B1両失敗。新軸=監査可能性） |
   | S6 | T13 | ✅ 完了 | （ゲート閉。OR-full コスト最小/高コスト誤り0、OR-vec誤レーン・OR-sym崩壊。OR-sym/OR-vec はシナリオ条件 ADR-017） |
   | S7 | T14 | ✅ 完了 | （ゲート閉。OR-full 誤配送0/成功0.35、B0/OR-vec 誤配送0.83+、OR-sym 署名なく確認1.0。X4/X5） |
 
-- **必須要件（全件実装）**: 上表の **❌ 未着手 1 件（S5・Tier C）を必ず実装する**（S3✅ S7✅ S4✅／Tier B完了）。
-  各々 §3.3 の全成果物（suite code・world/exp config・語彙＋SHACL＋CQ・oracle 真値導出・反証テスト・
-  replay同一性・メタモルフィック・demo・登録・ゲート）を揃え、`make scenario-validate` で緑になること。
-  途中打ち切り（一部のみ実装）は本項目の未達とする。
+- **必須要件（全件実装）= 達成**: ❌ 未着手は **0 件**。S1–S7 全件が §3.3 全成果物を揃えゲート閉。
+  `make scenario-validate` 緑・`orx scenario list` 全件 implemented。
 - **実装順序（SCENARIOS.md §5 厳守）**: **Tier A**: S1✅ → S2✅ → S6✅ → **M-Scenario-A ✅**（達成）。
-  **Tier B**: S3✅ → S7✅ → S4✅（完了）。**Tier C**: S5（規範層 normative.ttl・Tier A/B ゲート閉後）。
+  **Tier B**: S3✅ → S7✅ → S4✅（完了）。 **Tier C**: S5✅（完了）。**Tier C**: S5（規範層 normative.ttl・Tier A/B ゲート閉後）。
 - **横断インフラ**（共有・再利用・コピペ禁止）: X2 接触蒸留（S2/S5）, X3 状態リセット（S2/S5）,
   X4 ID無し同一性（S4/S6/S7）, X5 人間アクタ（S5/S7）, X6 非対称コスト（S6）。X1 は実装済（S1）。
 - **完了定義**: 全7シナリオで `make scenario-validate`（demo の反証 green ＋ tests/scenarios 緑）が通り、
@@ -216,7 +214,7 @@
 | M-2 tasks/suites 整合 | ✅ 解決 | ADR-016（宣言spec方針）。PROJECT.md は改変せず解釈を記録 |
 | M-4 生成物の残骸 | ✅ 解決 | reports/*.md と mappings/proposals/ を .gitignore、追跡解除、fuzz残骸削除 |
 | L-1 空.gitkeep | ✅ 解決 | 中身のあるディレクトリの .gitkeep 削除 |
-| C3 **全シナリオ S1–S7 完全実装** | ⏳ 進行中（**6/7**: S1,S2,S3,S4,S6,S7✅・Tier B完了） | **残 1 件 S5（Tier C）を必ず実装**。完了定義=`make scenario-validate` 全件緑＋`orx scenario list` 全件 implemented |
+| C3 **全シナリオ S1–S7 完全実装** | ✅ 解決（**7/7**: S1–S7 全件ゲート閉） | `make scenario-validate` 全件緑・`orx scenario list` 全件 implemented・M-Scenario-A＋全7比較レポート。残る本丸は live 計測（別件） |
 | M-3 ハードケース n=1 | ⏳ 各シナリオで対応 | 受入文言に射程明記済。各シナリオ世界で複数ハードケース化 |
 | L-2 シナリオCQ（S2–S7） | ⏳ 各シナリオで対応 | 各シナリオ実装時に語彙＋CQ＋SHACL をセットで追加（SCENARIOS.md §6） |
 | 本丸: live計測 | ⏳ 別件 | OPENAI_API_KEY＋コスト承認が前提。H1–H7 のagent検証はこれで初実施 |

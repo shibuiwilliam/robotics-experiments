@@ -1,0 +1,13 @@
+id: cq_s5_prohibitions
+question: "各物分類が通過してはならない区画分類は何か（禁止規範）？"
+sparql: |
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX orx-norm: <https://orx.local/onto/norm#>
+  SELECT ?item ?zoneclass WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?n rdf:type orx-norm:Prohibition ;
+         orx-norm:appliesToItemClass ?item ;
+         orx-norm:forbidsZoneClass ?zoneclass .
+    }
+  }
+note: "計画時の規範チェックの核。規範層なし条件はこの規則を持たず違反する。"

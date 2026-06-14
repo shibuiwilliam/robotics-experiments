@@ -5,7 +5,7 @@
 .PHONY: help install format lint lint-fix test test-v test-cq test-arch check \
         demo cq exp-t1 exp-t2 exp-t3 exp-t4 exp-t5 exp-t7 exp-all \
         onboard-demo profile clean \
-        scenario-list scenario-demo scenario-s1 scenario-milestone-a \
+        scenario-list scenario-demo scenario-s1 scenario-milestone-a scenario-milestone-all \
         scenario-run-all scenario-demo-all scenario-test scenario-validate scenario-all
 
 # .env があれば読み込んで子プロセスへ渡す（OPENAI_API_KEY 等。.env は gitignore 済み）
@@ -115,6 +115,9 @@ scenario-test: ## Run all scenario test suites (oracle/falsification/replay/meta
 
 scenario-milestone-a: ## M-Scenario-A: Tier A (S1,S2,S6) comparative report
 	uv run orx scenario milestone M-Scenario-A
+
+scenario-milestone-all: ## All-7 scenarios comparative report (C3 complete)
+	uv run orx scenario milestone M-All-Scenarios --tier all
 
 scenario-validate: scenario-demo-all scenario-test ## Validate ALL scenarios (demos + test suites)
 

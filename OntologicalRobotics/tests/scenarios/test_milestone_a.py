@@ -25,7 +25,7 @@ def test_render_milestone_has_scope_and_rollup(tmp_path: Path) -> None:
     md = scn.render_milestone("M-Scenario-A", milestone)
     assert "計測射程" in md
     assert "反証予言の総括" in md
-    assert "Tier A 反証総合判定: 全green ✓" in md
+    assert "反証総合判定: 全green ✓" in md
     for sid in ("s1", "s2", "s6"):
         assert sid in md
 
