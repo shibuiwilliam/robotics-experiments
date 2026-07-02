@@ -12,8 +12,12 @@ from orx.exp.suites.s3_multi_vendor import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s3-fal", scenario="s3", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[301, 302, 303, 304, 305, 306], duration_s=0.0,
+        name="s3-fal",
+        scenario="s3",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[301, 302, 303, 304, 305, 306],
+        duration_s=0.0,
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s3") / "exp", lambda *a: None)
 
@@ -50,6 +54,17 @@ def test_onboarding_hub_reduces_manual_lines(result: dict) -> None:
     o = result["onboarding"]
     assert o["or_full_manual_lines"] < o["b1_manual_lines"]
     assert o["auto_mapped"] > 0
+
+
+def test_robustness_or_full_accuracy_beats_baselines_across_sweep(result: dict) -> None:
+    """前面化した頑健性指標(R-1C): 故障劣化係数 掃引の**全域**で OR-full の全体正答率が
+    各条件以上（能力台帳の追従で縮退再割当し優位を保つ）。掃引曲線を回帰固定する
+    （IMPROVEMENT.md §1-C: 決定的世界は頑健性掃引を主指標に前面化）。"""
+    acc = result["robustness"]["overall_accuracy"]
+    full = acc["OR-full"]
+    assert len(full) >= 3  # 掃引点が存在
+    for b in ("B1", "round-robin"):
+        assert all(f >= acc[b][i] - 1e-9 for i, f in enumerate(full))
 
 
 def test_all_predictions_pass(result: dict) -> None:

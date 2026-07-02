@@ -1,0 +1,14 @@
+# S6 リサイクル選別 — 第3モデル（能力境界・nano）。課金・要コスト承認。follow-up（IMPROVEMENT.md §1）。
+# 目的: S6 規制ルーティングのコスト優位は mini で成立(OR-full<B0)・full(gpt-5.4)で反転(B0<OR-full)だった。
+#   最弱の nano を加え「OR の規範写像が効く能力境界」を 3 点(nano/mini/full)で確定する。
+#   仮説: 弱いほど自前知識で高コスト誤りを防げず、規制写像を持つ OR-full-llm が B0-llm より低コスト
+#   （＝nano は mini と同様 OR が効く側）。OR-full-llm（規制写像）/ B0-llm（写像なし）。
+name: s6-recycling-live-m3-nano
+scenario: s6
+world_config: configs/world/s6_recycling.yaml
+conditions: [OR-full-llm, B0-llm]
+seeds: [601, 602, 603, 604, 605, 606, 607, 608]
+duration_s: 0.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-nano-2026-03-17

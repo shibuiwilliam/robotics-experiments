@@ -100,8 +100,12 @@ def det_emb(
     symbol: str | None = None,
 ) -> Detection:
     return Detection(
-        sensor_id="cam", index=index, position=pos, symbol_id=symbol,
-        embedding=embedding, confidence=0.95,
+        sensor_id="cam",
+        index=index,
+        position=pos,
+        symbol_id=symbol,
+        embedding=embedding,
+        confidence=0.95,
     )
 
 
@@ -128,7 +132,8 @@ def test_embedding_disambiguates_between_candidates() -> None:
     anchorer = make_anchorer()
     r1 = anchorer.process(
         event(
-            "arm_a", 1.0,
+            "arm_a",
+            1.0,
             [det_emb(0, (-0.1, 0.0, 0.2), e_red), det_emb(1, (0.1, 0.0, 0.2), e_blue)],
         )
     )

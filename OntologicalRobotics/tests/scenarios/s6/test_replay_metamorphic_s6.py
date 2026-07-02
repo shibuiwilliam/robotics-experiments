@@ -28,8 +28,14 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s6-rep", scenario="s6", world_config=runner.WORLD, conditions=CONDITIONS,
-        seeds=[601, 602, 603], duration_s=0.0, knob="visual_noise", knob_values=[0.1, 1.0],
+        name="s6-rep",
+        scenario="s6",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[601, 602, 603],
+        duration_s=0.0,
+        knob="visual_noise",
+        knob_values=[0.1, 1.0],
         params={"primary_sigma": 0.2, "confidence_threshold": 0.15, "high_cost_threshold": 50.0},
     )
 
@@ -72,11 +78,13 @@ def test_metamorphic_lane_rename_invariant() -> None:
         for c in CONDITIONS:
             base = score(
                 [(o, *assign_lane(c, o, world, protos, 0.15)) for o in base_ep.objects],
-                world, 50.0,
+                world,
+                50.0,
             )
             renm = score(
                 [(o, *assign_lane(c, o, renamed, protos, 0.15)) for o in ren_ep.objects],
-                renamed, 50.0,
+                renamed,
+                50.0,
             )
             assert base.model_dump() == renm.model_dump(), f"{c}: レーンrenameで採点変化"
 

@@ -68,7 +68,8 @@ def shortest_route(transport: Transport, world: S5World) -> list[str]:
     """規範を無視した最短経路（規範コストの基準）。"""
     adj = _adjacency(world.edges)
     return _bfs(adj, transport.src, transport.dst, set(world.zone_class)) or [
-        transport.src, transport.dst
+        transport.src,
+        transport.dst,
     ]
 
 

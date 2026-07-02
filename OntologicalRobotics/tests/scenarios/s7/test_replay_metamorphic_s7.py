@@ -28,8 +28,14 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s7-rep", scenario="s7", world_config=runner.WORLD, conditions=CONDITIONS,
-        seeds=[701, 702, 703], duration_s=0.0, knob="lookalike_sep", knob_values=[1.0, 0.6],
+        name="s7-rep",
+        scenario="s7",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[701, 702, 703],
+        duration_s=0.0,
+        knob="lookalike_sep",
+        knob_values=[1.0, 0.6],
         params={"primary_sep": 0.6},
     )
 

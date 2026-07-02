@@ -79,9 +79,7 @@ def triple_prf(
     tp = fp = fn = 0
     for world, truth in zip(world_snaps, truth_snaps, strict=True):
         world_set = _mapped_world_triples(world, alignment)
-        truth_set = {
-            t.as_tuple() for t in truth.triples if t.predicate in FIDELITY_PREDICATES
-        }
+        truth_set = {t.as_tuple() for t in truth.triples if t.predicate in FIDELITY_PREDICATES}
         tp += len(world_set & truth_set)
         fp += len(world_set - truth_set)
         fn += len(truth_set - world_set)

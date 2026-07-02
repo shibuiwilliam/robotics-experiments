@@ -1,9 +1,13 @@
 # S5 病院内搬送実験（T12, 規範層 / H5 / H6）— 完全オフライン（決定的・deontic 計画）
 # 反証: 規範層なし(no-normative)は禁止区画を通過(違反)、来歴なし(no-prov)は監査不完全、
 # B1 は違反かつ監査不能、OR-full のみ違反0かつ監査完全（規範コストを定量化して許容）。
+# 主評価(per_condition)は custody_gap=0 で決定的。seeds は custody 欠落掃引(R-3c)の
+# 平均解像度に効く（R-3b: 2→8 に拡張）。
 name: s5-hospital
 scenario: s5
 world_config: configs/world/s5_hospital.yaml
 conditions: [OR-full, OR-no-normative, OR-no-prov, B1]
-seeds: [501, 502]
+seeds: [501, 502, 503, 504, 505, 506, 507, 508]
 duration_s: 0.0
+knob: custody_gap_rate
+knob_values: [0.0, 0.25, 0.5, 0.75]

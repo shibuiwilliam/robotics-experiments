@@ -210,9 +210,7 @@ def reference_solve(graph: WorldGraph, db: BusinessDB, q: T2Question) -> str:
     """期待SPARQL/SQLによる決定的解答（表現の上限証明）。"""
     if q.qtype in ("where_order", "where_order_negative"):
         oid = q.qid.removeprefix("where-")
-        rows = db.query(
-            f"SELECT barcode FROM shipping_instructions WHERE order_id = '{oid}'"
-        )
+        rows = db.query(f"SELECT barcode FROM shipping_instructions WHERE order_id = '{oid}'")
         if not rows:
             return "unknown"
         zone = _entity_zone_by_barcode(graph, str(rows[0]["barcode"]))
@@ -224,8 +222,7 @@ def reference_solve(graph: WorldGraph, db: BusinessDB, q: T2Question) -> str:
             return "unknown"
         placeholders = ",".join(f"'{b}'" for b in barcodes)
         rows = db.query(
-            "SELECT order_id FROM shipping_instructions "
-            f"WHERE barcode IN ({placeholders})"
+            f"SELECT order_id FROM shipping_instructions WHERE barcode IN ({placeholders})"
         )
         oids = sorted({str(r["order_id"]) for r in rows})
         return normalize(",".join(oids)) if oids else "unknown"
@@ -344,10 +341,7 @@ def _observations_tool(latest_obs: dict[str, dict]) -> tuple[ToolSpec, ToolFn]:
 
 
 def _zone_table(world: WorldConfig) -> str:
-    rows = [
-        {"name": z.name, "center": list(z.center), "size": list(z.size)}
-        for z in world.zones
-    ]
+    rows = [{"name": z.name, "center": list(z.center), "size": list(z.size)} for z in world.zones]
     return json.dumps(rows, ensure_ascii=False)
 
 
@@ -413,9 +407,7 @@ def make_agent(
         tools = [_observations_tool(latest_observations(reader)), _sql_tool(db)]
         return ToolAgent(llm, tools, _b1_system_prompt(world))
     if condition == "B0":
-        return ToolAgent(
-            llm, [], _b0_system_prompt(world, latest_observations(reader), db)
-        )
+        return ToolAgent(llm, [], _b0_system_prompt(world, latest_observations(reader), db))
     raise ValueError(f"T2の未知のエージェント条件: {condition!r}")
 
 
@@ -428,9 +420,7 @@ class T2EpisodeArtifacts(StrictModel):
     questions: list[T2Question]
 
 
-def prepare_graph(
-    run_dir: Path, condition: str, wms: WmsRecord, at_time: float
-) -> WorldGraph:
+def prepare_graph(run_dir: Path, condition: str, wms: WmsRecord, at_time: float) -> WorldGraph:
     """記録から条件付きで世界グラフを再構築し、WMS主張を載せて物質化する。"""
     reader = RunReader(run_dir)
     config: RunConfig = reader.config()
@@ -465,7 +455,10 @@ def answer_questions(
         if condition == "OR-reference":
             raw = reference_solve(graph, db, q)
             result = AgentRunResult(
-                answer=raw, turns=0, tool_call_count=0, prompt_tokens=0,
+                answer=raw,
+                turns=0,
+                tool_call_count=0,
+                prompt_tokens=0,
                 completion_tokens=0,
             )
         else:

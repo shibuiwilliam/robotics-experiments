@@ -119,8 +119,7 @@ def replay(
     run_dir = runs_root() / run_id
     if not run_dir.exists():
         _fail(
-            f"run が見つかりません: {run_dir}\n"
-            "（`orx demo` か `orx sim run` で記録してください）"
+            f"run が見つかりません: {run_dir}\n（`orx demo` か `orx sim run` で記録してください）"
         )
     if condition not in CONDITIONS:
         _fail(f"未知の条件 {condition!r}。対応: {', '.join(sorted(CONDITIONS))}")
@@ -148,6 +147,7 @@ def exp_run(
     シード毎に1回記録し、全条件を反実仮想リプレイで対比較する。
     """
     from orx.common.providers import CacheMissError
+    from orx.exp.cost import PreflightError, estimate_experiment, preflight_live, render_estimate
     from orx.exp.runner import (
         load_experiment,
         run_experiment,
@@ -157,12 +157,22 @@ def exp_run(
 
     try:
         config = load_experiment(experiment_config)
+        preflight_live(config)
         typer.echo(
             f"実験 {config.name}: task={config.task} "
             f"conditions={config.conditions} seeds={len(config.seeds)}"
         )
+        if config.task in ("t2", "t5", "t7"):
+            est = estimate_experiment(config)
+            if est.mode == "openai" and est.est_total_tokens > 0:
+                typer.secho("live 計測（課金）— 概算:", fg=typer.colors.YELLOW)
+                for line in render_estimate(est):
+                    typer.echo(line)
         exp_dir, result = run_experiment(config, runs_root(), progress=typer.echo)
         report_path = write_experiment_report(exp_dir, reports_dir())
+    except PreflightError as exc:
+        _fail(str(exc))
+        return
     except CacheMissError as exc:
         _fail(f"{exc}\n（オフライン実行は provider.mode を stub にしてください）")
         return
@@ -174,6 +184,46 @@ def exp_run(
         typer.echo(line)
     typer.echo(f"結果: {exp_dir / 'results.json'}")
     typer.echo(f"レポート: {report_path}")
+
+
+@exp_app.command("estimate")
+def exp_estimate(
+    experiment_config: Path = typer.Argument(
+        ..., help="実験コンフィグ (configs/experiments/*.yaml)"
+    ),
+    price_in: float = typer.Option(0.60, "--price-in", help="入力トークン単価 [USD/100万tok]"),
+    price_out: float = typer.Option(2.40, "--price-out", help="出力トークン単価 [USD/100万tok]"),
+    price_embed: float = typer.Option(
+        0.02, "--price-embed", help="埋め込みトークン単価 [USD/100万tok]"
+    ),
+) -> None:
+    """live 計測の概算トークン量・費用を見積もる（実APIを叩かない・承認判断用）。
+
+    `mode=openai` で課金実行する前に、必ずこのコマンドで概算を確認しユーザー承認を
+    得ること（CLAUDE.md §6）。前提（トークン/価格）は印字され --price-* で上書きできる。
+    """
+    from orx.exp.cost import TokenModel, estimate_experiment, render_estimate
+    from orx.exp.runner import load_experiment
+
+    try:
+        config = load_experiment(experiment_config)
+        tm = TokenModel(
+            price_in_per_mtok=price_in,
+            price_out_per_mtok=price_out,
+            price_embed_per_mtok=price_embed,
+        )
+        est = estimate_experiment(config, tm)
+    except (ConfigError, ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
+        return
+    for line in render_estimate(est):
+        typer.echo(line)
+    if est.mode == "openai" and est.est_total_tokens > 0:
+        typer.secho(
+            "\n注意: これは概算です。mode=openai での実行は実費が発生します。"
+            "承認後に `orx exp run` を実行してください。",
+            fg=typer.colors.YELLOW,
+        )
 
 
 @app.command()
@@ -201,6 +251,19 @@ def report(
     typer.echo(f"レポート生成: {out}")
 
 
+@app.command("report-main")
+def report_main() -> None:
+    """REPORT.md を results.json から決定的に再生成する（R-INFRA・git 非追跡の消失対策）。"""
+    from datetime import UTC, datetime
+
+    from orx.common.paths import repo_root
+    from orx.exp.report import write_main_report
+
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    out = write_main_report(runs_root(), repo_root() / "REPORT.md", date_str)
+    typer.echo(f"REPORT.md 再生成: {out}")
+
+
 scenario_app = typer.Typer(help="業務シナリオ（T8〜T14）の一覧・デモ・実行")
 app.add_typer(scenario_app, name="scenario")
 
@@ -214,8 +277,7 @@ def scenario_list() -> None:
     for spec in scn.all_specs():
         m = spec.meta
         typer.echo(
-            f"{m.id:<4}{m.suite:<6}{m.tier:<5}{','.join(m.hypotheses):<16}"
-            f"{m.status:<12}{m.title}"
+            f"{m.id:<4}{m.suite:<6}{m.tier:<5}{','.join(m.hypotheses):<16}{m.status:<12}{m.title}"
         )
 
 
@@ -280,18 +342,68 @@ def scenario_run(
     experiment_config: Path = typer.Argument(
         ..., help="シナリオ実験コンフィグ (configs/experiments/s{n}_*.yaml)"
     ),
+    mode: str = typer.Option(
+        "",
+        "--mode",
+        help="provider.mode を上書き（openai/cache/stub）。"
+        "cache=記録済み応答の 0 円再現、stub=オフライン。空=コンフィグ既定",
+    ),
 ) -> None:
-    """シナリオ実験（条件×シード×掃引）を実行し、結果とレポートを出力する。"""
+    """シナリオ実験（条件×シード×掃引）を実行し、結果とレポートを出力する。
+
+    `--mode cache` は live config を**課金せず**記録済みキャッシュから再生する（回帰検証用）。
+    """
+    from orx.common.providers import CacheMissError
     from orx.exp import scenario as scn
+    from orx.exp.cost import OPENAI_API_KEY_ENV, PreflightError
 
     try:
         config = scn.load_scenario_experiment(experiment_config)
+        if mode:
+            if mode not in ("openai", "cache", "stub"):
+                _fail(f"未知の --mode {mode!r}（openai/cache/stub）")
+                return
+            base = config.provider
+            from orx.common.providers import ProviderConfig
+
+            prov_over = (base or ProviderConfig()).model_copy(update={"mode": mode})
+            config = config.model_copy(update={"provider": prov_over})
+        # agent（live）条件のプリフライト: mode=openai でキー不在なら記録前に遮断（R-3a）。
+        import os as _os
+
+        from orx.common.providers import placeholder_models
+
+        prov = config.provider
+        if prov is not None and prov.mode == "openai":
+            holders = placeholder_models(prov)
+            if holders:
+                raise PreflightError(
+                    f"provider.mode=openai ですがモデル名がプレースホルダのままです: {holders}。"
+                    "正確な日付付きスナップショット名へ更新してから課金実行してください"
+                    "（モデル名の捏造は禁止・CLAUDE.md）。"
+                )
+        if prov is not None and prov.mode == "openai" and not _os.environ.get(OPENAI_API_KEY_ENV):
+            raise PreflightError(
+                f"provider.mode=openai ですが {OPENAI_API_KEY_ENV} が未設定です。"
+                "課金実行には API キーとコスト承認が必要（CLAUDE.md §6）。"
+            )
+        if prov is not None and prov.mode == "openai":
+            typer.secho(
+                f"live 計測（課金）: {len(config.conditions)} 条件 × {len(config.seeds)} シード "
+                f"× ツールループ（model={prov.llm_model}）。応答は全キャッシュ。",
+                fg=typer.colors.YELLOW,
+            )
         typer.echo(
-            f"シナリオ {config.scenario}: conditions={config.conditions} "
-            f"seeds={len(config.seeds)}"
+            f"シナリオ {config.scenario}: conditions={config.conditions} seeds={len(config.seeds)}"
         )
         exp_dir, result = scn.run_experiment(config, runs_root(), progress=typer.echo)
         report_path = scn.write_report(exp_dir, reports_dir())
+    except PreflightError as exc:
+        _fail(str(exc))
+        return
+    except CacheMissError as exc:
+        _fail(f"{exc}\n（オフライン実行は provider.mode を stub にしてください）")
+        return
     except (ConfigError, ValueError, FileNotFoundError) as exc:
         _fail(str(exc))
         return
@@ -300,6 +412,55 @@ def scenario_run(
         typer.echo(line)
     typer.echo(f"結果: {exp_dir / 'results.json'}")
     typer.echo(f"レポート: {report_path}")
+
+
+@scenario_app.command("estimate")
+def scenario_estimate(
+    experiment_config: Path = typer.Argument(
+        ..., help="シナリオ実験コンフィグ (configs/experiments/s{n}_*_live.yaml)"
+    ),
+) -> None:
+    """シナリオ agent(live) 実験のコスト概算（実APIを叩かない・承認判断用）。"""
+    from orx.exp import scenario as scn
+    from orx.exp.cost import estimate_scenario, render_estimate
+
+    try:
+        config = scn.load_scenario_experiment(experiment_config)
+    except (ConfigError, ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
+        return
+    for line in render_estimate(estimate_scenario(config)):
+        typer.echo(line)
+
+
+@scenario_app.command("report-all")
+def scenario_report_all(
+    date: str = typer.Option(
+        "", help="サマリ日付（既定: 今日。reports/scenario-all-<date>.md に保存）"
+    ),
+    timestamped: bool = typer.Option(
+        False,
+        "--timestamped",
+        "-t",
+        help="ファイル名に時刻(HH-MM-SS)を付し同日再実行の上書きを防ぐ（履歴保持, R-C）",
+    ),
+) -> None:
+    """全シナリオの最新 results.json を集約し恒久サマリを reports/ に書き出す（R-3e）。
+
+    `make scenario-all` の末尾から呼ばれ、標準出力に流れていたサマリを 1 枚に固定化する。
+    `--timestamped` を付けると `scenario-all-<date>T<HH-MM-SS>.md` となり履歴を保持する（R-C）。
+    """
+    import datetime as _dt
+
+    from orx.exp import scenario as scn
+
+    date_str = date or _dt.date.today().isoformat()
+    time_suffix = _dt.datetime.now().strftime("%H-%M-%S") if timestamped else ""
+    out = scn.write_scenario_all(runs_root(), reports_dir(), date_str, time_suffix)
+    if out is None:
+        _fail("シナリオ結果が見つかりません（先に `make scenario-run-all` を実行してください）")
+        return
+    typer.echo(f"scenario-all サマリ: {out}")
 
 
 @app.command()
@@ -348,7 +509,7 @@ def onboard(
     except (KeyError, ValueError, OSError, _json.JSONDecodeError) as exc:
         _fail(str(exc))
         return
-    target = (out_dir or (repo_root() / "ontology" / "mappings" / "proposals"))
+    target = out_dir or (repo_root() / "ontology" / "mappings" / "proposals")
     target.mkdir(parents=True, exist_ok=True)
     out_path = target / f"{schema_name}.yaml"
     out_path.write_text(proposal, encoding="utf-8")

@@ -17,8 +17,11 @@ def make_server(seed: int = 7) -> tuple[SkillServer, WorldConfig]:
 
 def request(robot: str, barcode: str, pos=(0.0, 1.2, 0.4)) -> SkillRequest:
     return SkillRequest(
-        robot_id=robot, skill="pick_and_place", target_barcode=barcode,
-        target_position=pos, dest_zone="dock",
+        robot_id=robot,
+        skill="pick_and_place",
+        target_barcode=barcode,
+        target_position=pos,
+        dest_zone="dock",
     )
 
 

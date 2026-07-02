@@ -200,9 +200,7 @@ def _run_t5(
                 results[mode].append(outcome)
         notify(f"  seed={seed}: {params.n_schemas_per_seed} スキーマ処理完了")
 
-    handwritten_lines = [
-        r.handwritten_lines for m in modes for r in results[m]
-    ]
+    handwritten_lines = [r.handwritten_lines for m in modes for r in results[m]]
     result = T5ExperimentResult(
         exp_id=exp_dir.name,
         name=config.name,
@@ -211,22 +209,15 @@ def _run_t5(
         conditions=list(config.conditions),
         n_schemas=n_schemas,
         mean_field_accuracy={
-            m: round(sum(r.field_accuracy for r in rs) / len(rs), 4)
-            for m, rs in results.items()
+            m: round(sum(r.field_accuracy for r in rs) / len(rs), 4) for m, rs in results.items()
         },
         mean_hand_fix_lines={
-            m: round(sum(r.hand_fix_lines for r in rs) / len(rs), 3)
-            for m, rs in results.items()
+            m: round(sum(r.hand_fix_lines for r in rs) / len(rs), 3) for m, rs in results.items()
         },
-        valid_rate={
-            m: round(sum(r.valid for r in rs) / len(rs), 4) for m, rs in results.items()
-        },
-        mean_handwritten_lines=round(
-            sum(handwritten_lines) / len(handwritten_lines), 3
-        ),
+        valid_rate={m: round(sum(r.valid for r in rs) / len(rs), 4) for m, rs in results.items()},
+        mean_handwritten_lines=round(sum(handwritten_lines) / len(handwritten_lines), 3),
         mean_elapsed_s={
-            m: round(sum(r.elapsed_s for r in rs) / len(rs), 4)
-            for m, rs in results.items()
+            m: round(sum(r.elapsed_s for r in rs) / len(rs), 4) for m, rs in results.items()
         },
         llm_mode=params.provider.mode,
     )
@@ -278,7 +269,8 @@ def _run_t4(
                 claim_ttl_s=config.claim_ttl_s,
             )
             run_id, _ = record_episode(
-                run_config, exp_dir / "episodes",
+                run_config,
+                exp_dir / "episodes",
                 run_id=f"{params.knob}-{value}-seed{seed}",
             )
             run_dir = exp_dir / "episodes" / run_id
@@ -374,15 +366,23 @@ def _run_t3(
         final_truth = list(reader.truth_states())[-1]
         # 知覚→グラフ（計画の窓）。WMSは不要なので空レコードで構築。
         graph = prepare_graph(
-            run_dir, "OR-full", WmsRecord(orders=[], skus=[], instructions=[]),
+            run_dir,
+            "OR-full",
+            WmsRecord(orders=[], skus=[], instructions=[]),
             at_time=final_truth.sim_time,
         )
         seeds_tree = SeedTree(seed)
         server = SkillServer(base_world, seeds_tree.child("skills").rng())
         ledger = t3_suite.CapabilityLedger(graph, seeds_tree)
         metrics, paired, replans = t3_suite.run_learning_episodes(
-            base_world, graph, server, ledger, seeds_tree,
-            params.n_episodes, params.epsilon, params.dest_zone,
+            base_world,
+            graph,
+            server,
+            ledger,
+            seeds_tree,
+            params.n_episodes,
+            params.epsilon,
+            params.dest_zone,
             graph_time=final_truth.sim_time,
         )
         paired_all.extend(paired)
@@ -398,19 +398,15 @@ def _run_t3(
 
     n_episodes = params.n_episodes
     mean_brier = [
-        sum(c[m] for c in per_episode_brier) / len(per_episode_brier)
-        for m in range(n_episodes)
+        sum(c[m] for c in per_episode_brier) / len(per_episode_brier) for m in range(n_episodes)
     ]
     mean_mae = [
-        sum(c[m] for c in per_episode_mae) / len(per_episode_mae)
-        for m in range(n_episodes)
+        sum(c[m] for c in per_episode_mae) / len(per_episode_mae) for m in range(n_episodes)
     ]
     cap_ok = [p[0] for p in paired_all]
     rr_ok = [p[1] for p in paired_all]
     stats_rng = SeedTree(config.seeds[0]).child("bootstrap").rng()
-    comparisons = [
-        compare_conditions("capability", "round-robin", cap_ok, rr_ok, stats_rng)
-    ]
+    comparisons = [compare_conditions("capability", "round-robin", cap_ok, rr_ok, stats_rng)]
     result = T3ExperimentResult(
         exp_id=exp_dir.name,
         name=config.name,
@@ -483,7 +479,11 @@ def _run_t7(
         embedder = make_text_embedding_client(provider)
         for condition in config.conditions:
             answers = t7_suite.evaluate(
-                condition, queries, graph, db, docs,
+                condition,
+                queries,
+                graph,
+                db,
+                docs,
                 embedder if condition == "vector-rag" else None,
             )
             correctness[condition].extend(a.correct for a in answers)
@@ -492,9 +492,7 @@ def _run_t7(
     stats_rng = SeedTree(config.seeds[0]).child("bootstrap").rng()
     baseline = config.conditions[0]
     comparisons = [
-        compare_conditions(
-            baseline, other, correctness[baseline], correctness[other], stats_rng
-        )
+        compare_conditions(baseline, other, correctness[baseline], correctness[other], stats_rng)
         for other in config.conditions[1:]
     ]
     result = T7ExperimentResult(
@@ -504,9 +502,7 @@ def _run_t7(
         seeds=list(config.seeds),
         conditions=list(config.conditions),
         n_queries=len(correctness[baseline]),
-        accuracies={
-            c: sum(correctness[c]) / len(correctness[c]) for c in config.conditions
-        },
+        accuracies={c: sum(correctness[c]) / len(correctness[c]) for c in config.conditions},
         comparisons=comparisons,
         embedding_mode=provider.mode,
     )
@@ -532,9 +528,7 @@ def _run_t1(
             root_seed=seed,
             claim_ttl_s=config.claim_ttl_s,
         )
-        run_id, _ = record_episode(
-            run_config, exp_dir / "episodes", run_id=f"seed{seed}"
-        )
+        run_id, _ = record_episode(run_config, exp_dir / "episodes", run_id=f"seed{seed}")
         run_dirs[seed] = exp_dir / "episodes" / run_id
         notify(f"  記録 seed={seed} target={task.target_barcode}")
 
@@ -567,7 +561,11 @@ def _run_t1(
         b = [by_condition[other][s].success for s in config.seeds]
         comparisons.append(
             compare_conditions(
-                baseline, other, a, b, stats_rng,
+                baseline,
+                other,
+                a,
+                b,
+                stats_rng,
                 metric_a=[by_condition[baseline][s].identity_f1 for s in config.seeds],
                 metric_b=[by_condition[other][s].identity_f1 for s in config.seeds],
                 metric_name="identity_f1",
@@ -624,9 +622,7 @@ def _run_t2(
         notify(f"  記録 seed={seed}: 質問 {len(questions)} 件")
 
         for condition in config.conditions:
-            graph = t2_suite.prepare_graph(
-                run_dir, condition, wms, at_time=final_truth.sim_time
-            )
+            graph = t2_suite.prepare_graph(run_dir, condition, wms, at_time=final_truth.sim_time)
             llm = None if condition == "OR-reference" else make_llm_client(provider)
             answers = t2_suite.answer_questions(
                 condition, questions, graph, db, base_world, reader, llm
@@ -640,22 +636,14 @@ def _run_t2(
     stats_rng = SeedTree(config.seeds[0]).child("bootstrap").rng()
     baseline = config.conditions[0]
     comparisons = [
-        compare_conditions(
-            baseline, other, correctness[baseline], correctness[other], stats_rng
-        )
+        compare_conditions(baseline, other, correctness[baseline], correctness[other], stats_rng)
         for other in config.conditions[1:]
     ]
     tokens = {
-        c: sum(
-            a.prompt_tokens + a.completion_tokens
-            for a in all_answers
-            if a.condition == c
-        )
+        c: sum(a.prompt_tokens + a.completion_tokens for a in all_answers if a.condition == c)
         for c in config.conditions
     }
-    accuracies = {
-        c: sum(correctness[c]) / len(correctness[c]) for c in config.conditions
-    }
+    accuracies = {c: sum(correctness[c]) / len(correctness[c]) for c in config.conditions}
     result = T2ExperimentResult(
         exp_id=exp_dir.name,
         name=config.name,
@@ -680,9 +668,7 @@ def _run_t2(
 def _write_condition_fidelity(run_dir: Path, condition: str, fidelity: FidelityReport) -> None:
     out = run_dir / "replays" / condition
     out.mkdir(parents=True, exist_ok=True)
-    (out / "metrics.json").write_text(
-        fidelity.model_dump_json(indent=2) + "\n", encoding="utf-8"
-    )
+    (out / "metrics.json").write_text(fidelity.model_dump_json(indent=2) + "\n", encoding="utf-8")
 
 
 def render_experiment_report(result: ExperimentResult) -> str:
@@ -698,9 +684,7 @@ def render_experiment_report(result: ExperimentResult) -> str:
         "|------|-------------|------------------|",
     ]
     for c in result.conditions:
-        lines.append(
-            f"| {c} | {result.success_rates[c]:.3f} | {result.identity_f1_means[c]:.3f} |"
-        )
+        lines.append(f"| {c} | {result.success_rates[c]:.3f} | {result.identity_f1_means[c]:.3f} |")
     lines += ["", "## 対比較（対応のある検定）", ""]
     for cmp in result.comparisons:
         lines += [
@@ -728,7 +712,7 @@ def render_t2_report(result: T2ExperimentResult) -> str:
         f"- タスク: t2（業務‐物理クエリ） / 質問数: {result.n_questions} / "
         f"LLMモード: {result.llm_mode} / 構成ハッシュ: `{result.config_hash}`",
         "",
-        scope.scope_section(scopes),
+        scope.scope_section(scopes, scope.agent_status_for(result.llm_mode)),
         "## 条件別サマリ（OR-reference=表現上限 / OR-full・B1・B0=エージェント）",
         "",
         "| 条件 | 射程 | 正答率 | 総トークン | 正答率/1kトークン |",
@@ -738,8 +722,7 @@ def render_t2_report(result: T2ExperimentResult) -> str:
         eff = result.accuracy_per_1k_tokens[c]
         cat = "ceiling" if c == "OR-reference" else "agent"
         lines.append(
-            f"| {c} | {cat} | {result.accuracies[c]:.3f} | {result.total_tokens[c]} | "
-            f"{eff:.4f} |"
+            f"| {c} | {cat} | {result.accuracies[c]:.3f} | {result.total_tokens[c]} | {eff:.4f} |"
         )
     if result.llm_mode == "stub":
         lines += [
@@ -801,7 +784,7 @@ def summarize(result: AnyResult) -> list[str]:
                 f"  {m:<10} 精度={result.mean_field_accuracy[m]:.3f} "
                 f"修正行={result.mean_hand_fix_lines[m]:.1f} "
                 f"検証合格率={result.valid_rate[m]:.2f} "
-                f"所要={result.mean_elapsed_s[m]*1000:.0f}ms"
+                f"所要={result.mean_elapsed_s[m] * 1000:.0f}ms"
             )
     elif isinstance(result, T4ExperimentResult):
         lines.append(f"劣化掃引 ({result.knob}) — トリプルF1:")
@@ -833,10 +816,7 @@ def summarize(result: AnyResult) -> list[str]:
     elif isinstance(result, T2ExperimentResult):
         lines.append("条件別正答率（/1kトークン効率）:")
         for c in result.conditions:
-            lines.append(
-                f"  {c:<14} {result.accuracies[c]:.3f}"
-                f"  (tokens={result.total_tokens[c]})"
-            )
+            lines.append(f"  {c:<14} {result.accuracies[c]:.3f}  (tokens={result.total_tokens[c]})")
         if result.llm_mode == "stub":
             lines.append("  ※ stubモード: エージェント条件はハーネス検証のみ")
     else:
@@ -844,9 +824,7 @@ def summarize(result: AnyResult) -> list[str]:
         for c, rate in result.success_rates.items():
             lines.append(f"  {c:<18} {rate:.3f}")
     for cmp in getattr(result, "comparisons", []):
-        lines.append(
-            f"McNemar ({cmp.condition_a} vs {cmp.condition_b}): p = {cmp.mcnemar_p:.2e}"
-        )
+        lines.append(f"McNemar ({cmp.condition_a} vs {cmp.condition_b}): p = {cmp.mcnemar_p:.2e}")
     return lines
 
 
@@ -883,11 +861,21 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "ハブ&スポーク統合のコスト = 共通オントロジーへのマッピング記述行数。"
             "支援生成は人手記述を「修正行数」まで圧縮する（H1）。",
             "",
-            "> **射程注記**: heuristic（規則ベース）は決定的な**表現上限**であり、ファズ空間が"
-            "規則の射程に収まる設計のため飽和する。**H1 の llm 支援エージェント検証は未実行**"
-            "（live）。手書きとの行数比較は H1 の必要条件を示すが本体検証ではない。",
-            "",
         ]
+        if t5_result.llm_mode == "openai":
+            lines += [
+                "> **射程注記**: heuristic（規則ベース）は決定的な**表現上限**。"
+                "**llm 行は実LLMによる H1 エージェント検証の実測値**（live, temperature 0・"
+                "全応答キャッシュで再現可能）。手書き行数との比較が統合コスト削減を示す。",
+                "",
+            ]
+        else:
+            lines += [
+                "> **射程注記**: heuristic（規則ベース）は決定的な**表現上限**であり、ファズ空間が"
+                "規則の射程に収まる設計のため飽和する。**H1 の llm 支援エージェント検証は未実行**"
+                "（live）。手書きとの行数比較は H1 の必要条件を示すが本体検証ではない。",
+                "",
+            ]
         if t5_result.llm_mode == "stub" and "llm" in modes:
             from orx.exp import scope as _scope
 
@@ -906,7 +894,8 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "",
             "## 頑健性曲線（平均トリプルF1）",
             "",
-            f"| {t4_result.knob} | " + " | ".join(t4_result.conditions)
+            f"| {t4_result.knob} | "
+            + " | ".join(t4_result.conditions)
             + f" | 差({baseline}−{other}) CI95 |",
             "|------|" + "------|" * (len(t4_result.conditions) + 1),
         ]
@@ -931,10 +920,7 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "|------|" + "------|" * len(t4_result.conditions),
             *[
                 f"| {v} | "
-                + " | ".join(
-                    f"{t4_result.identity_curves[c][i]:.3f}"
-                    for c in t4_result.conditions
-                )
+                + " | ".join(f"{t4_result.identity_curves[c][i]:.3f}" for c in t4_result.conditions)
                 + " |"
                 for i, v in enumerate(t4_result.values)
             ],
@@ -957,10 +943,7 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "",
             "| 条件 | 割当正答率 |",
             "|------|-----------|",
-            *[
-                f"| {c} | {v:.3f} |"
-                for c, v in t3_result.allocation_accuracy.items()
-            ],
+            *[f"| {c} | {v:.3f} |" for c, v in t3_result.allocation_accuracy.items()],
             "",
             *[
                 f"- McNemar ({c.condition_a} vs {c.condition_b}): p = {c.mcnemar_p:.2e}"
@@ -978,10 +961,7 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             "",
             "| ep | Brier | 較正MAE |",
             "|----|-------|---------|",
-            *[
-                f"| {i + 1} | {curve[i]:.4f} | {mae_curve[i]:.4f} |"
-                for i in range(len(curve))
-            ],
+            *[f"| {i + 1} | {curve[i]:.4f} | {mae_curve[i]:.4f} |" for i in range(len(curve))],
             "",
         ]
         out_path.write_text("\n".join(lines), encoding="utf-8")
@@ -999,7 +979,7 @@ def write_experiment_report(exp_dir: Path, out_dir: Path) -> Path:
             f"- タスク: t7（SOP検索, H4） / クエリ数: {t7_result.n_queries} / "
             f"埋め込み: {t7_result.embedding_mode}",
             "",
-            scope.scope_section(scopes),
+            scope.scope_section(scopes, scope.agent_status_for(t7_result.embedding_mode)),
             "| 条件 | 射程 | 正答率(P@1) |",
             "|------|------|-------------|",
             *[

@@ -56,6 +56,21 @@ class ProviderConfig(StrictModel):
     text_embedding_dim: int = 64
 
 
+# プレースホルダ・スナップショット名の番兵（第2モデル再現テンプレ等）。実モデル名へ置換するまで
+# `mode=openai` の課金実行をプリフライトで遮断（CLAUDE.md: 捏造/プレースホルダのまま課金しない）。
+# 実在しえない明示的な番兵にし、正規のモデル名（gpt-5.4 等）と誤認しないようにする。
+PLACEHOLDER_SNAPSHOT_PREFIX = "SET-"
+
+
+def placeholder_models(config: ProviderConfig) -> list[str]:
+    """`config` 中で未設定のままの番兵モデル名（`SET-...`）を列挙する。空なら実モデルが設定済み。"""
+    return [
+        name
+        for name in (config.llm_model, config.text_embedding_model)
+        if name.startswith(PLACEHOLDER_SNAPSHOT_PREFIX)
+    ]
+
+
 class LLMRequest(StrictModel):
     messages: list[dict[str, Any]]  # OpenAI chat形式 (role/content/...)
     tools: list[dict[str, Any]] | None = None

@@ -17,9 +17,7 @@ def shapes_graph() -> rdflib.Graph:
 
 
 def validate(data: rdflib.Graph) -> bool:
-    conforms, _, _ = pyshacl.validate(
-        data_graph=data, shacl_graph=shapes_graph(), inference="none"
-    )
+    conforms, _, _ = pyshacl.validate(data_graph=data, shacl_graph=shapes_graph(), inference="none")
     return bool(conforms)
 
 

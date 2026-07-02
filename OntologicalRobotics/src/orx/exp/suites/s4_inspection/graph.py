@@ -23,8 +23,14 @@ def build_inspection_graph(world: S4World, episode: S4Episode, seeds: SeedTree) 
     def claim(subject: str, predicate: str, obj: Term, t: float) -> None:
         graph.assert_claim(
             Claim(
-                claim_id=deterministic_id(rng), subject=subject, predicate=predicate,
-                object=obj, asserted_by=_AGENT, confidence=1.0, observed_at=t, valid_until=None,
+                claim_id=deterministic_id(rng),
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                asserted_by=_AGENT,
+                confidence=1.0,
+                observed_at=t,
+                valid_until=None,
             )
         )
 

@@ -53,10 +53,13 @@ class SkillServer:
         box = self._boxes.get(barcode)
         if box is None:
             return 0.0
-        d = sum(
-            (a - b) ** 2
-            for a, b in zip(robot.camera.pos, self._box_position(barcode), strict=True)
-        ) ** 0.5
+        d = (
+            sum(
+                (a - b) ** 2
+                for a, b in zip(robot.camera.pos, self._box_position(barcode), strict=True)
+            )
+            ** 0.5
+        )
         if d > profile.reach_m:
             return 0.0
         if box.weight_kg > profile.max_payload_kg:
@@ -79,27 +82,37 @@ class SkillServer:
         box = self._boxes.get(request.target_barcode)
         if box is None:
             return SkillOutcome(
-                request=request, success=False, failure_mode="unknown_target",
+                request=request,
+                success=False,
+                failure_mode="unknown_target",
                 sim_time=sim_time,
             )
-        d = sum(
-            (a - b) ** 2
-            for a, b in zip(robot.camera.pos, request.target_position, strict=True)
-        ) ** 0.5
+        d = (
+            sum(
+                (a - b) ** 2 for a, b in zip(robot.camera.pos, request.target_position, strict=True)
+            )
+            ** 0.5
+        )
         if d > profile.reach_m:
             return SkillOutcome(
-                request=request, success=False, failure_mode="out_of_reach",
+                request=request,
+                success=False,
+                failure_mode="out_of_reach",
                 sim_time=sim_time,
             )
         if box.weight_kg > profile.max_payload_kg:
             success = bool(self._rng.random() < profile.overload_success)
             return SkillOutcome(
-                request=request, success=success,
-                failure_mode=None if success else "overload", sim_time=sim_time,
+                request=request,
+                success=success,
+                failure_mode=None if success else "overload",
+                sim_time=sim_time,
             )
         rate = profile.material_success.get(box.material, profile.base_success)
         success = bool(self._rng.random() < rate)
         return SkillOutcome(
-            request=request, success=success,
-            failure_mode=None if success else "grip_slip", sim_time=sim_time,
+            request=request,
+            success=success,
+            failure_mode=None if success else "grip_slip",
+            sim_time=sim_time,
         )

@@ -53,23 +53,23 @@ def wms_claims(record: WmsRecord, seeds: SeedTree, observed_at: float = 0.0) -> 
     for sku in record.skus:
         s = sku_iri(str(sku["sku"]))
         claims.append(claim(s, iri.RDF_TYPE, Term(kind="iri", value=iri.biz("Sku"))))
-        claims.append(
-            claim(s, iri.biz("skuName"), Term(kind="literal", value=str(sku["name"])))
-        )
+        claims.append(claim(s, iri.biz("skuName"), Term(kind="literal", value=str(sku["name"]))))
         claims.append(
             claim(
                 s,
                 iri.biz("weightKg"),
-                Term(kind="literal", value=repr(float(sku["weight_kg"])),
-                     datatype=iri.XSD_DOUBLE),
+                Term(kind="literal", value=repr(float(sku["weight_kg"])), datatype=iri.XSD_DOUBLE),
             )
         )
         claims.append(
             claim(
                 s,
                 iri.biz("fragile"),
-                Term(kind="literal", value="true" if sku["fragile"] else "false",
-                     datatype="http://www.w3.org/2001/XMLSchema#boolean"),
+                Term(
+                    kind="literal",
+                    value="true" if sku["fragile"] else "false",
+                    datatype="http://www.w3.org/2001/XMLSchema#boolean",
+                ),
             )
         )
     for order in record.orders:
@@ -78,9 +78,7 @@ def wms_claims(record: WmsRecord, seeds: SeedTree, observed_at: float = 0.0) -> 
         claims.append(
             claim(o, iri.biz("ordersSku"), Term(kind="iri", value=sku_iri(str(order["sku"]))))
         )
-        claims.append(
-            claim(o, iri.biz("status"), Term(kind="literal", value=str(order["status"])))
-        )
+        claims.append(claim(o, iri.biz("status"), Term(kind="literal", value=str(order["status"]))))
         claims.append(
             claim(o, iri.biz("destination"), Term(kind="literal", value=str(order["destination"])))
         )
@@ -92,9 +90,7 @@ def wms_claims(record: WmsRecord, seeds: SeedTree, observed_at: float = 0.0) -> 
         claims.append(
             claim(s, iri.biz("forOrder"), Term(kind="iri", value=order_iri(inst["order_id"])))
         )
-        claims.append(
-            claim(s, iri.biz("hasBarcode"), Term(kind="literal", value=inst["barcode"]))
-        )
+        claims.append(claim(s, iri.biz("hasBarcode"), Term(kind="literal", value=inst["barcode"])))
     return claims
 
 
@@ -123,9 +119,7 @@ def lot_claims(
 
     claims: list[Claim] = []
     for lot_id in sorted(set(lot_data.members.values())):
-        claims.append(
-            claim(lot_iri(lot_id), iri.RDF_TYPE, Term(kind="iri", value=iri.biz("Lot")))
-        )
+        claims.append(claim(lot_iri(lot_id), iri.RDF_TYPE, Term(kind="iri", value=iri.biz("Lot"))))
     for barcode, lot_id in sorted(lot_data.members.items()):
         inst_id = barcode_to_inst.get(barcode)
         if inst_id is None:

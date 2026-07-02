@@ -12,8 +12,11 @@ from orx.exp.suites.s2_allergen import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s2-fal", scenario="s2", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[201, 202, 203, 204, 205, 206],
+        name="s2-fal",
+        scenario="s2",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[201, 202, 203, 204, 205, 206],
         duration_s=0.0,
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s2") / "exp", lambda *a: None)

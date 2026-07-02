@@ -28,8 +28,12 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s2-rep", scenario="s2", world_config=runner.WORLD,
-        conditions=CONDITIONS, seeds=[201, 202, 203], duration_s=0.0,
+        name="s2-rep",
+        scenario="s2",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[201, 202, 203],
+        duration_s=0.0,
     )
 
 
@@ -67,9 +71,7 @@ def test_metamorphic_allergen_rename_invariant() -> None:
             base_ans = [
                 grasp_allowed_under(c, base_ep, d_base, observers, q) for q in base_ep.queries
             ]
-            ren_ans = [
-                grasp_allowed_under(c, ren_ep, d_ren, observers, q) for q in ren_ep.queries
-            ]
+            ren_ans = [grasp_allowed_under(c, ren_ep, d_ren, observers, q) for q in ren_ep.queries]
             assert base_ans == ren_ans, f"{c}: アレルゲンrenameで判定が変化（表層依存）"
 
 

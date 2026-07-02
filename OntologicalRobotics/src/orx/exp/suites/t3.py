@@ -55,20 +55,36 @@ class CapabilityLedger:
         agent = iri.entity("agent", f"skills-{robot.name}")
         for skill in robot.capability.skills:
             cap = capability_iri(robot.name, skill, "any")
-            self._claim(cap, iri.RDF_TYPE, Term(kind="iri", value=iri.cap("Capability")),
-                        agent, t)
-            self._claim(cap, iri.cap("forRobot"),
-                        Term(kind="iri", value=iri.entity("robot", robot.name)), agent, t)
+            self._claim(cap, iri.RDF_TYPE, Term(kind="iri", value=iri.cap("Capability")), agent, t)
+            self._claim(
+                cap,
+                iri.cap("forRobot"),
+                Term(kind="iri", value=iri.entity("robot", robot.name)),
+                agent,
+                t,
+            )
             self._claim(cap, iri.cap("skillType"), Term(kind="literal", value=skill), agent, t)
             self._claim(
-                cap, iri.cap("declaredPayloadKg"),
-                Term(kind="literal", value=repr(robot.capability.declared_payload_kg),
-                     datatype=iri.XSD_DOUBLE), agent, t,
+                cap,
+                iri.cap("declaredPayloadKg"),
+                Term(
+                    kind="literal",
+                    value=repr(robot.capability.declared_payload_kg),
+                    datatype=iri.XSD_DOUBLE,
+                ),
+                agent,
+                t,
             )
             self._claim(
-                cap, iri.cap("declaredReachM"),
-                Term(kind="literal", value=repr(robot.capability.declared_reach_m),
-                     datatype=iri.XSD_DOUBLE), agent, t,
+                cap,
+                iri.cap("declaredReachM"),
+                Term(
+                    kind="literal",
+                    value=repr(robot.capability.declared_reach_m),
+                    datatype=iri.XSD_DOUBLE,
+                ),
+                agent,
+                t,
             )
 
     def record_outcome(self, robot_id: str, material: str, success: bool, t: float) -> None:
@@ -79,10 +95,16 @@ class CapabilityLedger:
         cap = capability_iri(robot_id, "pick_and_place", material)
         xsd_int = "http://www.w3.org/2001/XMLSchema#integer"
         self._claim(cap, iri.cap("materialTag"), Term(kind="literal", value=material), agent, t)
-        self._claim(cap, iri.cap("trials"),
-                    Term(kind="literal", value=str(n), datatype=xsd_int), agent, t)
-        self._claim(cap, iri.cap("successes"),
-                    Term(kind="literal", value=str(s), datatype=xsd_int), agent, t)
+        self._claim(
+            cap, iri.cap("trials"), Term(kind="literal", value=str(n), datatype=xsd_int), agent, t
+        )
+        self._claim(
+            cap,
+            iri.cap("successes"),
+            Term(kind="literal", value=str(s), datatype=xsd_int),
+            agent,
+            t,
+        )
 
     def estimate(self, robot_id: str, material: str) -> float:
         """宣言を事前分布としたベータ事後平均。"""
@@ -270,21 +292,15 @@ def run_learning_episodes(
                         ),
                         sim_time=sim_t + 0.5,
                     )
-                    briers.append(
-                        (retry_est - (1.0 if retry_outcome.success else 0.0)) ** 2
-                    )
-                    ledger.record_outcome(
-                        retry, task.material, retry_outcome.success, sim_t + 0.5
-                    )
+                    briers.append((retry_est - (1.0 if retry_outcome.success else 0.0)) ** 2)
+                    ledger.record_outcome(retry, task.material, retry_outcome.success, sim_t + 0.5)
         # 較正誤差（Brier信頼性項）: 訪問済みセルの推定 vs 真率
         errors: list[float] = []
         sq_errors: list[float] = []
         for (robot_id, material), (n, _) in ledger._stats.items():
             if n == 0:
                 continue
-            barcode = next(
-                (t.barcode for t in tasks if t.material == material), None
-            )
+            barcode = next((t.barcode for t in tasks if t.material == material), None)
             if barcode is None:
                 continue
             true_rate = server.true_success_rate(robot_id, barcode)

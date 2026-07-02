@@ -1,0 +1,13 @@
+id: cq_s8_action_audit
+question: "どのアクションが・どの対象に・どの状態（applied/staged/rejected）で実行されたか（監査）？"
+sparql: |
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX orx-cap: <https://orx.local/onto/cap#>
+  SELECT ?obj ?status WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?a rdf:type orx-cap:ActionExecution ;
+         orx-cap:actedOn ?obj ;
+         orx-cap:actionStatus ?status .
+    }
+  }
+note: "アクション型の監査ログ。OR-full は全アクションを来歴付きで書き戻す（IMPROVEMENT.md §3.4）。"

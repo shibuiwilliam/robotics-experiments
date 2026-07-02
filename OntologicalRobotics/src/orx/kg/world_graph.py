@@ -88,8 +88,7 @@ class WorldGraph:
         """主張を書き込む。来歴・確信度・時刻はスキーマで必須（不変条件2）。"""
         if claim.predicate == "http://www.w3.org/2002/07/owl#sameAs":
             raise ValueError(
-                "owl:sameAs の直書きは禁止 (PROJECT.md §5.2-3)。"
-                "orx-upper:anchoredTo を使うこと。"
+                "owl:sameAs の直書きは禁止 (PROJECT.md §5.2-3)。orx-upper:anchoredTo を使うこと。"
             )
         graph = ox.NamedNode(iri.claim(claim.claim_id))
         self._store.add(
@@ -155,8 +154,10 @@ class WorldGraph:
         for index, c in enumerate(self._claims):
             if c.observed_at > at_time + 1e-9:
                 continue
-            if self.belief_enabled and c.valid_until is not None and (
-                c.valid_until < at_time - 1e-9
+            if (
+                self.belief_enabled
+                and c.valid_until is not None
+                and (c.valid_until < at_time - 1e-9)
             ):
                 continue
             key = self._group_key(c)

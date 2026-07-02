@@ -27,8 +27,12 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s5-rep", scenario="s5", world_config=runner.WORLD, conditions=CONDITIONS,
-        seeds=[501], duration_s=0.0,
+        name="s5-rep",
+        scenario="s5",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[501],
+        duration_s=0.0,
     )
 
 

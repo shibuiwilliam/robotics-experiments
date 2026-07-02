@@ -65,14 +65,10 @@ def contamination_closure(
             acquired[e] = set()
 
     entities = set(intr) | set(acquired)
-    return ContaminationState(
-        carried={e: sorted(carried(e)) for e in entities if carried(e)}
-    )
+    return ContaminationState(carried={e: sorted(carried(e)) for e in entities if carried(e)})
 
 
-def grasp_allowed(
-    state: ContaminationState, gripper: str, allergen_free_of: set[str]
-) -> bool:
+def grasp_allowed(state: ContaminationState, gripper: str, allergen_free_of: set[str]) -> bool:
     """把持可否: グリッパが「フリーであるべきアレルゲン」を保持していなければ許可。"""
     carried = set(state.carried.get(gripper, []))
     return not (carried & allergen_free_of)

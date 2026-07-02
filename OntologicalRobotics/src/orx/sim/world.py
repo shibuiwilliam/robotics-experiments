@@ -39,9 +39,7 @@ class SimWorld:
         self._pending_moves: list[ScriptedMove] = sorted(
             config.scripted_moves, key=lambda m: m.at_time
         )
-        self._active_slides: list[
-            tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]
-        ] = []
+        self._active_slides: list[tuple[ScriptedMove, tuple[float, ...], tuple[float, ...]]] = []
         self._zones = {z.name: z for z in config.zones}
         self._initial_positions: dict[str, Vec3] = {
             b.name: tuple(float(v) for v in self.data.body(body_name(b.name)).xpos)
@@ -117,6 +115,37 @@ class SimWorld:
                 remaining.append((move, start, dest))
         self._active_slides = remaining
         mujoco.mj_forward(self.model, self.data)
+
+    # ---------------------------------------------------------------- effects
+
+    def apply_effect(
+        self,
+        box_name: str,
+        to_zone: str,
+        at_time: float,
+        mode: str = "teleport",
+        duration_s: float = 0.0,
+        offset: tuple[float, float] = (0.0, 0.0),
+    ) -> None:
+        """エージェント発行アクションの**効果**を物理に反映する（C1 が物理権威・キネティック層）。
+
+        不変条件4（CLAUDE.md §2）: 本メソッドは `mj_step` の内側から呼んではならない。
+        知覚周期の tick 境界（`step_to` の外）でのみ呼ぶこと。scripted_moves と同一機構
+        （`_start_move`）で対象箱を `to_zone` へ移す。teleport は即時、slide は後続 `step_to`
+        が等速で駆動する。アクション主体は executor 経由で本メソッドを呼び、SimWorld を直接
+        触らない（不変条件5）。
+        """
+        if box_name not in {b.name for b in self.config.boxes}:
+            raise ValueError(f"apply_effect: 未知の箱 {box_name!r}")
+        move = ScriptedMove(
+            box=box_name,
+            at_time=at_time,
+            to_zone=to_zone,
+            mode=mode,  # type: ignore[arg-type]
+            duration_s=duration_s,
+            offset=offset,
+        )
+        self._start_move(move)
 
     # ----------------------------------------------------------------- truth
 

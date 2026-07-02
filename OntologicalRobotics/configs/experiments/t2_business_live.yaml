@@ -1,0 +1,19 @@
+# T2 業務‐物理クエリ実験 (H6, H7) — live 計測（課金・要コスト承認）。
+#
+# stub 版（t2_business.yaml）と同一の世界・質問・条件で、エージェント3条件を実LLMで回す。
+# 実行前に必ず `orx exp estimate configs/experiments/t2_business_live.yaml` で概算を確認し、
+# ユーザー承認を得ること（CLAUDE.md §6）。初回 mode=openai 記録後は応答が全キャッシュされ、
+# 以後は provider.mode=cache で 0 円再現できる（PROJECT.md §8.3）。
+name: t2-business-live
+task: t2
+world_config: configs/world/t2_warehouse.yaml
+conditions: [OR-reference, OR-full, B1, B0]
+seeds: [201, 202, 203]   # 3世界 × 18問 = 54問
+duration_s: 20.0
+claim_ttl_s: 5.0
+t2:
+  provider:
+    mode: openai
+    # スナップショット名を明示ピン留め（構成ハッシュ・マニフェストに焼き込まれる, §6）。
+    # 課金実行の前に、組織で使う**正確な日付付きスナップショット**へ更新すること。
+    llm_model: gpt-5.4-mini

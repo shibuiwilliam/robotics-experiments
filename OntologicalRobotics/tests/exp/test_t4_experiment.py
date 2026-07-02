@@ -18,9 +18,7 @@ def mini_result(tmp_path_factory: pytest.TempPathFactory) -> T4ExperimentResult:
     config = load_experiment(EXP_CONFIG)
     config = config.model_copy(update={"seeds": [501, 502]})
     assert config.t4 is not None
-    config = config.model_copy(
-        update={"t4": config.t4.model_copy(update={"values": [0.0, 0.3]})}
-    )
+    config = config.model_copy(update={"t4": config.t4.model_copy(update={"values": [0.0, 0.3]})})
     _, result = run_experiment(config, tmp_path_factory.mktemp("t4"))
     assert isinstance(result, T4ExperimentResult)
     return result

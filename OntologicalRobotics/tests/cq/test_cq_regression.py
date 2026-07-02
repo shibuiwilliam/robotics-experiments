@@ -33,7 +33,5 @@ def test_cq_definitions_load() -> None:
 def test_all_cqs_pass(canonical_run) -> None:
     results = run_all_cqs(canonical_run)
     failures = [r for r in results if not r.passed]
-    detail = "\n".join(
-        f"{r.cq_id}: got={r.got} expected={r.expected}" for r in failures
-    )
+    detail = "\n".join(f"{r.cq_id}: got={r.got} expected={r.expected}" for r in failures)
     assert not failures, f"CQ回帰失敗:\n{detail}"

@@ -1,0 +1,16 @@
+# S7 ツール側ガード実証 — agent（live）射程（follow-up, T14, H4/H6・安全）。課金・要コスト承認。
+# S7 mixed 所見（実 LLM は確認(X5)規則を完全に守らず誤配送 0 を達成しない）への対処として、
+# 低マージン配送を**システムがハード強制で ESCALATE に上書きする安全ガード**が、決定的版の安全
+# （誤配送0）をエージェントに移植できるかを**中難度 sep=0.6**で検証する（高マージンの自動化は保つ）。
+# OR-full-llm（プロンプト依存）/ OR-full-llm-guarded（ツール強制）/ B0-llm（手掛かりなし）。
+name: s7-guard-live
+scenario: s7
+world_config: configs/world/s7_ownership.yaml
+conditions: [OR-full-llm, OR-full-llm-guarded, B0-llm]
+seeds: [701, 702, 703, 704, 705, 706, 707, 708]
+duration_s: 0.0
+params:
+  primary_sep: 0.6  # 中難度: 一部は高マージン（自動配送可）・一部は低マージン（委譲）
+provider:
+  mode: openai
+  llm_model: gpt-5.4-mini

@@ -94,9 +94,7 @@ def heuristic_infer(schema_name: str, samples: list[dict[str, Any]]) -> VendorMa
 
     # 単位推定: 倉庫世界の座標は ±数m。ピーク値が5以下ならm、500以下ならcm、
     # それ以上はmm（1500 は「15m(cm)」より「1.5m(mm)」が妥当）
-    magnitudes = [
-        abs(float(v)) for p in axes.values() for v in flat_keys[p]
-    ]
+    magnitudes = [abs(float(v)) for p in axes.values() for v in flat_keys[p]]
     peak = max(magnitudes) if magnitudes else 0.0
     units = "m" if peak <= 5 else ("cm" if peak <= 500 else "mm")
 
@@ -106,12 +104,16 @@ def heuristic_infer(schema_name: str, samples: list[dict[str, Any]]) -> VendorMa
         if path in axes.values():
             continue
         leaf = path.split(".")[-1]
-        if symbol_path is None and _SYMBOL_PATTERN.search(leaf) and any(
-            isinstance(v, str) for v in values
+        if (
+            symbol_path is None
+            and _SYMBOL_PATTERN.search(leaf)
+            and any(isinstance(v, str) for v in values)
         ):
             symbol_path = path
-        if conf_path is None and _CONF_PATTERN.search(leaf) and all(
-            isinstance(v, int | float) and 0 <= float(v) <= 1 for v in values
+        if (
+            conf_path is None
+            and _CONF_PATTERN.search(leaf)
+            and all(isinstance(v, int | float) and 0 <= float(v) <= 1 for v in values)
         ):
             conf_path = path
 
@@ -122,7 +124,10 @@ def heuristic_infer(schema_name: str, samples: list[dict[str, Any]]) -> VendorMa
             "sensor_id": "fuzzed",
             "fields": {
                 "position": {
-                    "x": axes["x"], "y": axes["y"], "z": axes["z"], "units": units,
+                    "x": axes["x"],
+                    "y": axes["y"],
+                    "z": axes["z"],
+                    "units": units,
                 },
                 **({"symbol_id": symbol_path} if symbol_path else {}),
                 **({"confidence": conf_path} if conf_path else {}),
@@ -140,9 +145,7 @@ _LLM_PROMPT = (
 )
 
 
-def llm_infer(
-    schema_name: str, samples: list[dict[str, Any]], llm: LLMClient
-) -> VendorMapping:
+def llm_infer(schema_name: str, samples: list[dict[str, Any]], llm: LLMClient) -> VendorMapping:
     """LLM支援のマッピング推定（live・キャッシュ記録。stubでは検証エラーになる）。"""
     request = LLMRequest(
         messages=[
@@ -162,7 +165,9 @@ def llm_infer(
             "sensor_id": "fuzzed",
             "fields": {
                 "position": {
-                    "x": data["x"], "y": data["y"], "z": data["z"],
+                    "x": data["x"],
+                    "y": data["y"],
+                    "z": data["z"],
                     "units": data["units"],
                 },
                 **({"symbol_id": data["symbol_id"]} if data.get("symbol_id") else {}),
@@ -179,7 +184,10 @@ def validate_mapping(
     errors: list[str] = []
     for i, sample in enumerate(samples):
         obs = RawObservation(
-            robot_id="onboard", vendor_schema=schema_name, sim_time=0.0, seq=i,
+            robot_id="onboard",
+            vendor_schema=schema_name,
+            sim_time=0.0,
+            seq=i,
             payload=sample,
         )
         try:
@@ -189,9 +197,7 @@ def validate_mapping(
             continue
         for det in detections:
             if max(abs(v) for v in det.position) > 10.0:
-                errors.append(
-                    f"sample{i}: 位置が世界境界外 {det.position}（単位推定の誤り?）"
-                )
+                errors.append(f"sample{i}: 位置が世界境界外 {det.position}（単位推定の誤り?）")
                 break
     return errors
 

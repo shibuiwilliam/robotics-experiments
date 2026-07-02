@@ -37,9 +37,7 @@ def graph() -> WorldGraph:
 
 def test_assert_and_query_roundtrip(graph: WorldGraph) -> None:
     graph.assert_claim(claim_inzone("c1", ZONE_A, 1.0))
-    rows = graph.query(
-        f"SELECT ?z WHERE {{ GRAPH ?g {{ <{BOX}> <{iri.st('inZone')}> ?z }} }}"
-    )
+    rows = graph.query(f"SELECT ?z WHERE {{ GRAPH ?g {{ <{BOX}> <{iri.st('inZone')}> ?z }} }}")
     assert any(r["z"] == ZONE_A for r in rows)
 
 

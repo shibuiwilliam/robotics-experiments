@@ -12,8 +12,12 @@ from orx.exp.suites.s5_hospital import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s5-fal", scenario="s5", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[501], duration_s=0.0,
+        name="s5-fal",
+        scenario="s5",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[501],
+        duration_s=0.0,
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s5") / "exp", lambda *a: None)
 
@@ -47,6 +51,17 @@ def test_normative_cost_tradeoff(result: dict) -> None:
     """規範遵守は経路を延ばす（規範なしより規範コストが高い）が違反0を達成。"""
     pc = result["per_condition"]
     assert pc["OR-full"]["normative_cost"] >= pc["OR-no-normative"]["normative_cost"]
+
+
+def test_robustness_or_full_audit_beats_baselines_across_sweep(result: dict) -> None:
+    """前面化した頑健性指標(R-1C): custody 欠落率 掃引の**全域**で OR-full の監査完全性が
+    各条件以上。S5 は決定的・seed 非依存で対比較 p 値を持たないため、この掃引曲線が主指標
+    （IMPROVEMENT.md §1-C: 頑健性掃引の前面化）。回帰でこの優位が崩れないことを固定する。"""
+    ac = result["robustness"]["audit_completeness"]
+    full = ac["OR-full"]
+    assert len(full) >= 3  # 掃引点が存在
+    for b in ("OR-no-normative", "OR-no-prov", "B1"):
+        assert all(f >= ac[b][i] - 1e-9 for i, f in enumerate(full))
 
 
 def test_all_predictions_pass(result: dict) -> None:

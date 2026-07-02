@@ -1,0 +1,13 @@
+# S5 ドメイン固有規制の境界 — agent（live）射程（follow-up, T12, H5）。課金・要コスト承認。
+# S5 live null（常識的規制では norm-map の上積みが現れない）の境界を、**LLM 事前知識に無い架空規制**で検証。
+# OR-full-llm（規範写像 reagent_zeta→atrium 禁止）/ B1-llm（規範写像なし＝最短で atrium 通過）。
+# 仮説: B1-llm は架空規制を知らず違反 > 0、OR-full-llm は規範写像で違反0 → norm-map の価値が再び立つ。
+name: s5-domain-norm-live
+scenario: s5
+world_config: configs/world/s5_domain_norm.yaml
+conditions: [OR-full-llm, B1-llm]
+seeds: [501, 502, 503, 504]
+duration_s: 0.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-mini

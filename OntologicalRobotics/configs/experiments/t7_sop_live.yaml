@@ -1,0 +1,16 @@
+# T7 SOP検索実験 (H4) — live 計測（課金・要コスト承認）。
+#
+# vector-rag を OpenAI テキスト埋め込みで本計測する（onto-guided は決定的）。
+# stub 埋め込みの数値は無意味（H4 の根拠に引用しない, IMPROVEMENT.md C2）。
+# 実行前に `orx exp estimate configs/experiments/t7_sop_live.yaml` で概算確認＋承認。
+name: t7-sop-live
+task: t7
+world_config: configs/world/t2_warehouse.yaml
+conditions: [onto-guided, vector-rag]
+seeds: [301, 302, 303]
+duration_s: 0.0   # T7は物理記録不要
+t7:
+  provider:
+    mode: openai
+    # 埋め込みスナップショットを明示ピン留め（§6）。課金前に正確な版へ更新すること。
+    text_embedding_model: text-embedding-3-small

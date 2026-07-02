@@ -38,6 +38,16 @@ CONDITIONS: dict[str, dict[str, object]] = {
 
 
 def _git_commit() -> str:
+    """HEAD の短縮ハッシュを返す。ORX ツリーに未コミット変更があれば `-dirty` を付す。
+
+    再現性スタンプの誠実さのため（IMPROVEMENT.md R-3f）: HEAD だけでは working-tree の
+    改変が再現情報から落ちるため、dirty を明示する。dirty 判定は `repo_root()`
+    （= ORX プロジェクトツリー）に限定する（IMPROVEMENT.md D-1）: git リポジトリの
+    トップレベルが ORX の親でも、兄弟ディレクトリの変更は ORX の結果の来歴に無関係。
+    """
+    from orx.common.paths import repo_root
+
+    root = repo_root()
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
@@ -45,8 +55,22 @@ def _git_commit() -> str:
             text=True,
             timeout=10,
             check=False,
+            cwd=root,
         )
-        return out.stdout.strip() or "unknown"
+        commit = out.stdout.strip()
+        if not commit:
+            return "unknown"
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--", "."],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            cwd=root,
+        )
+        if status.stdout.strip():
+            commit += "-dirty"
+        return commit
     except OSError:
         return "unknown"
 
@@ -79,16 +103,12 @@ class _Pipeline:
     """
 
     def __init__(self, config: RunConfig, seeds: SeedTree) -> None:
-        self.anchorer = Anchorer(
-            config.anchoring, config.world.zones, config.claim_ttl_s, seeds
-        )
+        self.anchorer = Anchorer(config.anchoring, config.world.zones, config.claim_ttl_s, seeds)
         self.graph = WorldGraph(belief_enabled=config.belief_enabled)
         self.anchor_observations: list[AnchorObservation] = []
         self.world_snapshots: list[StateSnapshot] = []
         self._delay_s = config.world.degradation.observation_delay_s
-        self._delayed_robots = {
-            r.name for r in config.world.robots if not r.visual_embedding
-        }
+        self._delayed_robots = {r.name for r in config.world.robots if not r.visual_embedding}
         self._pending: list[PerceptionEvent] = []
 
     def feed(self, event: PerceptionEvent, writer: RunWriter | None) -> None:
@@ -101,9 +121,7 @@ class _Pipeline:
     def drain(self, now: float, writer: RunWriter | None) -> None:
         """配信期限が来た保留イベントを処理する。"""
         due = [e for e in self._pending if e.sim_time + self._delay_s <= now + 1e-9]
-        self._pending = [
-            e for e in self._pending if e.sim_time + self._delay_s > now + 1e-9
-        ]
+        self._pending = [e for e in self._pending if e.sim_time + self._delay_s > now + 1e-9]
         for event in due:
             self.consume_event(event, writer)
 
@@ -121,9 +139,7 @@ class _Pipeline:
         for record in result.records:
             if writer:
                 writer.append_anchor_record(record)
-        for entity, true_id in zip(
-            result.assignments, event.oracle_truth_ids, strict=True
-        ):
+        for entity, true_id in zip(result.assignments, event.oracle_truth_ids, strict=True):
             if true_id is None:
                 continue
             obs = AnchorObservation(
@@ -263,10 +279,7 @@ def replay_episode(run_dir: Path, condition: str = "OR-full") -> FidelityReport:
         nonlocal event_idx, end_time
         while event_idx < len(events) and events[event_idx].sim_time <= limit + 1e-9:
             group_time = events[event_idx].sim_time
-            while (
-                event_idx < len(events)
-                and abs(events[event_idx].sim_time - group_time) <= 1e-9
-            ):
+            while event_idx < len(events) and abs(events[event_idx].sim_time - group_time) <= 1e-9:
                 stage.feed(events[event_idx], writer=None)
                 event_idx += 1
             end_time = max(end_time, group_time)
@@ -282,17 +295,13 @@ def replay_episode(run_dir: Path, condition: str = "OR-full") -> FidelityReport:
     report = stage.fidelity(truth_snaps, end_time)
     out_dir = run_dir / "replays" / condition
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "metrics.json").write_text(
-        report.model_dump_json(indent=2) + "\n", encoding="utf-8"
-    )
+    (out_dir / "metrics.json").write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
     return report
 
 
 def _apply_condition(config: RunConfig, condition: str) -> None:
     if condition not in CONDITIONS:
-        raise ValueError(
-            f"未知の条件 {condition!r}（対応: {sorted(CONDITIONS)}）"
-        )
+        raise ValueError(f"未知の条件 {condition!r}（対応: {sorted(CONDITIONS)}）")
     overrides = CONDITIONS[condition]
     if overrides.get("anchoring_enabled") is False:
         config.anchoring.enabled = False

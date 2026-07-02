@@ -85,8 +85,7 @@ def lift(obs: RawObservation, mapping: VendorMapping) -> list[Detection]:
     """ベンダー観測を共通 Detection 列へ正規化する（埋め込みは未付与）。"""
     if obs.vendor_schema != mapping.schema_name:
         raise ValueError(
-            f"スキーマ不一致: 観測 {obs.vendor_schema!r} に対しマッピング "
-            f"{mapping.schema_name!r}"
+            f"スキーマ不一致: 観測 {obs.vendor_schema!r} に対しマッピング {mapping.schema_name!r}"
         )
     dets_raw = _resolve(obs.payload, mapping.detections_path)
     if not isinstance(dets_raw, list):

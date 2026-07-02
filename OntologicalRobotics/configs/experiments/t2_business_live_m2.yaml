@@ -1,0 +1,17 @@
+# T2 業務‐物理クエリ — 第2モデル再現（R-A, PROJECT.md §8.3）。課金・要コスト承認。
+#
+# 第1モデル（t2_business_live.yaml = gpt-5.4-mini）と**同一の世界・質問・条件**で llm_model
+# のみ第2スナップショットへ差し替え、結果のモデル依存性を切り分ける。第1モデルは全応答キャッシュ
+# 済みのため 0 円、第2モデルのみ新規記録（課金）。`orx exp estimate <this>` で概算確認＋承認の上で実行。
+# llm_model は組織で使う**正確な第2スナップショット**へ更新すること（下記は例）。
+name: t2-business-live-m2
+task: t2
+world_config: configs/world/t2_warehouse.yaml
+conditions: [OR-reference, OR-full, B1, B0]
+seeds: [201, 202, 203]
+duration_s: 20.0
+claim_ttl_s: 5.0
+t2:
+  provider:
+    mode: openai
+    llm_model: gpt-5.4-2026-03-05   # ← 第2スナップショット（例: 非mini）。正確な日付付き版へ更新。

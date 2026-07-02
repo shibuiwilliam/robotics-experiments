@@ -77,12 +77,20 @@ def generate_episode(
     # 物理的に重ならない位置に降ろす
     moves = [
         ScriptedMove(
-            box=target, at_time=round(t_target, 3), to_zone=params.handoff_zone,
-            mode="slide", duration_s=params.slide_duration_s, offset=(round(x_target, 3), 0.25),
+            box=target,
+            at_time=round(t_target, 3),
+            to_zone=params.handoff_zone,
+            mode="slide",
+            duration_s=params.slide_duration_s,
+            offset=(round(x_target, 3), 0.25),
         ),
         ScriptedMove(
-            box=decoy, at_time=round(max(0.5, t_decoy), 3), to_zone=params.handoff_zone,
-            mode="slide", duration_s=params.slide_duration_s, offset=(round(x_decoy, 3), 0.25),
+            box=decoy,
+            at_time=round(max(0.5, t_decoy), 3),
+            to_zone=params.handoff_zone,
+            mode="slide",
+            duration_s=params.slide_duration_s,
+            offset=(round(x_decoy, 3), 0.25),
         ),
     ]
     world = base_world.model_copy(
@@ -170,12 +178,8 @@ def evaluate_condition(
     stage.drain_all(writer=None)
     maybe_decide(end_time + 1.0)
 
-    decision_truth = min(
-        truth_states, key=lambda s: abs(s.sim_time - task.decision_time)
-    )
-    success = score_t1(
-        choice, decision_truth, task.target_object_id, params.success_threshold_m
-    )
+    decision_truth = min(truth_states, key=lambda s: abs(s.sim_time - task.decision_time))
+    success = score_t1(choice, decision_truth, task.target_object_id, params.success_threshold_m)
     fidelity = stage.fidelity(truth_snaps, end_time)
     outcome = T1EpisodeOutcome(
         seed=seed,

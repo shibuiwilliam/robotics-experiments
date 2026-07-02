@@ -12,9 +12,14 @@ from orx.exp.suites.s7_ownership import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s7-fal", scenario="s7", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[701, 702, 703, 704, 705, 706],
-        duration_s=0.0, knob="lookalike_sep", knob_values=[1.5, 1.0, 0.6, 0.3],
+        name="s7-fal",
+        scenario="s7",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[701, 702, 703, 704, 705, 706],
+        duration_s=0.0,
+        knob="lookalike_sep",
+        knob_values=[1.5, 1.0, 0.6, 0.3],
         params={"primary_sep": 0.6},
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s7") / "exp", lambda *a: None)
@@ -52,6 +57,42 @@ def test_robustness_or_full_beats_vec_across_sweep(result: dict) -> None:
     vec = rob["misdelivery_rate"]["OR-vec"]
     assert all(f <= v + 1e-9 for f, v in zip(full, vec, strict=True))
     assert all(f == 0.0 for f in full)  # 確認(X5)で全域 誤配送0
+
+
+def test_hardcase_crowded_zone_or_full_zero_misdelivery(result: dict) -> None:
+    """ハードケース(R-1C): 最混雑ゾーン(4人)でも OR-full は署名＋確認(X5)で誤配送0、
+    OR-vec/B0 は owner非依存で誤配送多数。ゾーン+記号が最も無力な4-way曖昧で H4 の価値を示す。"""
+    from collections import Counter
+
+    from orx.common.config import load_config
+    from orx.common.paths import repo_root
+    from orx.exp.suites.s7_ownership.model import S7World
+
+    world = load_config(repo_root() / runner.WORLD, S7World)
+    crowd = Counter(world.resident_zone.values())
+    assert max(crowd.values()) >= 4  # 4人ゾーン（ハードケース）の存在
+    pc = result["per_condition"]
+    assert pc["OR-full"]["misdelivery_rate"] == 0.0
+    assert pc["OR-vec"]["misdelivery_rate"] > 0.5
+
+
+def test_success_rate_powered_vs_b0_at_production_seeds() -> None:
+    """§2 検出力: 本番シード数（20）では自動成功率の OR-full vs B0 が連続指標でも有意（p<0.05）。
+
+    主操作点 sep=0.6 は OR-full の確認委譲が多く、8 seed では Wilcoxon p≈0.0625（不確定）だった。
+    効果は全 seed 数で一貫（OR-full≈2×B0）なため 20 seed で適切に検出力を与える。安全側（誤配送0）の
+    McNemar は更に有意。これを回帰固定し、シード数削減や効果消失で再び不確定化しないようにする。"""
+    from pathlib import Path
+
+    from orx.exp import scenario as scn
+
+    cfg = scn.load_scenario_experiment(Path("configs/experiments/s7_ownership.yaml"))
+    assert len(cfg.seeds) >= 16  # 検出力確保のための本番シード数
+    res = runner.run(cfg, Path("/tmp"), lambda *a: None)
+    cmp_b0 = next(c for c in res["comparisons"] if c["condition_b"] == "B0")
+    assert cmp_b0["wilcoxon_p"] < 0.05  # 自動成功率の優位が連続指標で有意
+    assert cmp_b0["mcnemar_p"] < 0.05  # 安全（誤配送0）の優位も有意
+    assert res["per_condition"]["OR-full"]["misdelivery_rate"] == 0.0  # 誤配送0 は不変
 
 
 def test_all_predictions_pass(result: dict) -> None:

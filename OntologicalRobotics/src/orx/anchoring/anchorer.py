@@ -101,8 +101,8 @@ class Anchorer:
         for det in event.detections:
             entity, score, decision = resolution[det.index]
             state = self._entities.get(entity)
-            new_embedding = det.embedding if det.embedding is not None else (
-                state.embedding if state else None
+            new_embedding = (
+                det.embedding if det.embedding is not None else (state.embedding if state else None)
             )
             symbol = det.symbol_id or (state.symbol if state else None)
             velocity = self._update_velocity(state, det.position, event.sim_time)
@@ -120,17 +120,13 @@ class Anchorer:
                     decision=decision,
                 )
             )
-            claims.extend(
-                self._emit_claims(det, entity, track, agent, event.sim_time, score)
-            )
+            claims.extend(self._emit_claims(det, entity, track, agent, event.sim_time, score))
         assignments = [resolution[det.index][0] for det in event.detections]
         return AnchorResult(claims=claims, records=records, assignments=assignments)
 
     # ------------------------------------------------------------- resolution
 
-    def _assign_event(
-        self, event: PerceptionEvent
-    ) -> dict[int, tuple[str, float, str]]:
+    def _assign_event(self, event: PerceptionEvent) -> dict[int, tuple[str, float, str]]:
         """イベント内の全検出を一括解決する。
 
         記号ID検出を先に（登録簿は決定的）、残りのID無し検出は全 (検出, 候補)
@@ -212,9 +208,7 @@ class Anchorer:
                 out.append((score, entity))
         return out
 
-    def _update_velocity(
-        self, state: _EntityState | None, position: Vec3, now: float
-    ) -> Vec3:
+    def _update_velocity(self, state: _EntityState | None, position: Vec3, now: float) -> Vec3:
         """等速モデルの速度推定（EMA、v_max でクランプ）。"""
         if state is None:
             return (0.0, 0.0, 0.0)
@@ -223,9 +217,7 @@ class Anchorer:
             return state.velocity
         ema = self.params.velocity_ema
         raw = tuple((p - q) / dt for p, q in zip(position, state.position, strict=True))
-        blended = tuple(
-            (1.0 - ema) * v + ema * r for v, r in zip(state.velocity, raw, strict=True)
-        )
+        blended = tuple((1.0 - ema) * v + ema * r for v, r in zip(state.velocity, raw, strict=True))
         speed = math.sqrt(sum(v * v for v in blended))
         if speed > self.params.v_max:
             blended = tuple(v * self.params.v_max / speed for v in blended)
@@ -238,9 +230,7 @@ class Anchorer:
         # 静止仮説: 最終観測位置周りの時間成長ガウス。密度正規化で大σにペナルティ
         d_static = math.dist(position, state.position)
         sigma_eff = p.spatial_sigma * (1.0 + dt / p.sigma_growth_tau)
-        s_stationary = math.exp(-(d_static**2) / (2 * sigma_eff**2)) * (
-            p.spatial_sigma / sigma_eff
-        )
+        s_stationary = math.exp(-(d_static**2) / (2 * sigma_eff**2)) * (p.spatial_sigma / sigma_eff)
         # 搬送仮説: 等速予測位置周りのガウス（予測誤差は時間と共に成長）
         d_transit = math.dist(position, state.predicted_position(now))
         sigma_tr = p.transit_sigma_base + p.transit_sigma_rate * dt
@@ -273,25 +263,43 @@ class Anchorer:
         claims: list[Claim] = []
         if track not in self._anchored_tracks:
             self._anchored_tracks.add(track)
-            conf = self.params.id_confidence if det.symbol_id else max(
-                0.5, round(0.9 * score, 6)
-            )
+            conf = self.params.id_confidence if det.symbol_id else max(0.5, round(0.9 * score, 6))
             claims.append(
-                self._claim(track, iri.upper("anchoredTo"), Term(kind="iri", value=entity),
-                            agent, conf, now, ttl=None)
+                self._claim(
+                    track,
+                    iri.upper("anchoredTo"),
+                    Term(kind="iri", value=entity),
+                    agent,
+                    conf,
+                    now,
+                    ttl=None,
+                )
             )
         if entity not in self._typed_entities:
             self._typed_entities.add(entity)
             claims.append(
-                self._claim(entity, iri.RDF_TYPE, Term(kind="iri", value=iri.upper("Box")),
-                            agent, det.confidence, now, ttl=None)
+                self._claim(
+                    entity,
+                    iri.RDF_TYPE,
+                    Term(kind="iri", value=iri.upper("Box")),
+                    agent,
+                    det.confidence,
+                    now,
+                    ttl=None,
+                )
             )
         if det.symbol_id and entity not in self._identified_entities:
             self._identified_entities.add(entity)
             claims.append(
-                self._claim(entity, iri.upper("hasIdentifier"),
-                            Term(kind="literal", value=det.symbol_id),
-                            agent, self.params.id_confidence, now, ttl=None)
+                self._claim(
+                    entity,
+                    iri.upper("hasIdentifier"),
+                    Term(kind="literal", value=det.symbol_id),
+                    agent,
+                    self.params.id_confidence,
+                    now,
+                    ttl=None,
+                )
             )
         for pred, value in (
             ("posX", det.position[0]),
@@ -299,17 +307,28 @@ class Anchorer:
             ("posZ", det.position[2]),
         ):
             claims.append(
-                self._claim(entity, iri.st(pred),
-                            Term(kind="literal", value=repr(float(value)),
-                                 datatype=iri.XSD_DOUBLE),
-                            agent, det.confidence, now, ttl=self.claim_ttl_s)
+                self._claim(
+                    entity,
+                    iri.st(pred),
+                    Term(kind="literal", value=repr(float(value)), datatype=iri.XSD_DOUBLE),
+                    agent,
+                    det.confidence,
+                    now,
+                    ttl=self.claim_ttl_s,
+                )
             )
         zone = zone_of(self.zones, det.position)
         if zone is not None:
             claims.append(
-                self._claim(entity, iri.st("inZone"),
-                            Term(kind="iri", value=iri.entity("zone", zone)),
-                            agent, det.confidence, now, ttl=self.claim_ttl_s)
+                self._claim(
+                    entity,
+                    iri.st("inZone"),
+                    Term(kind="iri", value=iri.entity("zone", zone)),
+                    agent,
+                    det.confidence,
+                    now,
+                    ttl=self.claim_ttl_s,
+                )
             )
         return claims
 

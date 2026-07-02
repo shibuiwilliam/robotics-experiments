@@ -1,0 +1,15 @@
+# S7 介護「所有」 — agent（live）射程（R-B, T14）。課金・要コスト承認。
+# 双対表現の蒸留情報（最終目撃ゾーン＋note署名コサイン類似度）が、実 LLM の
+# ID無し瓜二つ所有物の正配送＋確信不足時の委譲を助けるかを測る（H2/H4/H6-隣接の agent 検証）。
+# OR-full-llm（蒸留双対表現＋確認マージン規則）/ B0-llm（ゾーンのみ・署名/所有なし）。
+name: s7-ownership-live
+scenario: s7
+world_config: configs/world/s7_ownership.yaml
+conditions: [OR-full-llm, OR-full-llm-guarded, B0-llm]
+seeds: [701, 702, 703, 704, 705, 706, 707, 708]
+duration_s: 0.0
+params:
+  primary_sep: 0.3  # 瓜二つ（look-alike）— 双対表現の価値が立ち上がる過酷域
+provider:
+  mode: openai
+  llm_model: gpt-5.4-mini

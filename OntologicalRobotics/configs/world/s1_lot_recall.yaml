@@ -1,9 +1,11 @@
 # S1 ロット回収世界（T8）: 平常ピッキング運転中に「ロット L-A 回収」の割込み。
-# 回収対象ロット LOT-A の3個体は状態が散在する:
-#   b1, b6 = 棚に静置（arm_a がバーコード可読）
-#   b3     = 搬出域へ搬送済み（mobile_b=擬似LiDARのみ視認・バーコード不可読）
-# → B0/B1 は b3（ID不可読の搬送済み個体）のロット帰属を解けず recall<1。
-#   OR-full は越境同一性(H2)＋識別子スレッド(H6)で b3 を追跡し recall=1。
+# 回収対象ロット LOT-A の4個体は状態が散在し、**ハード事例が複数**ある（IMPROVEMENT.md R-2）:
+#   b1, b6 = 棚に静置（arm_a がバーコード可読 — easy 2件）
+#   b3, b5 = 搬出域へ**同時搬送中**（mobile_b=擬似LiDARのみ視認・バーコード不可読 — hard 2件）
+# → B0 は搬送中の b3/b5 を arm_a 最新フレームで取りこぼし membership_recall=0.5。
+#   B1 は横断同一性が無く b3/b5 の現在地が棚のまま陳腐化し location_accuracy=0.5。
+#   OR-full は越境同一性(H2)＋識別子スレッド(H6)で b3/b5 を同時追跡し completion=1.0。
+# 単一ハード事例(n=1)では 1.000 が「唯一の難所が解けた」に見えるため、同時搬送 2 件で頑健化。
 name: s1_lot_recall
 physics_dt: 0.002
 perception_hz: 2.0
@@ -19,7 +21,7 @@ boxes:
   - {name: b2, zone: shelf_a, barcode: BC-102, lot: LOT-B, rgba: [0.25, 0.60, 0.85, 1.0]}
   - {name: b3, zone: shelf_a, barcode: BC-103, lot: LOT-A, rgba: [0.30, 0.75, 0.35, 1.0]}
   - {name: b4, zone: shelf_a, barcode: BC-104, lot: LOT-C, rgba: [0.85, 0.65, 0.20, 1.0]}
-  - {name: b5, zone: shelf_a, barcode: BC-105, lot: LOT-B, rgba: [0.60, 0.35, 0.75, 1.0]}
+  - {name: b5, zone: shelf_a, barcode: BC-105, lot: LOT-A, rgba: [0.60, 0.35, 0.75, 1.0]}
   - {name: b6, zone: shelf_a, barcode: BC-106, lot: LOT-A, rgba: [0.45, 0.55, 0.50, 1.0]}
   - {name: b7, zone: shelf_a, barcode: BC-107, lot: LOT-C, rgba: [0.20, 0.45, 0.75, 1.0]}
   - {name: b8, zone: shelf_a, barcode: BC-108, lot: LOT-C, rgba: [0.75, 0.45, 0.55, 1.0]}
@@ -37,7 +39,7 @@ robots:
     detection_range: 2.6
     barcode_read_range: 0.0
     visual_embedding: false
-# 進行中の搬送（割込み前から動いている）: b3(回収対象) と b5(非対象) が搬出域へ
+# 進行中の搬送（割込み前から動いている）: b3 と b5（**いずれも回収対象 LOT-A**）が搬出域へ同時搬送
 scripted_moves:
   - {box: b3, at_time: 4.0, to_zone: handoff, mode: slide, duration_s: 6.0, offset: [-0.4, 0.25]}
   - {box: b5, at_time: 5.0, to_zone: handoff, mode: slide, duration_s: 6.0, offset: [0.4, 0.25]}

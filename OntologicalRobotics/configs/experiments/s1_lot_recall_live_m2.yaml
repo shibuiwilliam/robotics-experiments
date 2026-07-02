@@ -1,0 +1,13 @@
+# S1 ロット回収 — 第2モデル再現（R-A, PROJECT.md §8.3）。課金・要コスト承認。
+# 第1モデル（s1_lot_recall_live.yaml = gpt-5.4-mini）と同一条件で llm_model のみ第2版へ差し替え、
+# H2/H6/H7 の agent 結果のモデル依存性を切り分ける。第1版はキャッシュ済みで 0 円。
+name: s1-lot-recall-live-m2
+scenario: s1
+world_config: configs/world/s1_lot_recall.yaml
+conditions: [OR-full-llm, B1-llm, B0-llm]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108]
+duration_s: 18.0
+claim_ttl_s: 8.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-2026-03-05   # ← 第2スナップショット（例）。正確な日付付き版へ更新。

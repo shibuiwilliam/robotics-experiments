@@ -29,9 +29,7 @@ def embed_object(prototype: list[float], sigma: float, rng: np.random.Generator)
     return [float(x) for x in (v / n if n else v)]
 
 
-def ground(
-    embedding: list[float], prototypes: dict[str, list[float]]
-) -> tuple[str, float]:
+def ground(embedding: list[float], prototypes: dict[str, list[float]]) -> tuple[str, float]:
     """最近傍プロトタイプへ接地。返り値 (class, confidence=top1−top2 cos)。"""
     e = np.asarray(embedding, dtype=float)
     sims = sorted(

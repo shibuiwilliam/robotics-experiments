@@ -28,8 +28,12 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s3-rep", scenario="s3", world_config=runner.WORLD, conditions=CONDITIONS,
-        seeds=[301, 302, 303], duration_s=0.0,
+        name="s3-rep",
+        scenario="s3",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[301, 302, 303],
+        duration_s=0.0,
     )
 
 
@@ -61,8 +65,11 @@ def test_metamorphic_material_rename_invariant() -> None:
             },
             "machines": [
                 m.model_copy(
-                    update={"true_material_success": {rmat(k): v
-                            for k, v in m.true_material_success.items()}}
+                    update={
+                        "true_material_success": {
+                            rmat(k): v for k, v in m.true_material_success.items()
+                        }
+                    }
                 )
                 for m in world.machines
             ],

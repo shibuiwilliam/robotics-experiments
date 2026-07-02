@@ -26,9 +26,7 @@ def test_heuristic_infer_recovers_truth_mapping() -> None:
         mapping = heuristic_infer(spec.schema_name, samples)
         from orx.exp.suites.t5 import mapping_to_yaml
 
-        accuracy, _, _ = score_against_truth(
-            mapping_to_yaml(mapping), truth_mapping_yaml(spec)
-        )
+        accuracy, _, _ = score_against_truth(mapping_to_yaml(mapping), truth_mapping_yaml(spec))
         correct += 1 if accuracy == 1.0 else 0
     assert correct >= 8  # 大半のファズスキーマを完全復元
 
@@ -74,8 +72,6 @@ def test_unknown_mode_rejected() -> None:
 
 @pytest.mark.parametrize("units,values", [("m", 1.5), ("cm", 150.0), ("mm", 1500.0)])
 def test_unit_inference(units: str, values: float) -> None:
-    samples = [
-        {"dets": [{"x": values, "y": values / 2, "z": values / 10, "cf": 0.9}]}
-    ]
+    samples = [{"dets": [{"x": values, "y": values / 2, "z": values / 10, "cf": 0.9}]}]
     mapping = heuristic_infer("u", samples)
     assert mapping.position.units == units

@@ -19,8 +19,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC = REPO_ROOT / "src" / "orx"
 
 OR_CORE = ["anchoring", "kg", "agent"]
-NON_KG = ["common", "sim", "skills", "business", "perception",
-          "anchoring", "agent", "oracle", "replay", "exp"]
+NON_KG = [
+    "common",
+    "sim",
+    "skills",
+    "business",
+    "perception",
+    "anchoring",
+    "agent",
+    "oracle",
+    "replay",
+    "exp",
+]
 
 
 def test_import_contracts() -> None:
@@ -30,9 +40,7 @@ def test_import_contracts() -> None:
         capture_output=True,
         text=True,
     )
-    assert result.returncode == 0, (
-        f"import-linter 契約違反:\n{result.stdout}\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"import-linter 契約違反:\n{result.stdout}\n{result.stderr}"
 
 
 def _modules(package: str) -> Iterator[tuple[Path, ast.Module]]:
@@ -88,9 +96,7 @@ def test_truth_not_referenced_by_or_core() -> None:
                 assert name not in forbidden_names, f"{path}: 真値スキーマをimport"
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute):
-                    assert node.attr != "oracle_truth_ids", (
-                        f"{path}: oracle_truth_ids へのアクセス"
-                    )
+                    assert node.attr != "oracle_truth_ids", f"{path}: oracle_truth_ids へのアクセス"
                     if node.attr == "truth" and isinstance(node.ctx, ast.Load):
                         raise AssertionError(f"{path}: 真値アクセサ .truth への参照")
                 if isinstance(node, ast.Name):

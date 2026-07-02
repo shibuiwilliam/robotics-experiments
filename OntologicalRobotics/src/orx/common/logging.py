@@ -14,7 +14,8 @@ def make_run_logger(run_dir: Path, **initial: Any) -> structlog.stdlib.BoundLogg
     プロセスグローバル設定を汚さないよう wrap_logger を使う。
     """
     run_dir.mkdir(parents=True, exist_ok=True)
-    log_file = (run_dir / "log.jsonl").open("a", encoding="utf-8")
+    # 行バッファ: 実行途中の中断・同一プロセス内の検証でも各イベントが即時ディスクに載る
+    log_file = (run_dir / "log.jsonl").open("a", encoding="utf-8", buffering=1)
     logger = structlog.wrap_logger(
         structlog.WriteLogger(log_file),
         processors=[

@@ -15,9 +15,12 @@ from pydantic import BaseModel
 
 from orx.common.config import RunConfig
 from orx.common.schemas import (
+    ActionReceiptRecord,
+    ActionRequestRecord,
     AnchorObservation,
     AnchorRecord,
     Claim,
+    CustodyRecord,
     FidelityReport,
     PerceptionEvent,
     RawObservation,
@@ -36,6 +39,10 @@ STREAMS = {
     "anchor_observations": "anchor_observations.jsonl",
     "truth": "truth.jsonl",
     "world_snapshots": "world_snapshots.jsonl",
+    # S8 / キネティック層の監査ストリーム（PROJECT.md §5.2-6, IMPROVEMENT.md §3.5）
+    "actions": "actions.jsonl",
+    "action_receipts": "action_receipts.jsonl",
+    "custody": "custody.jsonl",
 }
 MANIFEST = "manifest.json"
 CONFIG = "config.json"
@@ -87,6 +94,15 @@ class RunWriter:
 
     def append_world_snapshot(self, snap: StateSnapshot) -> None:
         self._append("world_snapshots", snap)
+
+    def append_action(self, action: ActionRequestRecord) -> None:
+        self._append("actions", action)
+
+    def append_action_receipt(self, receipt: ActionReceiptRecord) -> None:
+        self._append("action_receipts", receipt)
+
+    def append_custody(self, step: CustodyRecord) -> None:
+        self._append("custody", step)
 
     def write_manifest(self, manifest: RunManifest) -> None:
         (self.run_dir / MANIFEST).write_text(
@@ -159,14 +175,21 @@ class RunReader:
     def world_snapshots(self) -> Iterator[StateSnapshot]:
         return self._iter("world_snapshots", StateSnapshot)
 
+    def actions(self) -> Iterator[ActionRequestRecord]:
+        return self._iter("actions", ActionRequestRecord)
+
+    def action_receipts(self) -> Iterator[ActionReceiptRecord]:
+        return self._iter("action_receipts", ActionReceiptRecord)
+
+    def custody(self) -> Iterator[CustodyRecord]:
+        return self._iter("custody", CustodyRecord)
+
     def is_complete(self) -> bool:
         return (self.run_dir / METRICS).exists()
 
     def metrics(self) -> FidelityReport:
         if not self.is_complete():
-            raise FileNotFoundError(
-                f"metrics.json がありません（未完了run）: {self.run_dir}"
-            )
+            raise FileNotFoundError(f"metrics.json がありません（未完了run）: {self.run_dir}")
         return FidelityReport.model_validate_json(
             (self.run_dir / METRICS).read_text(encoding="utf-8")
         )

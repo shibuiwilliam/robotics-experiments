@@ -25,9 +25,7 @@ def choose_recall_lot(world: WorldConfig, seed: int) -> str:
     """シードで回収ロットを選ぶ（搬送中メンバーを持つロットから）。"""
     candidates = candidate_recall_lots(world)
     if not candidates:
-        raise ValueError(
-            "搬送中メンバーを持つロットがありません（S1の反証が成立しない世界）"
-        )
+        raise ValueError("搬送中メンバーを持つロットがありません（S1の反証が成立しない世界）")
     rng = SeedTree(seed).child("s1-recall").rng()
     return candidates[int(rng.integers(0, len(candidates)))]
 

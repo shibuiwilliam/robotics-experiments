@@ -1,0 +1,13 @@
+# S6 リサイクル選別 — agent（live）射程（R-3a, T13）。課金・要コスト承認。
+# 規制オントロジー（disposal_route 写像）が LLM の正レーン選定を助けるかを測る
+# （H3/H4-隣接の agent 検証。H4 双対表現の機構検証は決定的 OR-vec/OR-sym が担う）。
+# OR-full-llm（接地クラス＋規制写像＋委譲）/ B0-llm（接地クラスのみ・規制写像なし）。
+name: s6-recycling-live
+scenario: s6
+world_config: configs/world/s6_recycling.yaml
+conditions: [OR-full-llm, B0-llm]
+seeds: [601, 602, 603, 604, 605, 606, 607, 608]
+duration_s: 0.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-mini

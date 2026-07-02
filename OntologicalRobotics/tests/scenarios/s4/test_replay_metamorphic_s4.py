@@ -27,8 +27,14 @@ def _canonical(result: dict) -> str:
 
 def _cfg() -> ScenarioExperimentConfig:
     return ScenarioExperimentConfig(
-        name="s4-rep", scenario="s4", world_config=runner.WORLD, conditions=CONDITIONS,
-        seeds=[401, 402, 403], duration_s=0.0, knob="position_noise", knob_values=[0.2, 0.4],
+        name="s4-rep",
+        scenario="s4",
+        world_config=runner.WORLD,
+        conditions=CONDITIONS,
+        seeds=[401, 402, 403],
+        duration_s=0.0,
+        knob="position_noise",
+        knob_values=[0.2, 0.4],
         params={"position_noise": 0.4},
     )
 
