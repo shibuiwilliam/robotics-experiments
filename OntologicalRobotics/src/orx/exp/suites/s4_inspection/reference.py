@@ -21,9 +21,7 @@ _W_POS = 1.0
 _W_SIG = 2.0
 
 
-def anchor(
-    condition: str, obs: S4Observation, ledger: list[S4LedgerEntry]
-) -> str | None:
+def anchor(condition: str, obs: S4Observation, ledger: list[S4LedgerEntry]) -> str | None:
     """知覚個体を台帳資産へ対応付ける（ID無し）。OR-no-identity は None。"""
     if condition == "OR-no-identity":
         return None
@@ -33,8 +31,10 @@ def anchor(
     # OR-full / OR-no-belief: 位置×署名の融合
     return max(
         ledger,
-        key=lambda e: _W_POS * neg_distance(obs.pos, e.ledger_pos)
-        + _W_SIG * cos(obs.signature, e.ref_signature),
+        key=lambda e: (
+            _W_POS * neg_distance(obs.pos, e.ledger_pos)
+            + _W_SIG * cos(obs.signature, e.ref_signature)
+        ),
     ).asset_id
 
 

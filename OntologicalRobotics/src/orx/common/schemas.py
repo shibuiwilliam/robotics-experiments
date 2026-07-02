@@ -175,6 +175,44 @@ class ResetEvent(StrictModel):
     sim_time: float
 
 
+# ------------------------------------------------------- kinetic action audit
+
+
+class ActionRequestRecord(StrictModel):
+    """S8/キネティック: エージェントが発行したアクション要求（監査ストリーム）。"""
+
+    action_id: str
+    robot_id: str
+    skill: str
+    target_barcode: str
+    target_position: Vec3
+    dest_zone: str
+    at_time: float
+
+
+class ActionReceiptRecord(StrictModel):
+    """アクション実行レシート（applied/staged/rejected）。`ActionReceipt.to_record()` が生成。"""
+
+    action_id: str
+    object_id: str
+    status: str  # applied | staged | rejected
+    reason: str = ""
+    effect_applied: bool = False
+    failure_mode: str | None = None
+    at_time: float = 0.0
+    compensates: str | None = None
+
+
+class CustodyRecord(StrictModel):
+    """custody 通行ステップの監査レコード（誰が・どのゾーンを・いつ・順序）。"""
+
+    object_id: str
+    zone: str
+    step_index: int
+    by_robot: str
+    at_time: float
+
+
 # -------------------------------------------------------------------- reports
 
 

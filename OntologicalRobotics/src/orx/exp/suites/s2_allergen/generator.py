@@ -46,8 +46,10 @@ def generate_episode(world: S2World, seed: int) -> S2Episode:
     if len(clean_products) >= 2:
         contacts.append(
             ContactEvent(
-                a=clean_products[0], b=clean_products[1],
-                sim_time=round(t1 + 0.3, 3), observer=cobot,
+                a=clean_products[0],
+                b=clean_products[1],
+                sim_time=round(t1 + 0.3, 3),
+                observer=cobot,
             )
         )
     cleanings = [ResetEvent(entity=g_a, kind="cleaning", sim_time=t_clean)]
@@ -61,20 +63,43 @@ def generate_episode(world: S2World, seed: int) -> S2Episode:
     t_direct = round(t2 + 0.3, 3)  # g_a は source 経由で汚染、最新接触は g_a–tray
     t_post = round(t_clean + 0.3, 3)
     queries = [
-        S2Query(qid=f"s2-{seed}-cross", kind="cross_robot", gripper=g_b,
-                free_of=[allergen], sim_time=t_cross,
-                truth_allowed=truth(g_b, [allergen], t_cross)),
-        S2Query(qid=f"s2-{seed}-direct", kind="direct", gripper=g_a,
-                free_of=[allergen], sim_time=t_direct,
-                truth_allowed=truth(g_a, [allergen], t_direct)),
-        S2Query(qid=f"s2-{seed}-postclean", kind="post_clean", gripper=g_a,
-                free_of=[allergen], sim_time=t_post,
-                truth_allowed=truth(g_a, [allergen], t_post)),
-        S2Query(qid=f"s2-{seed}-control", kind="control", gripper=g_b,
-                free_of=[other_allergen], sim_time=t_cross,
-                truth_allowed=truth(g_b, [other_allergen], t_cross)),
+        S2Query(
+            qid=f"s2-{seed}-cross",
+            kind="cross_robot",
+            gripper=g_b,
+            free_of=[allergen],
+            sim_time=t_cross,
+            truth_allowed=truth(g_b, [allergen], t_cross),
+        ),
+        S2Query(
+            qid=f"s2-{seed}-direct",
+            kind="direct",
+            gripper=g_a,
+            free_of=[allergen],
+            sim_time=t_direct,
+            truth_allowed=truth(g_a, [allergen], t_direct),
+        ),
+        S2Query(
+            qid=f"s2-{seed}-postclean",
+            kind="post_clean",
+            gripper=g_a,
+            free_of=[allergen],
+            sim_time=t_post,
+            truth_allowed=truth(g_a, [allergen], t_post),
+        ),
+        S2Query(
+            qid=f"s2-{seed}-control",
+            kind="control",
+            gripper=g_b,
+            free_of=[other_allergen],
+            sim_time=t_cross,
+            truth_allowed=truth(g_b, [other_allergen], t_cross),
+        ),
     ]
     return S2Episode(
-        intrinsic=intrinsic, contacts=contacts, cleanings=cleanings,
-        queries=queries, eval_time=eval_time,
+        intrinsic=intrinsic,
+        contacts=contacts,
+        cleanings=cleanings,
+        queries=queries,
+        eval_time=eval_time,
     )

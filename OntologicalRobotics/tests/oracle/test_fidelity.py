@@ -73,9 +73,7 @@ def test_position_rmse_hand_computed() -> None:
     alignment = {E1: "b1"}
     world = [StateSnapshot(sim_time=1.0, triples=[], positions={E1: (1.0, 0.0, 0.0)})]
     truth = [
-        StateSnapshot(
-            sim_time=1.0, triples=[], positions={truth_entity("b1"): (0.0, 0.0, 0.0)}
-        )
+        StateSnapshot(sim_time=1.0, triples=[], positions={truth_entity("b1"): (0.0, 0.0, 0.0)})
     ]
     assert abs(position_rmse(world, truth, alignment) - 1.0) < 1e-9
 

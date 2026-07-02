@@ -1,0 +1,16 @@
+# T5 オンボーディング統合コスト実験 (H1) — live 計測（課金・要コスト承認）。
+#
+# llm 支援マッピング生成を実LLMで本計測し、heuristic / handwritten と比較する。
+# 実行前に `orx exp estimate configs/experiments/t5_onboarding_live.yaml` で概算確認＋承認。
+name: t5-onboarding-live
+task: t5
+world_config: configs/world/demo_tiny.yaml   # T5は世界を使わない（必須項目のため）
+conditions: [llm, heuristic, handwritten]
+seeds: [601, 602, 603, 604, 605]
+duration_s: 0.0
+t5:
+  n_schemas_per_seed: 4    # 5シード × 4 = 20 合成スキーマ（llm支援が各1呼び出し）
+  provider:
+    mode: openai
+    # マッピング生成LLMのスナップショットを明示ピン留め（§6）。課金前に正確な版へ更新。
+    llm_model: gpt-5.4-mini

@@ -9,9 +9,7 @@ from orx.exp.stats import bootstrap_diff_ci, compare_conditions, mcnemar_exact, 
 
 def test_mcnemar_matches_binomtest() -> None:
     assert mcnemar_exact(0, 0) == 1.0
-    assert mcnemar_exact(10, 0) == pytest.approx(
-        sps.binomtest(0, 10, 0.5).pvalue
-    )
+    assert mcnemar_exact(10, 0) == pytest.approx(sps.binomtest(0, 10, 0.5).pvalue)
     assert mcnemar_exact(8, 2) == pytest.approx(sps.binomtest(2, 10, 0.5).pvalue)
 
 
@@ -39,8 +37,14 @@ def test_compare_conditions_summary() -> None:
     a = [True] * 18 + [False] * 2
     b = [False] * 15 + [True, True, True, True, True]
     result = compare_conditions(
-        "OR-full", "OR-no-identity", a, b, np.random.default_rng(0),
-        metric_a=[0.9] * 20, metric_b=[0.3] * 20, metric_name="identity_f1",
+        "OR-full",
+        "OR-no-identity",
+        a,
+        b,
+        np.random.default_rng(0),
+        metric_a=[0.9] * 20,
+        metric_b=[0.3] * 20,
+        metric_name="identity_f1",
     )
     assert result.n == 20
     assert result.success_rate_a == 0.9

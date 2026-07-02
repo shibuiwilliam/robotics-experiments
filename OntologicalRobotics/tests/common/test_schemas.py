@@ -31,9 +31,7 @@ def test_confidence_bounds_enforced() -> None:
 
 def test_unknown_fields_rejected() -> None:
     with pytest.raises(ValidationError):
-        PerceptionEvent(
-            event_id="e1", robot_id="r1", sim_time=0.0, detections=[], bogus=1
-        )
+        PerceptionEvent(event_id="e1", robot_id="r1", sim_time=0.0, detections=[], bogus=1)
 
 
 def test_term_canonical() -> None:

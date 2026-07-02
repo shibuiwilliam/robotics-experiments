@@ -30,8 +30,14 @@ def build_capability_graph(world: S3World, seeds: SeedTree) -> WorldGraph:
     def claim(subject: str, predicate: str, obj: Term, t: float) -> None:
         graph.assert_claim(
             Claim(
-                claim_id=deterministic_id(rng), subject=subject, predicate=predicate,
-                object=obj, asserted_by=_AGENT, confidence=1.0, observed_at=t, valid_until=None,
+                claim_id=deterministic_id(rng),
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                asserted_by=_AGENT,
+                confidence=1.0,
+                observed_at=t,
+                valid_until=None,
             )
         )
 
@@ -39,26 +45,38 @@ def build_capability_graph(world: S3World, seeds: SeedTree) -> WorldGraph:
     for m in world.machines:
         cap = _cap_iri(m.machine_id)
         claim(cap, iri.RDF_TYPE, Term(kind="iri", value=iri.cap("Capability")), 0.0)
-        claim(cap, iri.cap("forRobot"),
-              Term(kind="iri", value=iri.entity("robot", m.machine_id)), 0.0)
-        claim(cap, iri.cap("declaredPayloadKg"),
-              Term(kind="literal", value=repr(m.declared_payload_kg), datatype=iri.XSD_DOUBLE), 0.0)
+        claim(
+            cap, iri.cap("forRobot"), Term(kind="iri", value=iri.entity("robot", m.machine_id)), 0.0
+        )
+        claim(
+            cap,
+            iri.cap("declaredPayloadKg"),
+            Term(kind="literal", value=repr(m.declared_payload_kg), datatype=iri.XSD_DOUBLE),
+            0.0,
+        )
 
     # 工程要求（SOP・品種ごと）
     for product in world.products.values():
         req = _req_iri(product)
         claim(req, iri.RDF_TYPE, Term(kind="iri", value=iri.cap("ProcessRequirement")), 0.0)
-        claim(req, iri.cap("requiresPayloadKg"),
-              Term(kind="literal", value=repr(product.weight_kg), datatype=iri.XSD_DOUBLE), 0.0)
-        claim(req, iri.cap("requiresMaterial"),
-              Term(kind="literal", value=product.material), 0.0)
+        claim(
+            req,
+            iri.cap("requiresPayloadKg"),
+            Term(kind="literal", value=repr(product.weight_kg), datatype=iri.XSD_DOUBLE),
+            0.0,
+        )
+        claim(req, iri.cap("requiresMaterial"), Term(kind="literal", value=product.material), 0.0)
 
     # OR-full の語彙横断マッチ: 工程要求 --matchesCapability--> 実現可能な能力契約（全ベンダー）
     for product in world.products.values():
         req = _req_iri(product)
         for m in world.machines:
             if product.weight_kg <= m.declared_payload_kg:
-                claim(req, iri.cap("matchesCapability"),
-                      Term(kind="iri", value=_cap_iri(m.machine_id)), 1.0)
+                claim(
+                    req,
+                    iri.cap("matchesCapability"),
+                    Term(kind="iri", value=_cap_iri(m.machine_id)),
+                    1.0,
+                )
     graph.refresh_current_graph(1.0)
     return graph

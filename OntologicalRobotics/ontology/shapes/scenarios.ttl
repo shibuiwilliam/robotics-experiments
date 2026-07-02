@@ -152,3 +152,33 @@ orx-sh:CustodyStepShape a sh:NodeShape ;
         sh:datatype xsd:string ;
         sh:message "CustodyStep は atZone をちょうど1つ持つ（通行区画）"@ja ;
     ] .
+
+# --- S8 アクション型（T15, キネティック層）: 実行・補償の構造制約 ---
+
+orx-sh:ActionExecutionShape a sh:NodeShape ;
+    sh:targetClass orx-cap:ActionExecution ;
+    sh:property [
+        sh:path orx-cap:actedOn ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "ActionExecution は actedOn をちょうど1つ持つ（作用対象の一意性）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-cap:executedByRobot ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "ActionExecution は executedByRobot をちょうど1つ持つ（実行機体の来歴）"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-cap:actionStatus ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ( "applied"^^xsd:string "staged"^^xsd:string "rejected"^^xsd:string ) ;
+        sh:message "ActionExecution の actionStatus は applied|staged|rejected のいずれか"@ja ;
+    ] ;
+    sh:property [
+        sh:path orx-cap:compensates ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+        sh:message "compensates は高々1つ（補償対象アクションへの監査リンク）"@ja ;
+    ] .

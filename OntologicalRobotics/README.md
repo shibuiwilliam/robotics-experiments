@@ -73,3 +73,16 @@ uv run orx onboard configs/robots/fuzzed_vendor_x.yaml       # 新ロボット�
 各フェーズのゲート測定値は [docs/PROGRESS.md](docs/PROGRESS.md)。
 LLMを使う本計測（T2エージェント条件・T7ベクトルRAG・T5 LLM支援）のみ
 OPENAI_API_KEY とコスト承認が必要（オフラインのstubハーネスで全経路検証済み）。
+
+### live 計測（H1–H7 エージェント検証）の手順
+
+課金前に概算を確認し、承認後にワンコマンドで実行できる（手順書: [docs/LIVE_MEASUREMENT.md](docs/LIVE_MEASUREMENT.md)）。
+
+```bash
+make exp-estimate-live          # 概算トークン・費用を表示（実APIを叩かない）
+uv run orx exp estimate configs/experiments/t2_business_live.yaml   # 個別＋価格上書き可
+make exp-live-t2                # 承認後の本計測（OPENAI_API_KEY＋コスト承認が前提）
+```
+
+`orx exp run` は `mode=openai` の実験に対し、記録開始前に API キーの有無を検証し概算を印字する
+（プリフライト）。初回記録後は応答が全キャッシュされ、`provider.mode=cache` で 0 円再現できる。

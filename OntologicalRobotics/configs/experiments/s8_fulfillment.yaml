@@ -1,0 +1,10 @@
+# S8 fulfillment（T15・キネティック層）— 決定的 ceiling（$0・LLM不使用）。
+# エージェントが move/dispose/deliver のアクションを発行し、送信基準（能力・規範・所有権）を
+# 検証する共通オントロジーの有無で安全・遂行・監査が分かれる。閉ループ（loop=closed）のため
+# 反実仮想リプレイは使わず、条件独立ロールアウト＋seed-paired 検定で比較する（IMPROVEMENT.md §3.1）。
+name: s8-fulfillment
+scenario: s8
+world_config: configs/world/s8_fulfillment.yaml
+conditions: [OR-full, B1, B0]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108]
+duration_s: 1.0

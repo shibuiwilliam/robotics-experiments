@@ -28,8 +28,14 @@ def build_routing_graph(
     def claim(subject: str, predicate: str, obj: Term, t: float) -> None:
         graph.assert_claim(
             Claim(
-                claim_id=deterministic_id(rng), subject=subject, predicate=predicate,
-                object=obj, asserted_by=_AGENT, confidence=1.0, observed_at=t, valid_until=None,
+                claim_id=deterministic_id(rng),
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                asserted_by=_AGENT,
+                confidence=1.0,
+                observed_at=t,
+                valid_until=None,
             )
         )
 
@@ -46,8 +52,10 @@ def build_routing_graph(
         if lane == ESCALATE:
             continue
         claim(
-            iri.entity("object", obj.obj_id), iri.biz("routedTo"),
-            Term(kind="iri", value=iri.entity("lane", lane)), 1.0,
+            iri.entity("object", obj.obj_id),
+            iri.biz("routedTo"),
+            Term(kind="iri", value=iri.entity("lane", lane)),
+            1.0,
         )
     graph.refresh_current_graph(1.0)
     return graph

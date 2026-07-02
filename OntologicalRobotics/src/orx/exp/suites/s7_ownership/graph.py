@@ -26,8 +26,14 @@ def build_ownership_graph(world: S7World, seeds: SeedTree) -> WorldGraph:
     def claim(subject: str, predicate: str, obj: Term, t: float) -> None:
         graph.assert_claim(
             Claim(
-                claim_id=deterministic_id(rng), subject=subject, predicate=predicate,
-                object=obj, asserted_by=_AGENT, confidence=1.0, observed_at=t, valid_until=None,
+                claim_id=deterministic_id(rng),
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                asserted_by=_AGENT,
+                confidence=1.0,
+                observed_at=t,
+                valid_until=None,
             )
         )
 
@@ -38,7 +44,6 @@ def build_ownership_graph(world: S7World, seeds: SeedTree) -> WorldGraph:
         claim(item, iri.RDF_TYPE, Term(kind="iri", value=iri.biz("PersonalItem")), 0.0)
         claim(r_iri, iri.biz("owns"), Term(kind="iri", value=item), 0.0)
         claim(r_iri, iri.biz("assignedRoom"), Term(kind="literal", value=world.rooms[r]), 0.0)
-        claim(item, iri.st("lastSeenZone"),
-              Term(kind="literal", value=world.resident_zone[r]), 0.0)
+        claim(item, iri.st("lastSeenZone"), Term(kind="literal", value=world.resident_zone[r]), 0.0)
     graph.refresh_current_graph(1.0)
     return graph

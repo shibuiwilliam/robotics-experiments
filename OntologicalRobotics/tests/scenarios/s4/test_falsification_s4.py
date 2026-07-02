@@ -12,9 +12,14 @@ from orx.exp.suites.s4_inspection import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s4-fal", scenario="s4", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[401, 402, 403, 404, 405, 406],
-        duration_s=0.0, knob="position_noise", knob_values=[0.2, 0.4, 0.6, 0.8],
+        name="s4-fal",
+        scenario="s4",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[401, 402, 403, 404, 405, 406],
+        duration_s=0.0,
+        knob="position_noise",
+        knob_values=[0.2, 0.4, 0.6, 0.8],
         params={"position_noise": 0.4},
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s4") / "exp", lambda *a: None)
@@ -51,6 +56,15 @@ def test_robustness_or_full_beats_sym_across_sweep(result: dict) -> None:
     full = rob["anchor_accuracy"]["OR-full"]
     sym = rob["anchor_accuracy"]["OR-sym"]
     assert all(f >= s - 1e-9 for f, s in zip(full, sym, strict=True))
+
+
+def test_hardcase_i500_i501_position_ambiguity(result: dict) -> None:
+    """ハードケース(R-1C): 近接した異常資産 I-501／正常 I-500 で、位置単独の OR-sym は
+    取り違えて**異常を見逃す**（missed>0）。OR-full は固有署名で識別を維持し見逃し0。
+    位置曖昧で署名が効く、という H2/H4 の論拠を強める（決定的・反証ゲート不変）。"""
+    pc = result["per_condition"]
+    assert pc["OR-sym"]["missed_anomalies"] > 0  # 位置のみは近接ペアで異常を取りこぼす
+    assert pc["OR-full"]["missed_anomalies"] == 0  # 署名で識別 → 見逃さない
 
 
 def test_all_predictions_pass(result: dict) -> None:

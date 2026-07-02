@@ -12,9 +12,14 @@ from orx.exp.suites.s6_recycling import runner
 @pytest.fixture(scope="module")
 def result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     cfg = ScenarioExperimentConfig(
-        name="s6-fal", scenario="s6", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[601, 602, 603, 604, 605, 606],
-        duration_s=0.0, knob="visual_noise", knob_values=[0.1, 0.5, 1.0, 2.0],
+        name="s6-fal",
+        scenario="s6",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[601, 602, 603, 604, 605, 606],
+        duration_s=0.0,
+        knob="visual_noise",
+        knob_values=[0.1, 0.5, 1.0, 2.0],
         params={"primary_sigma": 0.2, "confidence_threshold": 0.15, "high_cost_threshold": 50.0},
     )
     return runner.run(cfg, tmp_path_factory.mktemp("s6") / "exp", lambda *a: None)

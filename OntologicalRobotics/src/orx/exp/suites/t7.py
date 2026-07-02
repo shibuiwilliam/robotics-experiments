@@ -79,9 +79,7 @@ def retrieve_onto(graph: WorldGraph, db: BusinessDB, query: T7Query) -> str:
     return iri.parse_entity(hits[0]["d"])[1]
 
 
-def retrieve_vector(
-    embedder: TextEmbeddingClient, docs: list[SopDoc], query: T7Query
-) -> str:
+def retrieve_vector(embedder: TextEmbeddingClient, docs: list[SopDoc], query: T7Query) -> str:
     """素のベクトルRAG: クエリ文と文書本文のコサイン類似 top-1。"""
     doc_vecs = embedder.embed([d.body for d in docs])
     [q_vec] = embedder.embed([query.text])
@@ -123,5 +121,12 @@ def evaluate(
     return answers
 
 
-__all__ = ["T7Query", "T7Answer", "generate_queries", "retrieve_onto",
-           "retrieve_vector", "evaluate", "doc_iri"]
+__all__ = [
+    "T7Query",
+    "T7Answer",
+    "generate_queries",
+    "retrieve_onto",
+    "retrieve_vector",
+    "evaluate",
+    "doc_iri",
+]

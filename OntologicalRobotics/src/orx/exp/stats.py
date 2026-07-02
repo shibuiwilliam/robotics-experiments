@@ -10,6 +10,7 @@ import numpy as np
 from scipy import stats as sps
 
 from orx.common.schemas import StrictModel
+from orx.common.seeding import SeedTree
 
 
 class PairedComparison(StrictModel):
@@ -67,6 +68,37 @@ def bootstrap_diff_ci(
     diffs = (a[idx] - b[idx]).mean(axis=1)
     lo, hi = np.quantile(diffs, [alpha / 2, 1 - alpha / 2])
     return float(lo), float(hi)
+
+
+def paired_comparisons(
+    primary: str,
+    baselines: list[str],
+    success_by_cond: dict[str, list[bool]],
+    metric_by_cond: dict[str, list[float]],
+    metric_name: str,
+    seed: int,
+) -> list[PairedComparison]:
+    """primary vs 各 baseline の対比較を一括生成する（シナリオ runner 共通, R-3d）。
+
+    success_by_cond / metric_by_cond は per-seed のベクトル（条件→[seed毎値]）。
+    ブートストラップRNG は seed から決定的に派生し、結果の再現性を保つ。
+    """
+    rng = SeedTree(seed).child("scenario-bootstrap").rng()
+    out: list[PairedComparison] = []
+    for b in baselines:
+        out.append(
+            compare_conditions(
+                primary,
+                b,
+                success_by_cond[primary],
+                success_by_cond[b],
+                rng,
+                metric_a=metric_by_cond[primary],
+                metric_b=metric_by_cond[b],
+                metric_name=metric_name,
+            )
+        )
+    return out
 
 
 def compare_conditions(

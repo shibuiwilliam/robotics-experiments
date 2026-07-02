@@ -4,7 +4,6 @@
 no-rigging: 各ソルバはその条件が許す情報のみを引数に取る（ADR-014）。
 """
 
-
 import pytest
 
 from orx.exp.scenario import ScenarioExperimentConfig

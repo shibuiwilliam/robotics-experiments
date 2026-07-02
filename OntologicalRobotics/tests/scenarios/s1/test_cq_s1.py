@@ -3,7 +3,6 @@
 宣言的CQ（期待SPARQL）を S1 世界グラフに対して実行し、oracle 真値と一致を確認する。
 """
 
-
 import pytest
 import yaml
 
@@ -20,8 +19,11 @@ CURRENT = "https://orx.local/id/graph/current"
 def episode(tmp_path_factory: pytest.TempPathFactory):
     world = load_config(repo_root() / runner.WORLD, WorldConfig)
     ep = runner.prepare_episode(
-        world, seed=102, runs_root=tmp_path_factory.mktemp("s1cq"),
-        duration_s=18.0, claim_ttl_s=8.0,
+        world,
+        seed=102,
+        runs_root=tmp_path_factory.mktemp("s1cq"),
+        duration_s=18.0,
+        claim_ttl_s=8.0,
     )
     ep.graph.refresh_current_graph(ep.recall_time)
     return ep

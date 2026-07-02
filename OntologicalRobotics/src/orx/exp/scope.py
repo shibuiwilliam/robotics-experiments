@@ -26,13 +26,29 @@ _MEANS = {
 }
 
 
+def agent_status_for(mode: str) -> str:
+    """プロバイダモードからエージェント射程の実行状況ラベルを決める。
+
+    live（openai）/ cache 再生では agent 射程は**実行済み**であり、stub では未実行。
+    レポート見出しがデータ実体と矛盾しないようにするための単一の真実源。
+    """
+    if mode == "openai":
+        return "実行済み（live・実LLM/実埋め込み）"
+    if mode == "cache":
+        return "実行済み（cache 再生・記録済みlive応答）"
+    return "未実行（live計測・OPENAI_API_KEY要）"
+
+
 def scope_section(
     scopes: list[str], agent_status: str = "未実行（live計測・OPENAI_API_KEY要）"
 ) -> str:
     """レポート用の「計測射程」節を生成する。
 
     scopes: このレポートが含む計測カテゴリ（CEILING/ABLATION/AGENT）。
+    agent_status: エージェント射程の実行状況（`agent_status_for(mode)` で生成）。
+    「実行済み」を含むときは live/cache、含まないときは未実行（stub）として注記を切り替える。
     """
+    executed = "実行済み" in agent_status
     lines = [
         "## 計測射程 (Measurement scope)",
         "",
@@ -47,7 +63,14 @@ def scope_section(
             present = f"✓ **{agent_status}**"
         lines.append(f"| {_LABEL[cat]} | {present} | {_MEANS[cat]} |")
     lines.append("")
-    if AGENT in scopes:
+    if AGENT in scopes and executed:
+        lines.append(
+            "> **注記**: 本レポートのエージェント条件は実LLM/実埋め込みで "
+            f"{agent_status}。数値は**仮説 H1–H7 のエージェントレベル検証の実測値**であり、"
+            "ceiling（決定的上限）とは射程が異なる。temperature 0・全応答キャッシュで再現可能。"
+        )
+        lines.append("")
+    elif AGENT in scopes:
         lines.append(
             "> **注意**: 本レポートのエージェント条件は実LLM/実埋め込みを要するため "
             f"{agent_status}。stub の数値は**ハーネス検証用で意味を持たない**"
@@ -55,6 +78,22 @@ def scope_section(
         )
         lines.append("")
     return "\n".join(lines)
+
+
+def loop_note(loop: str) -> str:
+    """閉ループ（キネティック層）の反実仮想リプレイ非適用を明示する注記（IMPROVEMENT.md §3.1）。
+
+    loop="closed": アクションが物理履歴を変えるため「1 記録→多重リプレイ」は使えず、
+    条件ごとに独立ロールアウトし seed-paired 検定で比較する。loop="open"（従来）は注記不要。
+    """
+    if loop != "closed":
+        return ""
+    return (
+        "> **計測ループ（closed）**: 本シナリオはエージェントのアクションが物理状態を変える"
+        "**閉ループ**である。条件ごとに物理履歴が分岐するため反実仮想リプレイ（単一記録・多重"
+        "リプレイ）は適用せず、各条件を独立ロールアウトし **seed-paired 検定**（McNemar/Wilcoxon、"
+        "S1–S7 と同方式）で比較する。"
+    )
 
 
 def stub_warning(metric: str = "正答率・p値") -> str:

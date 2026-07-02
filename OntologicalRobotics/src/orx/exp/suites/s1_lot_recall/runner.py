@@ -20,7 +20,7 @@ from orx.exp.scenario import (
     ScenarioSpec,
     register,
 )
-from orx.exp.stats import PairedComparison, compare_conditions
+from orx.exp.stats import PairedComparison, compare_conditions, paired_comparisons
 from orx.exp.suites.s1_lot_recall import generator
 from orx.exp.suites.s1_lot_recall.reference import solve_b0, solve_b1, solve_or
 from orx.exp.suites.s1_lot_recall.scorer import RecallScore, score_recall
@@ -30,6 +30,9 @@ from orx.replay.io import RunReader
 CONDITIONS = ["OR-full", "B0", "B1"]
 WORLD = "configs/world/s1_lot_recall.yaml"
 
+# agent（live）射程の条件（R-3a）。決定的条件と同タスクを実 LLM が解く。
+from orx.exp.suites.s1_lot_recall.agent import AGENT_CONDITIONS  # noqa: E402
+
 META = ScenarioMeta(
     id="s1",
     suite="T8",
@@ -38,7 +41,7 @@ META = ScenarioMeta(
     tier="A",
     touchstones=["①越境同一性", "③監査"],
     hypotheses=["H2", "H6", "H7"],
-    conditions=CONDITIONS,
+    conditions=CONDITIONS + AGENT_CONDITIONS,
     status="implemented",
 )
 
@@ -67,6 +70,8 @@ class S1Result(StrictModel):
     comparisons: list[PairedComparison]
     falsification: dict[str, bool]
     robustness: dict  # {knob, values, completion: {cond: [..]}}
+    scope: str = "deterministic"  # "deterministic" | "agent" (R-3a)
+    total_tokens: dict[str, int] = {}  # 条件→トークン総量（H7・agent射程のみ）
 
 
 # --------------------------------------------------------------- evaluation
@@ -84,6 +89,7 @@ class PreparedEpisode(StrictModel):
     latest_raw: dict  # robot_id -> RawObservation
     events: list  # PerceptionEvent（<= recall_time）
     truth_states: list  # TruthState
+    run_dir: str = ""  # wms.sqlite（lot 台帳）の所在（agent 条件が SQL ツールで使う, R-3a）
 
 
 def prepare_episode(
@@ -101,9 +107,7 @@ def prepare_episode(
         degr = base_world.degradation.model_copy(update={knob: value})
         world = base_world.model_copy(update={"degradation": degr})
 
-    run_cfg = RunConfig(
-        world=world, duration_s=duration_s, root_seed=seed, claim_ttl_s=claim_ttl_s
-    )
+    run_cfg = RunConfig(world=world, duration_s=duration_s, root_seed=seed, claim_ttl_s=claim_ttl_s)
     tag = f"seed{seed}" if knob is None else f"{knob}-{value}-seed{seed}"
     run_id, _ = record_episode(run_cfg, runs_root, run_id=tag)
     run_dir = runs_root / run_id
@@ -139,6 +143,7 @@ def prepare_episode(
         latest_raw=latest_raw,
         events=events,
         truth_states=truth_states,
+        run_dir=str(run_dir),
     )
 
 
@@ -163,10 +168,12 @@ def _eval_seed(
     return scores, ep.recall_lot
 
 
-def _aggregate(per_seed: dict[int, dict[str, RecallScore]]) -> dict[str, ConditionAgg]:
+def _aggregate(
+    per_seed: dict[int, dict[str, RecallScore]], conditions: list[str] = CONDITIONS
+) -> dict[str, ConditionAgg]:
     seeds = list(per_seed)
     out: dict[str, ConditionAgg] = {}
-    for c in CONDITIONS:
+    for c in conditions:
         rows = [per_seed[s][c] for s in seeds]
         n = len(rows)
         out[c] = ConditionAgg(
@@ -181,6 +188,8 @@ def _aggregate(per_seed: dict[int, dict[str, RecallScore]]) -> dict[str, Conditi
 
 
 def run(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict:
+    if any(c.endswith("-llm") for c in config.conditions):
+        return run_agent(config, exp_dir, notify)
     notify_fn = notify if callable(notify) else (lambda *_: None)
     base_world = load_config(repo_root() / config.world_config, WorldConfig)
     episodes = exp_dir / "episodes"
@@ -208,7 +217,11 @@ def run(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict
         other_success = [per_seed[s][other].success for s in config.seeds]
         comparisons.append(
             compare_conditions(
-                "OR-full", other, or_success, other_success, rng,
+                "OR-full",
+                other,
+                or_success,
+                other_success,
+                rng,
                 metric_a=[per_seed[s]["OR-full"].completion for s in config.seeds],
                 metric_b=[per_seed[s][other].completion for s in config.seeds],
                 metric_name="completion",
@@ -231,8 +244,13 @@ def run(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict
             sweep_seed_scores: dict[int, dict[str, RecallScore]] = {}
             for seed in config.seeds:
                 scores, _ = _eval_seed(
-                    base_world, seed, episodes, config.knob, value,
-                    config.duration_s, config.claim_ttl_s,
+                    base_world,
+                    seed,
+                    episodes,
+                    config.knob,
+                    value,
+                    config.duration_s,
+                    config.claim_ttl_s,
                 )
                 sweep_seed_scores[seed] = scores
             agg = _aggregate(sweep_seed_scores)
@@ -261,6 +279,91 @@ def run(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict
         comparisons=comparisons,
         falsification=falsification,
         robustness=robustness,
+    )
+    return result.model_dump(mode="json")
+
+
+# --------------------------------------------------------------- agent（live）射程
+
+
+def run_agent(config: ScenarioExperimentConfig, exp_dir: Path, notify: object) -> dict:
+    """S1 を**実 LLM エージェント**で解く（agent 射程・R-3a）。
+
+    決定的版と同じ記録・真値・採点（score_recall）を用い、解答だけをエージェントに委ねる。
+    OR-full-llm / B1-llm / B0-llm を対比較し、トークン効率（H7）も記録する。
+    """
+    from orx.common.providers import make_llm_client
+    from orx.exp.suites.s1_lot_recall.agent import AGENT_CONDITIONS, solve_agent_llm
+
+    notify_fn = notify if callable(notify) else (lambda *_: None)
+    if config.provider is None:
+        raise ValueError("agent 条件には provider 設定が必要です（mode=stub/openai/cache）")
+    base_world = load_config(repo_root() / config.world_config, WorldConfig)
+    episodes = exp_dir / "episodes"
+    conds = [c for c in config.conditions if c in AGENT_CONDITIONS]
+    llm = make_llm_client(config.provider)
+
+    per_seed: dict[int, dict[str, RecallScore]] = {}
+    recall_lots: dict[str, str] = {}
+    tokens: dict[str, int] = {c: 0 for c in conds}
+    for seed in config.seeds:
+        ep = prepare_episode(base_world, seed, episodes, config.duration_s, config.claim_ttl_s)
+        # 現在信念グラフを回収時刻で物質化（solve_or と同じ前処理）。
+        # これが無いと GRAPH <CURRENT_GRAPH> が空でエージェントの SPARQL が全て [] を返す。
+        ep.graph.refresh_current_graph(ep.recall_time)
+        truth = recall_truth(ep.truth_states, ep.lot_members, ep.recall_lot, ep.recall_time)
+        scores: dict[str, RecallScore] = {}
+        for c in conds:
+            ans, rr = solve_agent_llm(
+                c, ep.graph, ep.run_dir, ep.latest_raw, ep.recall_lot, llm, ep.world
+            )
+            scores[c] = score_recall(ans, truth)
+            tokens[c] += rr.prompt_tokens + rr.completion_tokens
+        per_seed[seed] = scores
+        recall_lots[str(seed)] = ep.recall_lot
+        notify_fn(
+            f"  seed={seed} lot={ep.recall_lot}: "
+            + " ".join(f"{c}={scores[c].completion:.2f}" for c in conds)
+        )
+    per_condition = _aggregate(per_seed, conds)
+
+    primary = "OR-full-llm"
+    baselines = [c for c in conds if c != primary]
+    success_by = {c: [per_seed[s][c].success for s in config.seeds] for c in conds}
+    metric_by = {c: [per_seed[s][c].completion for s in config.seeds] for c in conds}
+    comparisons = paired_comparisons(
+        primary, baselines, success_by, metric_by, "completion", config.seeds[0]
+    )
+
+    full = per_condition[primary]
+    falsification = {
+        "OR_full_llm_best_completion": all(
+            full.completion >= per_condition[b].completion for b in baselines
+        ),
+        "baselines_miss_in_transit": any(
+            per_condition[b].location_accuracy < 1.0 - 1e-9 for b in baselines
+        ),
+    }
+
+    from orx import __version__
+    from orx.exp.episode import _git_commit
+
+    result = S1Result(
+        exp_id=exp_dir.name,
+        name=config.name,
+        config_hash=config_hash(config),
+        git_commit=_git_commit(),
+        orx_version=__version__,
+        model_snapshot=f"live: {config.provider.llm_model} (mode={config.provider.mode})",
+        seeds=list(config.seeds),
+        conditions=conds,
+        recall_lots=recall_lots,
+        per_condition=per_condition,
+        comparisons=comparisons,
+        falsification=falsification,
+        robustness={},
+        scope="agent",
+        total_tokens=tokens,
     )
     return result.model_dump(mode="json")
 
@@ -299,20 +402,71 @@ def summarize(result: dict) -> list[str]:
             f"location_acc={agg['location_accuracy']:.3f}"
         )
     for cmp in result["comparisons"]:
-        lines.append(
-            f"McNemar (OR-full vs {cmp['condition_b']}): p = {cmp['mcnemar_p']:.2e}"
-        )
+        lines.append(f"McNemar (OR-full vs {cmp['condition_b']}): p = {cmp['mcnemar_p']:.2e}")
     fal = result["falsification"]
     lines.append("失敗予言: " + " ".join(f"{k}={'✓' if v else '✗'}" for k, v in fal.items()))
     return lines
 
 
+def _render_agent_report(result: dict) -> str:
+    """agent（live）射程のレポート（R-3a）: 実 LLM の条件間比較＋トークン効率（H7）。"""
+    from orx.exp import scope
+    from orx.exp.scenario import comparison_section
+
+    mode = "openai" if "mode=openai" in result.get("model_snapshot", "") else "cache"
+    lines = [
+        f"# ORX Scenario Report — S1 ロット回収（T8・**agent射程/live**） `{result['exp_id']}`",
+        "",
+        f"- シナリオ: s1 / 仮説: H2, H6, H7（**エージェント検証**）/ "
+        f"シード数: {len(result['seeds'])} / model: {result.get('model_snapshot', '?')} / "
+        f"git: `{result.get('git_commit', '?')}`",
+        "",
+        scope.scope_section([scope.AGENT], scope.agent_status_for(mode)),
+        "> 3条件（OR-full-llm/B1-llm/B0-llm）は**実 LLM エージェント**が同一の回収列挙タスクを"
+        "ツール経由で解いた結果。決定的ソルバ（ceiling）とは射程が異なる。",
+        "",
+        "## 1. 条件別サマリ（完遂率・列挙F1・現在地精度）",
+        "",
+        "| 条件 | 完遂率 | 列挙F1 | 現在地精度 | 成功率 |",
+        "|------|--------|--------|-----------|--------|",
+    ]
+    for c in result["conditions"]:
+        a = result["per_condition"][c]
+        lines.append(
+            f"| {c} | {a['completion']:.3f} | {a['membership_f1']:.3f} | "
+            f"{a['location_accuracy']:.3f} | {a['success_rate']:.3f} |"
+        )
+    lines += [
+        "",
+        *comparison_section(
+            result.get("comparisons", []),
+            "対比較（OR-full-llm vs ベースライン・対応のある検定）",
+        ),
+    ]
+    tok = result.get("total_tokens", {})
+    if tok:
+        lines += [
+            "",
+            "## 2. トークン効率（H7）",
+            "",
+            "| 条件 | 総トークン | 完遂率/1kトークン |",
+            "|------|-----------|---------------------|",
+        ]
+        for c in result["conditions"]:
+            t = tok.get(c, 0)
+            comp = result["per_condition"][c]["completion"]
+            eff = (comp / (t / 1000.0)) if t else 0.0
+            lines.append(f"| {c} | {t} | {eff:.4f} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def render_report(result: dict) -> str:
+    if result.get("scope") == "agent":
+        return _render_agent_report(result)
     from orx.exp import scope
 
-    stamp = (
-        f" / git: `{result.get('git_commit', '?')}` / model: {result.get('llm_model', '?')}"
-    )
+    stamp = f" / git: `{result.get('git_commit', '?')}` / model: {result.get('llm_model', '?')}"
     lines = [
         f"# ORX Scenario Report — S1 ロット回収（T8） `{result['exp_id']}`",
         "",
@@ -336,9 +490,13 @@ def render_report(result: dict) -> str:
     }
     for key, ok in result["falsification"].items():
         lines.append(f"| {labels.get(key, key)} | {'✓ PASS' if ok else '✗ FAIL'} |")
-    lines += ["", "### 条件別サマリ（ノイズ0）", "",
-              "| 条件 | 完遂率 | 列挙F1 | 現在地精度 | 誤隔離 | 成功率 |",
-              "|------|--------|--------|-----------|--------|--------|"]
+    lines += [
+        "",
+        "### 条件別サマリ（ノイズ0）",
+        "",
+        "| 条件 | 完遂率 | 列挙F1 | 現在地精度 | 誤隔離 | 成功率 |",
+        "|------|--------|--------|-----------|--------|--------|",
+    ]
     for c in result["conditions"]:
         a = result["per_condition"][c]
         lines.append(

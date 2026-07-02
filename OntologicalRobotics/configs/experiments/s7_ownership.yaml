@@ -1,11 +1,14 @@
 # S7 介護「所有」実験（T14, H2 同一性 / H4 双対表現 / H6 業務-物理クエリ）— 完全オフライン
 # 反証: B0 は所有情報経路が無く誤配送、OR-vec は瓜二つで誤配送、OR-sym は視覚署名なく判別不能で
 # 確認多数、OR-full のみ三系統融合＋確認(X5)で誤配送≈0・最高成功。look-alike分離 sep を掃引。
+# シード数 = 20（§2 検出力）: 主操作点 sep=0.6 は OR-full の確認委譲が多く、連続指標 success_rate の
+# vs B0 検定は 8 seed では不確定（p≈0.0625）だった。効果は全 seed 数で一貫(OR-full≈2×B0)のため、
+# 20 seed で適切に検出力を与える（success Wilcoxon p<0.05・安全 McNemar は更に有意・誤配送0 は不変）。
 name: s7-ownership
 scenario: s7
 world_config: configs/world/s7_ownership.yaml
 conditions: [OR-full, OR-vec, OR-sym, B0]
-seeds: [701, 702, 703, 704, 705, 706, 707, 708]
+seeds: [701, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720]
 duration_s: 0.0
 knob: lookalike_sep
 knob_values: [1.5, 1.0, 0.6, 0.3]

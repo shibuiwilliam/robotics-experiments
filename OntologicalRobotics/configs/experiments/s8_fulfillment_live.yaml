@@ -1,0 +1,19 @@
+# S8 fulfillment — agent（live）射程（K2, T15, H3/H5/H2/H6/H7・H8提案）。課金・要コスト承認。
+#
+# 実 LLM が `act` ツールでアクションを発行して fulfillment を遂行する閉ループ。
+# OR-full-llm（送信基準をツール側でハード強制）/ B1-llm（非正規化能力・検証なし）/
+# B0-llm（生情報・検証なし）/ OR-full-llm-guarded（S7 の教訓: 安全はツール強制で移植）。
+# 初回 mode=openai で全応答キャッシュ → 以後 mode=cache で 0 円再現。
+# 実行前に正確なトークン見積り（`make scenario-estimate-s8`）とモデルスナップショット名を
+# ユーザー確認（IMPROVEMENT.md R-K1・§2）。**モデル名は番兵のまま課金実行できない**（プリフライト遮断）。
+name: s8-fulfillment-live
+scenario: s8
+world_config: configs/world/s8_fulfillment.yaml
+conditions: [OR-full-llm, B1-llm, B0-llm, OR-full-llm-guarded]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108]
+duration_s: 1.0
+provider:
+  mode: openai
+  # 第1スナップショット（S1–S7 live と同一の primary）。ユーザー承認済み（IMPROVEMENT.md R-K1 結論：承認）。
+  # 全応答キャッシュ後は mode=cache で $0 再現。番兵のまま openai 実行はプリフライトで遮断される。
+  llm_model: gpt-5.4-mini

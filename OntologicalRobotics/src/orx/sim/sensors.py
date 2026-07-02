@@ -38,8 +38,13 @@ class SensedObject:
 
 
 def _visible(
-    world: SimWorld, robot: RobotConfig, cam_pos: np.ndarray, cam_xmat: np.ndarray,
-    target_pos: np.ndarray, target_body_id: int, robot_body_id: int,
+    world: SimWorld,
+    robot: RobotConfig,
+    cam_pos: np.ndarray,
+    cam_xmat: np.ndarray,
+    target_pos: np.ndarray,
+    target_body_id: int,
+    robot_body_id: int,
 ) -> bool:
     """視錐台内かつ遮蔽されていないか（mj_ray による遮蔽判定）。"""
     rel = target_pos - cam_pos
@@ -56,8 +61,14 @@ def _visible(
     direction = rel / dist
     geomid = np.zeros(1, dtype=np.int32)
     mujoco.mj_ray(
-        world.model, world.data, cam_pos, direction,
-        None, 1, robot_body_id, geomid,  # 自分の身体は遮蔽判定から除外
+        world.model,
+        world.data,
+        cam_pos,
+        direction,
+        None,
+        1,
+        robot_body_id,
+        geomid,  # 自分の身体は遮蔽判定から除外
     )
     if geomid[0] < 0:
         return False
@@ -88,8 +99,11 @@ def sense(
             continue
         if knobs.occlusion_rate > 0 and rng.random() < knobs.occlusion_rate:
             continue
-        noisy = true_pos + rng.normal(0.0, knobs.pose_noise_sigma, 3) \
-            if knobs.pose_noise_sigma > 0 else true_pos
+        noisy = (
+            true_pos + rng.normal(0.0, knobs.pose_noise_sigma, 3)
+            if knobs.pose_noise_sigma > 0
+            else true_pos
+        )
         dist = float(np.linalg.norm(true_pos - view.pos))
         barcode: str | None = None
         if box.barcode is not None and dist <= robot.barcode_read_range:
@@ -222,8 +236,7 @@ def observe(
     emitter = _EMITTERS.get(robot.vendor_schema)
     if emitter is None:
         raise ValueError(
-            f"未知のベンダースキーマ {robot.vendor_schema!r}"
-            f"（対応: {sorted(_EMITTERS)}）"
+            f"未知のベンダースキーマ {robot.vendor_schema!r}（対応: {sorted(_EMITTERS)}）"
         )
     effective = knobs if knobs is not None else world.config.degradation
     sensed = sense(world, robot, effective, rng)

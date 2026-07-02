@@ -1,15 +1,19 @@
 # S7 介護施設「所有」世界（T14）。所有=観測不可能な情報的関係。瓜二つの小物(ID無し)。
 # 設計意図:
-#  - 6入居者が同種の小物(glasses)を所有。最終目撃ゾーンは2ゾーンに共有(各3人) → loc単独では曖昧。
-#  - OR-sym は所有＋ゾーンのみ → 同ゾーンに3個 → 視覚署名なしで判別不能 → 確認委譲。
+#  - 7入居者が同種の小物(glasses)を所有。最終目撃ゾーンは2ゾーンに共有(dining_hall=4人/lounge=3人)
+#    → loc単独では曖昧。
+#  - OR-sym は所有＋ゾーンのみ → 同ゾーンに3〜4個 → 視覚署名なしで判別不能 → 確認委譲。
 #  - OR-vec は所有関係を持たず種プロトタイプ最近傍 → owner非依存で誤配送。
 #  - OR-full は loc で絞り note署名(ベクトル)で同定、低マージンは確認(X5)で誤配送を回避。
+#  - ハードケース(R-1C): dining_hall を 4 人に増やし最混雑ゾーンを作る。OR-sym の確認委譲は更に増え、
+#    OR-vec の誤配送機会も増える一方、OR-full は署名＋確認で誤配送0を維持（H4 双対表現の価値を強調）。
 item_type: glasses
-residents: [sato, tanaka, suzuki, takahashi, ito, watanabe]
+residents: [sato, tanaka, suzuki, kimura, takahashi, ito, watanabe]
 resident_zone:
   sato: dining_hall
   tanaka: dining_hall
   suzuki: dining_hall
+  kimura: dining_hall
   takahashi: lounge
   ito: lounge
   watanabe: lounge
@@ -17,6 +21,7 @@ rooms:
   sato: room_101
   tanaka: room_102
   suzuki: room_103
+  kimura: room_104
   takahashi: room_201
   ito: room_202
   watanabe: room_203

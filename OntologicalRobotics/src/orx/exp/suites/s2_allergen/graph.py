@@ -38,24 +38,36 @@ def build_contamination_graph(
 
     for a in allergens:
         claim(
-            iri.entity("allergen", a), iri.RDF_TYPE,
-            Term(kind="iri", value=iri.biz("AllergenClass")), 0.0,
+            iri.entity("allergen", a),
+            iri.RDF_TYPE,
+            Term(kind="iri", value=iri.biz("AllergenClass")),
+            0.0,
         )
     for i, c in enumerate(episode.contacts):
         ce = iri.entity("contact", str(i))
         claim(ce, iri.RDF_TYPE, Term(kind="iri", value=iri.st("ContactEvent")), c.sim_time)
-        claim(ce, iri.st("contactParty"),
-              Term(kind="iri", value=iri.entity("object", c.a)), c.sim_time)
-        claim(ce, iri.st("contactParty"),
-              Term(kind="iri", value=iri.entity("object", c.b)), c.sim_time)
+        claim(
+            ce,
+            iri.st("contactParty"),
+            Term(kind="iri", value=iri.entity("object", c.a)),
+            c.sim_time,
+        )
+        claim(
+            ce,
+            iri.st("contactParty"),
+            Term(kind="iri", value=iri.entity("object", c.b)),
+            c.sim_time,
+        )
     state = contamination_closure(
         episode.intrinsic, episode.contacts, episode.cleanings, episode.eval_time
     )
     for entity, alls in state.carried.items():
         for a in alls:
             claim(
-                iri.entity("object", entity), iri.st("possiblyContaminatedBy"),
-                Term(kind="iri", value=iri.entity("allergen", a)), episode.eval_time,
+                iri.entity("object", entity),
+                iri.st("possiblyContaminatedBy"),
+                Term(kind="iri", value=iri.entity("allergen", a)),
+                episode.eval_time,
             )
     graph.refresh_current_graph(episode.eval_time)
     return graph

@@ -1,6 +1,5 @@
 """S2 CQ回帰＋クラス固有SHACL（H-1 / SCENARIOS.md §6）。"""
 
-
 import pytest
 import yaml
 
@@ -37,9 +36,7 @@ def test_cq_contaminated_matches_oracle(graph_and_world) -> None:
     rows = g.query(cq["sparql"])
     from orx.common import iri
 
-    got = {
-        (iri.parse_entity(r["e"])[1], iri.parse_entity(r["allergen"])[1]) for r in rows
-    }
+    got = {(iri.parse_entity(r["e"])[1], iri.parse_entity(r["allergen"])[1]) for r in rows}
     st = contamination_closure(ep.intrinsic, ep.contacts, ep.cleanings, ep.eval_time)
     expected = {(e, a) for e, alls in st.carried.items() for a in alls}
     assert got == expected

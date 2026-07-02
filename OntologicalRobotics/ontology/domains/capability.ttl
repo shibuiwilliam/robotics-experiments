@@ -71,3 +71,35 @@ orx-cap:matchesCapability a owl:ObjectProperty ;
     rdfs:domain orx-cap:ProcessRequirement ; rdfs:range orx-cap:Capability ;
     rdfs:label "適合能力"@ja ;
     rdfs:comment "工程要求×能力契約の語彙横断マッチ(OR-fullが導出, ベンダー非依存)"@ja .
+
+# --- S8 アクション型（T15, キネティック層）: エージェントの世界変更の来歴付き書戻し ---
+orx-cap:ActionExecution a owl:Class ;
+    rdfs:subClassOf orx-upper:Event ;
+    rdfs:label "アクション実行"@ja ;
+    rdfs:comment "エージェントが発行したアクション型の実行記録（状態・対象・実行機体・時刻）。監査・アンドゥの基盤"@ja .
+
+orx-cap:executedByRobot a owl:ObjectProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range orx-upper:Robot ;
+    rdfs:label "実行ロボット"@ja .
+
+orx-cap:actedOn a owl:ObjectProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range orx-upper:PhysicalObject ;
+    rdfs:label "作用対象"@ja .
+
+orx-cap:toZone a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range xsd:string ;
+    rdfs:label "目的ゾーン"@ja .
+
+orx-cap:actionStatus a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range xsd:string ;
+    rdfs:label "アクション状態"@ja ;
+    rdfs:comment "applied | staged | rejected（送信基準の結果）"@ja .
+
+orx-cap:atTime a owl:DatatypeProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range xsd:double ;
+    rdfs:label "実行時刻"@ja .
+
+orx-cap:compensates a owl:ObjectProperty ;
+    rdfs:domain orx-cap:ActionExecution ; rdfs:range orx-cap:ActionExecution ;
+    rdfs:label "補償対象アクション"@ja ;
+    rdfs:comment "アンドゥ: このアクションが打ち消す元アクション（可逆性の監査リンク）"@ja .

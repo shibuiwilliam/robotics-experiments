@@ -7,3 +7,5 @@ world_config: configs/world/s3_multi_vendor.yaml
 conditions: [OR-full, B1, round-robin]
 seeds: [301, 302, 303, 304, 305, 306, 307, 308]
 duration_s: 0.0
+knob: fault_degradation       # 故障時の真の成功率に乗じる係数（小さいほど過酷, R-3c §7.3）
+knob_values: [0.8, 0.5, 0.3, 0.1]

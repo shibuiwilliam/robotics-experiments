@@ -76,9 +76,7 @@ def make_payload(spec: FuzzSpec, sensed: list[SensedObject]) -> dict[str, Any]:
             spec.y_name: round(s.position[1] * scale, 4),
             spec.z_name: round(s.position[2] * scale, 4),
         }
-        det: dict[str, Any] = (
-            {spec.nest_key: coords} if spec.nest_key else dict(coords)
-        )
+        det: dict[str, Any] = {spec.nest_key: coords} if spec.nest_key else dict(coords)
         if spec.symbol_name is not None:
             det[spec.symbol_name] = s.barcode
         det[spec.conf_name] = s.confidence

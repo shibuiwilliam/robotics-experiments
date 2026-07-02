@@ -55,9 +55,7 @@ def test_stub_agents_run_offline_harness(mini_result: T2ExperimentResult) -> Non
 def test_moved_boxes_answered_via_identity_bridge(mini_result: T2ExperimentResult) -> None:
     """搬送された箱（B視界のみ・ID不可読）の受注も reference が正答する（H2×H6）。"""
     moved = [
-        a
-        for a in mini_result.answers
-        if a.condition == "OR-reference" and a.truth == "handoff"
+        a for a in mini_result.answers if a.condition == "OR-reference" and a.truth == "handoff"
     ]
     assert moved, "handoff正答の質問が存在するはず"
     assert all(a.correct for a in moved)

@@ -11,17 +11,29 @@ from orx.oracle.scenarios.s3 import (
 )
 
 A = MachineSpec(
-    machine_id="arm_a1", vendor="vendor_a", declared_payload_kg=5.0, prior_success=0.9,
-    true_payload_kg=5.0, true_material_success={"plastic": 0.95, "metal": 0.4, "default": 0.5},
+    machine_id="arm_a1",
+    vendor="vendor_a",
+    declared_payload_kg=5.0,
+    prior_success=0.9,
+    true_payload_kg=5.0,
+    true_material_success={"plastic": 0.95, "metal": 0.4, "default": 0.5},
 )
 B = MachineSpec(
-    machine_id="cobot_b1", vendor="vendor_b", declared_payload_kg=20.0, prior_success=0.9,
-    true_payload_kg=20.0, true_material_success={"plastic": 0.7, "metal": 0.95, "default": 0.6},
+    machine_id="cobot_b1",
+    vendor="vendor_b",
+    declared_payload_kg=20.0,
+    prior_success=0.9,
+    true_payload_kg=20.0,
+    true_material_success={"plastic": 0.7, "metal": 0.95, "default": 0.6},
     degrades=True,
 )
 C = MachineSpec(
-    machine_id="agv_c1", vendor="vendor_c", declared_payload_kg=15.0, prior_success=0.85,
-    true_payload_kg=15.0, true_material_success={"plastic": 0.6, "metal": 0.9, "default": 0.6},
+    machine_id="agv_c1",
+    vendor="vendor_c",
+    declared_payload_kg=15.0,
+    prior_success=0.85,
+    true_payload_kg=15.0,
+    true_material_success={"plastic": 0.6, "metal": 0.9, "default": 0.6},
 )
 MACHINES = [A, B, C]
 TRAY = ProductSpec(name="tray", weight_kg=3.0, material="plastic")

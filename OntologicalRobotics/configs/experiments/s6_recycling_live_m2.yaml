@@ -1,0 +1,12 @@
+# S6 リサイクル選別 — 第2モデル再現（R-A, PROJECT.md §8.3）。課金・要コスト承認。
+# 第1モデル（s6_recycling_live.yaml = gpt-5.4-mini）と同一条件で llm_model のみ第2版へ差し替え、
+# 規制ルーティング（コスト差）の agent 結果のモデル依存性を切り分ける。第1版はキャッシュ済みで 0 円。
+name: s6-recycling-live-m2
+scenario: s6
+world_config: configs/world/s6_recycling.yaml
+conditions: [OR-full-llm, B0-llm]
+seeds: [601, 602, 603, 604, 605, 606, 607, 608]
+duration_s: 0.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-2026-03-05   # ← 第2スナップショット（例）。正確な日付付き版へ更新。

@@ -64,10 +64,7 @@ def generate_wms(world: WorldConfig, seeds: SeedTree, db_path: Path) -> WmsRecor
     rng = seeds.child("wms").rng()
     barcoded = [b for b in world.boxes if b.barcode is not None]
 
-    skus = [
-        {"sku": s, "name": n, "weight_kg": w, "fragile": f}
-        for s, n, w, f in _SKU_CATALOG
-    ]
+    skus = [{"sku": s, "name": n, "weight_kg": w, "fragile": f} for s, n, w, f in _SKU_CATALOG]
     orders: list[dict[str, str | int | float]] = []
     instructions: list[dict[str, str]] = []
     for i, box in enumerate(barcoded):
@@ -108,9 +105,7 @@ def generate_wms(world: WorldConfig, seeds: SeedTree, db_path: Path) -> WmsRecor
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(_DDL)
-        conn.executemany(
-            "INSERT INTO skus VALUES (:sku, :name, :weight_kg, :fragile)", skus
-        )
+        conn.executemany("INSERT INTO skus VALUES (:sku, :name, :weight_kg, :fragile)", skus)
         conn.executemany(
             "INSERT INTO orders VALUES (:order_id, :sku, :quantity, :status, :destination)",
             orders,

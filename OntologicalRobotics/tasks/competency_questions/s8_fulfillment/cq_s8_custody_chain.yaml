@@ -1,0 +1,14 @@
+id: cq_s8_custody_chain
+question: "アクション実行後、各搬送物の custody 連鎖（通行区画を順序付き）は何か（監査クエリ）？"
+sparql: |
+  PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX orx-norm: <https://orx.local/onto/norm#>
+  SELECT ?item ?zone ?idx WHERE {
+    GRAPH <https://orx.local/id/graph/current> {
+      ?step rdf:type orx-norm:CustodyStep ;
+            orx-norm:custodyOf ?item ;
+            orx-norm:atZone ?zone ;
+            orx-norm:stepIndex ?idx .
+    }
+  }
+note: "OR-full は全 move の custody を残す（=監査可能・H8）。来歴語彙を持たない条件は空回答。"

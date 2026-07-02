@@ -97,9 +97,7 @@ class ToolAgent:
         prompt_tokens = completion_tokens = tool_calls_total = 0
         response: LLMResponse | None = None
         for turn in range(1, self.max_turns + 1):
-            request = LLMRequest(
-                messages=messages, tools=self.specs if self.specs else None
-            )
+            request = LLMRequest(messages=messages, tools=self.specs if self.specs else None)
             response = self.llm.complete(request)
             prompt_tokens += response.prompt_tokens
             completion_tokens += response.completion_tokens
@@ -121,9 +119,7 @@ class ToolAgent:
             )
             for call in response.tool_calls:
                 function = call.get("function", {})
-                result = self._execute(
-                    function.get("name", ""), function.get("arguments", "")
-                )
+                result = self._execute(function.get("name", ""), function.get("arguments", ""))
                 tool_calls_total += 1
                 messages.append(
                     {

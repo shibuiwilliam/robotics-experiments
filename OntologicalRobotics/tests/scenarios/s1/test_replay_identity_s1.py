@@ -56,8 +56,13 @@ def test_results_json_carries_stamps(tmp_path: Path) -> None:
     from orx.exp import scenario as scn
 
     cfg = ScenarioExperimentConfig(
-        name="s1-stamp", scenario="s1", world_config=runner.WORLD,
-        conditions=runner.CONDITIONS, seeds=[101, 102], duration_s=18.0, claim_ttl_s=8.0,
+        name="s1-stamp",
+        scenario="s1",
+        world_config=runner.WORLD,
+        conditions=runner.CONDITIONS,
+        seeds=[101, 102],
+        duration_s=18.0,
+        claim_ttl_s=8.0,
     )
     exp_dir, _ = scn.run_experiment(cfg, tmp_path, progress=None)
     data = json.loads((exp_dir / "results.json").read_text(encoding="utf-8"))

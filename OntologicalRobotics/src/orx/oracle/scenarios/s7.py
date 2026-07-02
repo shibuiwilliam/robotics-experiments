@@ -15,9 +15,7 @@ class _Object(Protocol):
     true_owner: str
 
 
-def delivery_outcome(
-    decision: int, request_owner: str, objects: list[_Object]
-) -> str:
+def delivery_outcome(decision: int, request_owner: str, objects: list[_Object]) -> str:
     """配送決定の業務帰結。返り値: success | misdelivery | escalation。"""
     if decision == ESCALATE:
         return "escalation"

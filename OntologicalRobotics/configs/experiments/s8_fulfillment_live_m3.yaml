@@ -1,0 +1,15 @@
+# S8 fulfillment — 第3モデル（能力境界・nano）。課金・要コスト承認（R-OPT・承認済み）。
+# 目的: H8 のアクション型は、安全・監査・可逆を**アクション層（送信基準のハード強制＋来歴付き
+#   書戻し）が機械的に保証**する。よって弱いモデルでも安全違反0・誤配送0・監査1.0 は保たれ、
+#   完遂率（LLM がアクションを正しく駆動できるか）だけが能力依存になる——という H8 の核心
+#   （安全はモデル非依存・遂行は能力依存）を最弱 nano で検証する（S6 と同型の 3 点目）。
+# 第1 gpt-5.4-mini・第2 gpt-5.4-2026-03-05 はキャッシュ済で $0。
+name: s8-fulfillment-live-m3-nano
+scenario: s8
+world_config: configs/world/s8_fulfillment.yaml
+conditions: [OR-full-llm, B1-llm, B0-llm, OR-full-llm-guarded]
+seeds: [101, 102, 103, 104, 105, 106, 107, 108]
+duration_s: 1.0
+provider:
+  mode: openai
+  llm_model: gpt-5.4-nano-2026-03-17   # 最弱（S6 m3 と同一・日付付き）

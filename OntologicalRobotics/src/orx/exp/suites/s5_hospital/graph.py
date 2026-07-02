@@ -24,8 +24,14 @@ def build_custody_graph(world: S5World, seeds: SeedTree) -> WorldGraph:
     def claim(subject: str, predicate: str, obj: Term, t: float) -> None:
         graph.assert_claim(
             Claim(
-                claim_id=deterministic_id(rng), subject=subject, predicate=predicate,
-                object=obj, asserted_by=_AGENT, confidence=1.0, observed_at=t, valid_until=None,
+                claim_id=deterministic_id(rng),
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                asserted_by=_AGENT,
+                confidence=1.0,
+                observed_at=t,
+                valid_until=None,
             )
         )
 
@@ -34,8 +40,12 @@ def build_custody_graph(world: S5World, seeds: SeedTree) -> WorldGraph:
         n_iri = iri.entity("norm", f"prohibition-{i}")
         claim(n_iri, iri.RDF_TYPE, Term(kind="iri", value=iri.norm("Prohibition")), 0.0)
         claim(n_iri, iri.norm("appliesToItemClass"), Term(kind="literal", value=n.item_class), 0.0)
-        claim(n_iri, iri.norm("forbidsZoneClass"),
-              Term(kind="literal", value=n.forbidden_zone_class), 0.0)
+        claim(
+            n_iri,
+            iri.norm("forbidsZoneClass"),
+            Term(kind="literal", value=n.forbidden_zone_class),
+            0.0,
+        )
 
     # OR-full の custody連鎖（全通行を記録）
     for tr in world.transports:
@@ -47,7 +57,11 @@ def build_custody_graph(world: S5World, seeds: SeedTree) -> WorldGraph:
             claim(step, iri.RDF_TYPE, Term(kind="iri", value=iri.norm("CustodyStep")), float(idx))
             claim(step, iri.norm("custodyOf"), Term(kind="iri", value=item_iri), float(idx))
             claim(step, iri.norm("atZone"), Term(kind="literal", value=zone), float(idx))
-            claim(step, iri.norm("stepIndex"),
-                  Term(kind="literal", value=str(idx), datatype=_XSD_INT), float(idx))
+            claim(
+                step,
+                iri.norm("stepIndex"),
+                Term(kind="literal", value=str(idx), datatype=_XSD_INT),
+                float(idx),
+            )
     graph.refresh_current_graph(float(len(world.transports) + 1))
     return graph
