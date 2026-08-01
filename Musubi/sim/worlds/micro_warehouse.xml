@@ -48,7 +48,7 @@
 
     <!-- Static shelf blocks (obstacles / storage). -->
     <geom name="shelf_a" type="box" size="0.05 0.6 0.3" pos="-1.2 -1.2 0.3" rgba="0.5 0.5 0.55 1"/>
-    <geom name="shelf_b" type="box" size="0.6 0.05 0.3" pos="0.0 0.0 0.3"   rgba="0.5 0.5 0.55 1"/>
+    <geom name="shelf_b" type="box" size="0.5 0.05 0.3" pos="0.6 0.6 0.3"   rgba="0.5 0.5 0.55 1"/>
 
     <!-- Pallets: free bodies, distinct colors, a tag site each (physical anchor). -->
     <body name="pallet_1" pos="-1.2 1.2 0.06">
@@ -56,22 +56,22 @@
       <geom name="pallet_1_geom" class="pallet" rgba="0.90 0.20 0.20 1"/>
       <site name="pallet_1_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
     </body>
-    <body name="pallet_2" pos="-0.9 1.2 0.06">
+    <body name="pallet_2" pos="-1.7 1.7 0.06">
       <freejoint name="pallet_2_free"/>
       <geom name="pallet_2_geom" class="pallet" rgba="0.20 0.90 0.20 1"/>
       <site name="pallet_2_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
     </body>
-    <body name="pallet_3" pos="-1.2 0.9 0.06">
+    <body name="pallet_3" pos="-1.7 0.75 0.06">
       <freejoint name="pallet_3_free"/>
       <geom name="pallet_3_geom" class="pallet" rgba="0.20 0.20 0.90 1"/>
       <site name="pallet_3_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
     </body>
-    <body name="pallet_4" pos="-0.9 0.9 0.06">
+    <body name="pallet_4" pos="-0.7 1.7 0.06">
       <freejoint name="pallet_4_free"/>
       <geom name="pallet_4_geom" class="pallet" rgba="0.90 0.90 0.20 1"/>
       <site name="pallet_4_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
     </body>
-    <body name="pallet_5" pos="-1.05 1.05 0.06">
+    <body name="pallet_5" pos="-1.75 1.2 0.06">
       <freejoint name="pallet_5_free"/>
       <geom name="pallet_5_geom" class="pallet" rgba="0.90 0.20 0.90 1"/>
       <site name="pallet_5_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>

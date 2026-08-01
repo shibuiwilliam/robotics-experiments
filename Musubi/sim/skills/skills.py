@@ -59,7 +59,7 @@ class MoveTo(Skill):
         failure_modes=("stuck", "timeout"),
     )
 
-    def __init__(self, x: float, y: float, tol: float = 0.08, max_steps: int = 4000) -> None:
+    def __init__(self, x: float, y: float, tol: float = 0.08, max_steps: int = 9000) -> None:
         self.x, self.y, self.tol, self.max_steps = x, y, tol, max_steps
 
     def _run(self, world: World) -> SkillResult:
@@ -89,7 +89,7 @@ class Pick(Skill):
         failure_modes=("out_of_reach",),
     )
 
-    def __init__(self, pallet: str, reach: float = 0.4) -> None:
+    def __init__(self, pallet: str, reach: float = 1.0) -> None:
         self.pallet, self.reach = pallet, reach
 
     def _run(self, world: World) -> SkillResult:
