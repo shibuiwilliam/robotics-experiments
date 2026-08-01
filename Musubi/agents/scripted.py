@@ -53,6 +53,8 @@ class ScriptedPlanner:
         if pos is None:
             raise ValueError(f"no position belief for {entity}; cannot plan relocate")
         zx, zy = zones[to_zone]
+        off = goal.get("offset", (0.0, 0.0))  # distinct drop points within a zone (avoid stacking)
+        zx, zy = zx + float(off[0]), zy + float(off[1])
 
         # Approach from a standoff on the bot's side, so the base never rams the pallet.
         bot = context.get("bot_xy", (0.0, 0.0))

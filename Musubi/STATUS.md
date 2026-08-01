@@ -32,13 +32,23 @@ Live cassette recording (later, needs GOOGLE_API_KEY + budget): `make test-live`
 | P5 Clients/VCR | ✅ done | VCR (replay/record/passthrough, MissingCassette, budget guard, JSON cassettes keyed by hash(model,request)); ERAdapter/ChatAdapter/EmbeddingAdapter (VCR-wrapped); `GeminiBackend` (lazy google import — never loaded offline); `FakeGeminiClient` (schema-valid deterministic double: ER points, minimal-instance generate, seeded unit embeddings); embedding SQLite cache (no double-billing). ER interface moved to clients (PER→CLI). 9 clients tests. |
 | P6 Agents + E0 | ✅ done | Planner interface + ScriptedPlanner (deterministic, standoff approach) + GeminiPlanner (ChatAdapter, offline via FakeGeminiClient canned plan); Musubi tools (entity_resolve/claim_query/norm_check/plan_validate); capability→tool compiler (zero agent code). Bench Episode orchestrator + A0–A4 arms. **E0 smoke passes end-to-end at A4 fully offline** (success, unapproved-irreversible=0, trace=1.0, api_calls=0); A0–A4 ladder runs. 9 tests. |
 | P7 Bench+Scoreboard | ✅ done | Scenario DSL (YAML loader, `e0_smoke.yaml`), run driver (arms×seeds + oracle), CLI (`python -m bench.runner scenario|experiment`), PREREG.md. Oracles (relocate_reached/no_unapproved_irreversible/trace_complete/zero_api_calls). DuckDB MetricsStore + arm summaries. Report generator (`E0_report.md`) + HTML observability dashboard (Case trace). `make experiment E=E0` → 15 runs, oracle 15/15, unappr-irrev 0, API 0. 5 tests. |
-| P8–P11 | ⬜ pending | external mocks, flagships F1/S5/F2, breadth S1–S9/C1–C4, polish |
+| P8 External | ✅ done | In-process mocks (D-0007): WMS ledger (book state + lot fanout + append-only corrections), portals (audit/regulator/CRM + disposal manifest with irreversible-gate). |
+| P9 Flagships | ✅ done | **F1 confidence audit**, **S5 forensic**, **F2 recall** — all machine-scored, oracles pass. F2 ladder: A0 oracle 0.00 / unappr-irrev 3 (unsafe) vs A4 1.00 / 0 (safe). 4 tests. |
+| P10 Breadth | 🟡 partial | S1–S9/C1–C4 + E1–E7 beyond the above are **deferred** (see below) — need the absent Experiment Plan + Ontology Design docs to author faithfully. |
+| P11 Polish | 🟡 in progress | docs-check clean; trace matrix + demo + final report pending. |
 
 ## Deferred / provisional (running list)
 
-- `[PROVISIONAL]` All scenario oracles, experiment statistical design, and the exact ontology
-  concept set depend on the missing canonical docs. Choices recorded in `DECISIONS.md`.
+- **Deferred scenarios (P10 breadth):** S1 cold-chain, S2 maintenance, S3 3PL tenancy, S4 resource
+  contention, S6 demand-response, S7 returns, S8 receiving dispute, S9 sensor credit; challenge
+  C1–C4; and experiments E1, E3–E7. **Reason:** faithfully authoring their oracles + statistics
+  needs the absent Experiment Plan + Ontology Design docs. **TODO:** author each per CLAUDE.md §9.1
+  once those arrive; the machinery (Invisible Hand ops, norms/regimes, capability matching, A2A,
+  signatures) is in place — S9/C-series mostly need scenario YAML + a driver like the flagships.
+- `[PROVISIONAL]` Experiment statistical design (effect sizes, significance) and the exact ontology
+  axioms depend on the missing canonical docs. Choices recorded in `DECISIONS.md`.
 - Live cassettes: none recorded yet (no keys during build). Offline paths use `FakeGeminiClient`.
+  **To record:** set `GOOGLE_API_KEY`, run `make test-live` (record mode) — wires `GeminiBackend`.
 
 ## Test / verification log
 
