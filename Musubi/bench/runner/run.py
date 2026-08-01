@@ -6,34 +6,11 @@ never the system's beliefs.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any
-
 from bench.oracle import OracleReport
 from bench.runner.assemble import build_from_scenario
+from bench.runner.flagships import is_flagship, run_flagship
+from bench.runner.record import RunRecord
 from bench.scenarios.loader import Scenario, list_scenarios, load_scenario
-
-
-@dataclass
-class RunRecord:
-    scenario: str
-    experiment: str | None
-    arm: str
-    seed: int
-    oracle_passed: bool
-    success: bool
-    unapproved_irreversible: int
-    trace_completeness: float
-    claims: int
-    bus_events: int
-    api_calls: int
-    plan_steps: int
-    executed: int
-    reason: str
-    checks: dict[str, bool] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 def run_scenario(
@@ -46,6 +23,9 @@ def run_scenario(
     records: list[RunRecord] = []
     for arm_name in arms:
         for seed in seed_list:
+            if is_flagship(scenario):
+                records.append(run_flagship(scenario, arm_name, seed))
+                continue
             episode, goal, world, _perturbations = build_from_scenario(scenario, arm_name, seed)
             result = episode.run(goal)
             oracle = OracleReport.evaluate(scenario.oracle, result, world)

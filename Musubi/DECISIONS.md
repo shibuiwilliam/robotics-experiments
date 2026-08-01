@@ -60,6 +60,16 @@ and by a test.
 **Rationale.** Keeps the bus honest (Rule #3, Claims append-only) and the boundary self-describing
 without hand-writing schema (Rule #4).
 
+## D-0007 — External systems are in-process mocks (not networked FastAPI) for the benchmark path
+**Context.** PROJECT.md §7.1 lists FastAPI+SQLite mocks; NFR-LOCAL forbids network egress except
+Gemini; the benchmark harness runs in-process and must stay deterministic + offline.
+**Decision.** External systems (WMS ledger, audit/regulator/CRM portals, disposal manifest) are
+in-process Python classes under `external/` that carry intentional ledger/reality divergence hooks.
+They expose the same *semantic* surface the scenarios need (query book state, submit report,
+drill-down). A FastAPI+SQLite wrapper is an optional future skin; the benchmark never needs a port.
+**Rationale.** Keeps runs deterministic, offline, and fast (no sockets); satisfies "intentional
+incompleteness" (ledger divergence) without a network dependency the harness would have to mock away.
+
 ## D-0006 — `make gen` degrades gracefully but real by default
 **Context.** LinkML generation must produce JSON Schema / SHACL / types and be committed.
 **Decision.** `make gen` runs LinkML generators (`gen-json-schema`, `gen-python`, plus a project

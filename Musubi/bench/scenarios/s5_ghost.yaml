@@ -1,0 +1,16 @@
+# S5 — Ghost-inventory forensic (Scenario Catalog §2). Bitemporally replay a 3-day-old failure to
+# find the planted root cause (a premature IdentityBinding used before a swap was detected), without
+# falsely blaming an innocent claim.
+name: s5_ghost
+experiment: E2
+description: >-
+  A customer complains about a failed order. The investigation replays "what did the system believe
+  then?" and pins the root cause to a premature binding — not the innocent, correct scan.
+goal:
+  type: forensic
+  order: order-4411
+arms: [A4]
+seeds: [0, 1, 2]
+invisible_hand: []
+norms: []
+oracle: [root_cause_identified, no_false_blame, bitemporal_replay]

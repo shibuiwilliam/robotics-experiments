@@ -186,14 +186,15 @@ class Episode:
                 case_iri, "SkillExecuted", {"action": str(step.action.iri), "ok": outcome.success}
             )
             if self._arm.use_claims:
-                self._record_action_claim(step, outcome.success)
+                self._record_action_claim(step, outcome.success, case_iri)
             if not outcome.success:
                 break
             executed += 1
         return executed
 
-    def _record_action_claim(self, step: Any, ok: bool) -> None:
-        iri = mint("claim", "act", str(step.action.iri).rsplit("/", 1)[-1])
+    def _record_action_claim(self, step: Any, ok: bool, case_iri: str) -> None:
+        case_tail = case_iri.rsplit("/", 2)[-2:]  # unique per Case (entity/zone)
+        iri = mint("claim", "act", *case_tail, str(step.action.iri).rsplit("/", 1)[-1])
         self._tools.claims.add(
             Claim(
                 iri=iri,

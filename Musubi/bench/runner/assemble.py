@@ -7,6 +7,7 @@ divergence the oracle later scores.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from agents.capability_compiler.compiler import tools_for
@@ -49,20 +50,26 @@ def _make_norm(spec: dict[str, Any]) -> Norm:
     )
 
 
-def build_from_scenario(
-    scenario: Scenario,
-    arm_name: str,
-    seed: int,
-    planner: Planner | None = None,
-    *,
-    chat: ChatAdapter | None = None,
-) -> tuple[Episode, dict[str, Any], World, list[dict[str, Any]]]:
-    """Assemble a scenario run. Returns (episode, goal, world, planted_perturbations)."""
+@dataclass
+class Stack:
+    """The assembled components of a scenario run (shared by Episode and flagship drivers)."""
+
+    world: World
+    arm: Arm
+    tools: MusubiTools
+    bus: EventBus
+    skill_registry: dict[str, Any]
+    zones: dict[str, tuple[float, float]]
+    perception: OraclePerception
+    perturbations: list[dict[str, Any]]
+
+
+def build_stack(scenario: Scenario, arm_name: str, seed: int) -> Stack:
+    """Assemble world + core + perception + skills + planted divergence for a scenario run."""
     world = World(seed=seed)
     arm = Arm.from_name(arm_name)
 
-    # Invisible Hand: plant divergence before the episode reads the world.
-    hand = InvisibleHand(world)
+    hand = InvisibleHand(world)  # plant divergence before anything reads the world
     perturbations = [
         {"op": p.op, "targets": list(p.targets), "detail": p.detail}
         for p in hand.apply_schedule(scenario.invisible_hand)
@@ -74,7 +81,6 @@ def build_from_scenario(
     norms = NormStore()
     for spec in scenario.norms:
         norms.add(_make_norm(spec))
-
     for body in world.pallet_bodies():
         entities.register(Entity(iri=world.entity_iri(body), label=body))
     capabilities.advertise(
@@ -83,7 +89,6 @@ def build_from_scenario(
         )
     )
     skill_registry = tools_for(capabilities.capabilities(), _LIFT_BOT)
-
     tools = MusubiTools(
         claims=claims,
         entities=entities,
@@ -91,25 +96,42 @@ def build_from_scenario(
         norms=norms,
         mediator=Mediator(claims, entities),
     )
-    bus = EventBus()
     zones = {name: (cx, cy) for name, (cx, cy, _half) in ZONES.items()}
-
-    if planner is None:
-        planner = GeminiPlanner(chat) if chat is not None else ScriptedPlanner()
-
-    detect = OraclePerception(world).detect  # oracle dial (offline)
-
-    episode = Episode(
+    return Stack(
         world=world,
+        arm=arm,
         tools=tools,
-        planner=planner,
-        bus=bus,
+        bus=EventBus(),
         skill_registry=skill_registry,
         zones=zones,
-        arm=arm,
-        detect=detect,
+        perception=OraclePerception(world),
+        perturbations=perturbations,
     )
-    return episode, dict(scenario.goal), world, perturbations
+
+
+def build_from_scenario(
+    scenario: Scenario,
+    arm_name: str,
+    seed: int,
+    planner: Planner | None = None,
+    *,
+    chat: ChatAdapter | None = None,
+) -> tuple[Episode, dict[str, Any], World, list[dict[str, Any]]]:
+    """Assemble a relocate-style scenario run. Returns (episode, goal, world, perturbations)."""
+    stack = build_stack(scenario, arm_name, seed)
+    if planner is None:
+        planner = GeminiPlanner(chat) if chat is not None else ScriptedPlanner()
+    episode = Episode(
+        world=stack.world,
+        tools=stack.tools,
+        planner=planner,
+        bus=stack.bus,
+        skill_registry=stack.skill_registry,
+        zones=stack.zones,
+        arm=stack.arm,
+        detect=stack.perception.detect,
+    )
+    return episode, dict(scenario.goal), stack.world, stack.perturbations
 
 
 # --------------------------------------------------------------------------- E0 convenience
