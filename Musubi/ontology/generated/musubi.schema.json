@@ -1,0 +1,1826 @@
+{
+    "$defs": {
+        "Action": {
+            "additionalProperties": false,
+            "description": "The abstraction of a world-changing act, with preconditions, expected effects, failure modes, compensation, reversibility class, cost, and resource requirements (unified action model).",
+            "properties": {
+                "actionType": {
+                    "description": "The abstract action type (matched against capabilities).",
+                    "type": "string"
+                },
+                "compensation": {
+                    "description": "IRI of the compensating Action (if compensable).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "cost": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/QuantityValue"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Estimated cost."
+                },
+                "expectedEffects": {
+                    "description": "Expected effects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "failureModes": {
+                    "description": "Known failure modes.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "preconditions": {
+                    "description": "Preconditions (SHACL-checkable references).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "requirement": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/Requirement"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Capability requirement to execute this action."
+                },
+                "reversibility": {
+                    "$ref": "#/$defs/ReversibilityClass",
+                    "description": "Reversibility class."
+                }
+            },
+            "required": [
+                "iri",
+                "actionType",
+                "reversibility"
+            ],
+            "title": "Action",
+            "type": "object"
+        },
+        "Affordance": {
+            "additionalProperties": false,
+            "description": "An action possibility an object offers (the bridge between perception and action).",
+            "properties": {
+                "actionType": {
+                    "description": "The abstract action this affordance enables.",
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "actionType"
+            ],
+            "title": "Affordance",
+            "type": "object"
+        },
+        "Anchor": {
+            "additionalProperties": false,
+            "description": "One identity cue. Bundled (not used alone) to ground identity.",
+            "properties": {
+                "anchorKind": {
+                    "$ref": "#/$defs/AnchorKind",
+                    "description": "The kind of cue."
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "The cue value (tag id, business key, or serialized embedding ref).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "anchorKind"
+            ],
+            "title": "Anchor",
+            "type": "object"
+        },
+        "AnchorBundle": {
+            "additionalProperties": false,
+            "description": "The bundle of identity cues (physical / spatial / business-key) held together to support gradual grounding of identity (PROJECT.md \u00a78: Anchor).",
+            "properties": {
+                "anchors": {
+                    "description": "The bundled anchors.",
+                    "items": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/$defs/PhysicalAnchor"
+                            },
+                            {
+                                "$ref": "#/$defs/SpatialAnchor"
+                            },
+                            {
+                                "$ref": "#/$defs/BusinessKeyAnchor"
+                            }
+                        ]
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "AnchorBundle",
+            "type": "object"
+        },
+        "AnchorKind": {
+            "description": "A kind of identity cue bundled to ground an Entity's identity.",
+            "enum": [
+                "physical",
+                "spatial",
+                "business_key"
+            ],
+            "title": "AnchorKind",
+            "type": "string"
+        },
+        "Aspect": {
+            "additionalProperties": false,
+            "description": "A projection (face) of an Entity. Concrete subtypes are the three aspect kinds.",
+            "properties": {
+                "authority": {
+                    "description": "The Authority (system of record) for this aspect \u00d7 scope.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/$defs/AspectKind",
+                    "description": "Which aspect kind."
+                }
+            },
+            "required": [
+                "iri",
+                "kind"
+            ],
+            "title": "Aspect",
+            "type": "object"
+        },
+        "AspectKind": {
+            "description": "The three faces of an Entity (three-phase aspect model).",
+            "enum": [
+                "physical",
+                "cognitive",
+                "business"
+            ],
+            "title": "AspectKind",
+            "type": "string"
+        },
+        "Authority": {
+            "additionalProperties": false,
+            "description": "A declared System of Record for an aspect \u00d7 scope. There is NO global master of an Entity; authority is per-aspect (PROJECT.md \u00a78: Authority). Reputation may be dynamic (S9).",
+            "properties": {
+                "aspectKind": {
+                    "$ref": "#/$defs/AspectKind",
+                    "description": "The aspect this authority is authoritative for."
+                },
+                "effectiveConfidence": {
+                    "description": "Dynamic credit rating of this source (S9 \u2014 reputation from track record).",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "scope": {
+                    "description": "The scope (zone/domain) of authority.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "aspectKind"
+            ],
+            "title": "Authority",
+            "type": "object"
+        },
+        "BusinessAspect": {
+            "additionalProperties": false,
+            "description": "The ledger face \u2014 SKU, lot, ownership, quantity. Authority is a business system.",
+            "properties": {
+                "authority": {
+                    "description": "The Authority (system of record) for this aspect \u00d7 scope.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/$defs/AspectKind",
+                    "description": "Which aspect kind."
+                }
+            },
+            "required": [
+                "iri",
+                "kind"
+            ],
+            "title": "BusinessAspect",
+            "type": "object"
+        },
+        "BusinessKeyAnchor": {
+            "additionalProperties": false,
+            "description": "A business key (SKU / serial / lot).",
+            "properties": {
+                "anchorKind": {
+                    "$ref": "#/$defs/AnchorKind",
+                    "description": "The kind of cue."
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "The cue value (tag id, business key, or serialized embedding ref).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "anchorKind"
+            ],
+            "title": "BusinessKeyAnchor",
+            "type": "object"
+        },
+        "Capability": {
+            "additionalProperties": false,
+            "description": "A capacity an actor advertises. Matched to Requirements by subsumption (not string equality).",
+            "properties": {
+                "actionTypes": {
+                    "description": "Abstract action types the actor can perform.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "actor": {
+                    "description": "IRI of the advertising actor.",
+                    "type": "string"
+                },
+                "certified": {
+                    "description": "Whether the capability is conformance-certified.",
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "qos": {
+                    "description": "Quality-of-service (e.g. max payload, accuracy). Measured QoS may override advertised (S9/C3).",
+                    "items": {
+                        "$ref": "#/$defs/QuantityValue"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "actor",
+                "actionTypes"
+            ],
+            "title": "Capability",
+            "type": "object"
+        },
+        "Case": {
+            "additionalProperties": false,
+            "description": "A business-unit narrative. Its IRI is the trace key threading order->motor for semantic observability (NFR-OBS).",
+            "properties": {
+                "episodes": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Case",
+            "type": "object"
+        },
+        "Claim": {
+            "additionalProperties": false,
+            "description": "An assertion about world state. Never a bare fact \u2014 always someone's claim, carrying source, method, confidence, valid/transaction time, and realm. Append-only: replaced via `supersedes`, never deleted (PROJECT.md \u00a78: Claim; CLAUDE.md \u00a70-3).",
+            "properties": {
+                "claimKind": {
+                    "$ref": "#/$defs/ClaimKind",
+                    "description": "The subject-kind (selects decay half-life)."
+                },
+                "confidence": {
+                    "description": "Degree of belief in a Claim, 0..1 at validTime (pre-decay).",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "justifiedBy": {
+                    "description": "IRIs of upstream Claims/norms/business grounds (accountability chain \u2014 NFR-TRACE).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "method": {
+                    "$ref": "#/$defs/Method",
+                    "description": "How the Claim was produced."
+                },
+                "objectValue": {
+                    "description": "The asserted value (serialized; may reference a QuantityValue/Pose).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "predicate": {
+                    "description": "The asserted property (e.g. position, ownership).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "realm": {
+                    "$ref": "#/$defs/Realm",
+                    "description": "The Realm a Claim belongs to."
+                },
+                "source": {
+                    "description": "IRI of the asserting actor/sensor/system (provenance).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "subject": {
+                    "description": "IRI of the Entity/aspect the Claim is about.",
+                    "type": "string"
+                },
+                "supersedes": {
+                    "description": "IRI of the Claim this one replaces (append-only; losers are never deleted).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "transactionTime": {
+                    "description": "When the record was written to the store (bitemporal).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "validTime": {
+                    "description": "When the asserted fact holds in the world (bitemporal \u2014 OWL-Time / PROV).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "claimKind",
+                "subject"
+            ],
+            "title": "Claim",
+            "type": "object"
+        },
+        "ClaimKind": {
+            "description": "The subject-kind of a Claim; selects its confidence-decay half-life.",
+            "enum": [
+                "position",
+                "pose",
+                "presence",
+                "ownership",
+                "tag_read",
+                "quantity",
+                "state",
+                "custody"
+            ],
+            "title": "ClaimKind",
+            "type": "string"
+        },
+        "CognitiveAspect": {
+            "additionalProperties": false,
+            "description": "The inferred face \u2014 derived beliefs about the Entity.",
+            "properties": {
+                "authority": {
+                    "description": "The Authority (system of record) for this aspect \u00d7 scope.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/$defs/AspectKind",
+                    "description": "Which aspect kind."
+                }
+            },
+            "required": [
+                "iri",
+                "kind"
+            ],
+            "title": "CognitiveAspect",
+            "type": "object"
+        },
+        "Compensation": {
+            "additionalProperties": false,
+            "description": "A compensating action pairing (for compensable actions / sagas).",
+            "properties": {
+                "compensatingAction": {
+                    "type": "string"
+                },
+                "forAction": {
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "iri",
+                "forAction",
+                "compensatingAction"
+            ],
+            "title": "Compensation",
+            "type": "object"
+        },
+        "Contract": {
+            "additionalProperties": false,
+            "description": "An agreement between actors (chains into the accountability chain).",
+            "properties": {
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "parties": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": "array"
+                },
+                "terms": {
+                    "description": "Contract terms (e.g. unit price, SLA).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "parties"
+            ],
+            "title": "Contract",
+            "type": "object"
+        },
+        "Delegation": {
+            "additionalProperties": false,
+            "description": "A delegation of authority/work, carrying a capability token. Chains form the Accountability Chain; recorded alongside any ADK internal call (CLAUDE.md \u00a78).",
+            "properties": {
+                "capabilityToken": {
+                    "description": "Scoped token authorizing the delegate.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "delegate": {
+                    "type": "string"
+                },
+                "delegator": {
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "task": {
+                    "description": "IRI of the delegated Task.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "delegator",
+                "delegate"
+            ],
+            "title": "Delegation",
+            "type": "object"
+        },
+        "Entity": {
+            "additionalProperties": false,
+            "description": "Anything with identity (an immutable IRI): objects, people, places, equipment, organizations, information objects. Its three aspects are an achievement, not a given.",
+            "properties": {
+                "anchorBundle": {
+                    "description": "The bundle of identity cues for this Entity.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "aspects": {
+                    "description": "The Entity's aspects (physical/cognitive/business projections).",
+                    "items": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/$defs/PhysicalAspect"
+                            },
+                            {
+                                "$ref": "#/$defs/CognitiveAspect"
+                            },
+                            {
+                                "$ref": "#/$defs/BusinessAspect"
+                            }
+                        ]
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Entity",
+            "type": "object"
+        },
+        "Episode": {
+            "additionalProperties": false,
+            "description": "One purposeful activity (a run of events).",
+            "properties": {
+                "events": {
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Episode",
+            "type": "object"
+        },
+        "Event": {
+            "additionalProperties": false,
+            "description": "A meaningful state change (the base of narrative aggregation).",
+            "properties": {
+                "about": {
+                    "description": "IRI(s) the event concerns.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "eventType": {
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "validTime": {
+                    "description": "When the asserted fact holds in the world (bitemporal \u2014 OWL-Time / PROV).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "eventType"
+            ],
+            "title": "Event",
+            "type": "object"
+        },
+        "Exception": {
+            "additionalProperties": false,
+            "description": "A deviation from expectation and its handling path (a domain concept on the bus, not a crash).",
+            "properties": {
+                "about": {
+                    "description": "IRI the exception concerns.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "deviation": {
+                    "description": "What deviated.",
+                    "type": "string"
+                },
+                "disposition": {
+                    "$ref": "#/$defs/ExceptionDisposition",
+                    "description": "The chosen escalation path."
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "deviation",
+                "disposition"
+            ],
+            "title": "Exception",
+            "type": "object"
+        },
+        "ExceptionDisposition": {
+            "description": "The escalation path for an Exception (deviation from expectation).",
+            "enum": [
+                "retry",
+                "replan",
+                "redelegate",
+                "human"
+            ],
+            "title": "ExceptionDisposition",
+            "type": "string"
+        },
+        "Frame": {
+            "additionalProperties": false,
+            "description": "A coordinate frame. Transforms between frames are themselves Claims.",
+            "properties": {
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Frame",
+            "type": "object"
+        },
+        "Goal": {
+            "additionalProperties": false,
+            "description": "A declarative goal.",
+            "properties": {
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "predicate": {
+                    "description": "The desired world condition.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Goal",
+            "type": "object"
+        },
+        "IdentityBinding": {
+            "additionalProperties": false,
+            "description": "A confidence-and-evidence-bearing, RETRACTABLE binding of an observation (TrackedObject) to an Entity. NEVER created for persons (NFR-P privacy floor \u2014 anonymous location/pose only).",
+            "properties": {
+                "confidence": {
+                    "description": "Degree of belief in a Claim, 0..1 at validTime (pre-decay).",
+                    "maximum": 1.0,
+                    "minimum": 0.0,
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "entity": {
+                    "description": "IRI of the Entity bound to.",
+                    "type": "string"
+                },
+                "evidence": {
+                    "description": "IRIs of the anchors/Claims justifying the binding.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "isPerson": {
+                    "description": "Must be false. A binding for a person violates the privacy floor (NFR-P) and is rejected by the world_ok shape.",
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
+                },
+                "retracted": {
+                    "description": "Whether this binding has been retracted.",
+                    "type": [
+                        "boolean",
+                        "null"
+                    ]
+                },
+                "trackedObject": {
+                    "description": "IRI of the observation being bound.",
+                    "type": "string"
+                },
+                "validTime": {
+                    "description": "When the asserted fact holds in the world (bitemporal \u2014 OWL-Time / PROV).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "trackedObject",
+                "entity"
+            ],
+            "title": "IdentityBinding",
+            "type": "object"
+        },
+        "MediationResult": {
+            "additionalProperties": false,
+            "description": "The adjudication of conflicting Claims by authority \u00d7 decay-adjusted confidence \u00d7 method rank. The loser is superseded, not deleted (belief mediation, PROJECT.md \u00a78).",
+            "properties": {
+                "createdAt": {
+                    "description": "Sim-clock time (seconds since run epoch) the record was created (transactionTime source).",
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "losers": {
+                    "description": "IRIs of superseded Claims.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "reason": {
+                    "description": "Why the winner won (authority/confidence/method trace).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "winner": {
+                    "description": "IRI of the winning Claim.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "iri",
+                "winner"
+            ],
+            "title": "MediationResult",
+            "type": "object"
+        },
+        "Method": {
+            "description": "How a Claim was produced. Feeds belief mediation as a tie-breaker rank (config/registry.yaml:claims.method_rank).",
+            "enum": [
+                "direct_measurement",
+                "sensor_fusion",
+                "ledger_of_record",
+                "inference",
+                "hearsay"
+            ],
+            "title": "Method",
+            "type": "string"
+        },
+        "Norm": {
+            "additionalProperties": false,
+            "description": "An obligation / permission / prohibition with scope, strength (hard/soft), and a link to its source document (normSource). Compiled from documents; checked at plan- and run-time.",
+            "properties": {
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "modality": {
+                    "$ref": "#/$defs/NormModality",
+                    "description": "obligation/permission/prohibition."
+                },
+                "normSource": {
+                    "description": "IRI of the source clause/document (RAG-citable).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "priority": {
+                    "description": "Overlay priority (higher overrides lower in a regime switch).",
+                    "type": [
+                        "integer",
+                        "null"
+                    ]
+                },
+                "regime": {
+                    "description": "Optional regime this norm belongs to (e.g. emergency overlay, C2).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "scope": {
+                    "description": "Where/when the norm applies (zone/regime/time).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "strength": {
+                    "$ref": "#/$defs/NormStrength",
+                    "description": "hard/soft."
+                }
+            },
+            "required": [
+                "iri",
+                "modality",
+                "strength"
+            ],
+            "title": "Norm",
+            "type": "object"
+        },
+        "NormModality": {
+            "description": "Deontic modality of a Norm.",
+            "enum": [
+                "obligation",
+                "permission",
+                "prohibition"
+            ],
+            "title": "NormModality",
+            "type": "string"
+        },
+        "NormStrength": {
+            "description": "Whether a Norm is a hard constraint or a soft preference.",
+            "enum": [
+                "hard",
+                "soft"
+            ],
+            "title": "NormStrength",
+            "type": "string"
+        },
+        "PhysicalAnchor": {
+            "additionalProperties": false,
+            "description": "A tag read or appearance-embedding cue.",
+            "properties": {
+                "anchorKind": {
+                    "$ref": "#/$defs/AnchorKind",
+                    "description": "The kind of cue."
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "The cue value (tag id, business key, or serialized embedding ref).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "anchorKind"
+            ],
+            "title": "PhysicalAnchor",
+            "type": "object"
+        },
+        "PhysicalAspect": {
+            "additionalProperties": false,
+            "description": "The observed face \u2014 pose, appearance, tags. Authority is typically a sensor/perception.",
+            "properties": {
+                "authority": {
+                    "description": "The Authority (system of record) for this aspect \u00d7 scope.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/$defs/AspectKind",
+                    "description": "Which aspect kind."
+                }
+            },
+            "required": [
+                "iri",
+                "kind"
+            ],
+            "title": "PhysicalAspect",
+            "type": "object"
+        },
+        "Plan": {
+            "additionalProperties": false,
+            "description": "An ordered composition of Actions to achieve a Goal. Gated before execution.",
+            "properties": {
+                "goal": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "realm": {
+                    "$ref": "#/$defs/Realm",
+                    "description": "Realm of the plan (usually planned)."
+                },
+                "steps": {
+                    "description": "Ordered Action IRIs.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Plan",
+            "type": "object"
+        },
+        "Pose": {
+            "additionalProperties": false,
+            "description": "A position (+ optional orientation) expressed in a named Frame. No bare coordinates.",
+            "properties": {
+                "frame": {
+                    "description": "The Frame the coordinates are in.",
+                    "type": "string"
+                },
+                "qw": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "qx": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "qy": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "qz": {
+                    "type": [
+                        "number",
+                        "null"
+                    ]
+                },
+                "x": {
+                    "type": "number"
+                },
+                "y": {
+                    "type": "number"
+                },
+                "z": {
+                    "type": "number"
+                }
+            },
+            "required": [
+                "frame",
+                "x",
+                "y",
+                "z"
+            ],
+            "title": "Pose",
+            "type": "object"
+        },
+        "QuantityValue": {
+            "additionalProperties": false,
+            "description": "A magnitude with a unit (QUDT). No bare numbers (design principle P1).",
+            "properties": {
+                "magnitude": {
+                    "description": "The numeric magnitude.",
+                    "type": "number"
+                },
+                "unit": {
+                    "description": "The QUDT unit IRI/curie.",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "magnitude",
+                "unit"
+            ],
+            "title": "QuantityValue",
+            "type": "object"
+        },
+        "Realization": {
+            "additionalProperties": false,
+            "description": "A concrete realization of an abstract Action in one world (realization polymorphism).",
+            "properties": {
+                "action": {
+                    "description": "IRI of the abstract Action realized.",
+                    "type": "string"
+                },
+                "actor": {
+                    "description": "IRI of the actor (robot/agent/person) realizing it.",
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "realizationKind": {
+                    "$ref": "#/$defs/RealizationKind",
+                    "description": "physical/informational/human."
+                }
+            },
+            "required": [
+                "iri",
+                "realizationKind",
+                "action",
+                "actor"
+            ],
+            "title": "Realization",
+            "type": "object"
+        },
+        "RealizationKind": {
+            "description": "How an abstract Action is realized (realization polymorphism).",
+            "enum": [
+                "physical",
+                "informational",
+                "human"
+            ],
+            "title": "RealizationKind",
+            "type": "string"
+        },
+        "Realm": {
+            "description": "The world a Claim belongs to. All realms coexist in one graph and are diff-queryable; only `real` describes the actual world (PROJECT.md \u00a78: Realm).",
+            "enum": [
+                "real",
+                "simulated",
+                "planned",
+                "hypothetical"
+            ],
+            "title": "Realm",
+            "type": "string"
+        },
+        "Requirement": {
+            "additionalProperties": false,
+            "description": "A task's demand, matched against advertised Capabilities by subsumption.",
+            "properties": {
+                "actionType": {
+                    "description": "The required abstract action type.",
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "qosConstraints": {
+                    "description": "Required QoS constraints.",
+                    "items": {
+                        "$ref": "#/$defs/QuantityValue"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "actionType"
+            ],
+            "title": "Requirement",
+            "type": "object"
+        },
+        "ReversibilityClass": {
+            "description": "How undoable an Action is. Drives autonomy and approval requirements \u2014 irreversible actions require explicit approval (PROJECT.md \u00a78: ReversibilityClass).",
+            "enum": [
+                "reversible",
+                "compensable",
+                "irreversible"
+            ],
+            "title": "ReversibilityClass",
+            "type": "string"
+        },
+        "Route": {
+            "additionalProperties": false,
+            "description": "A connection between Zones.",
+            "properties": {
+                "fromZone": {
+                    "type": "string"
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "toZone": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "iri",
+                "fromZone",
+                "toZone"
+            ],
+            "title": "Route",
+            "type": "object"
+        },
+        "Saga": {
+            "additionalProperties": false,
+            "description": "A compensation-based distributed execution (physical saga) \u2014 an ordered set of steps.",
+            "properties": {
+                "compensations": {
+                    "description": "Compensations registered as steps commit.",
+                    "items": {
+                        "$ref": "#/$defs/Compensation"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "steps": {
+                    "description": "Ordered Action IRIs.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Saga",
+            "type": "object"
+        },
+        "Skill": {
+            "additionalProperties": false,
+            "description": "A robot-world realization of an Action (PhysicalRealization).",
+            "properties": {
+                "actionType": {
+                    "description": "The abstract action type (matched against capabilities).",
+                    "type": "string"
+                },
+                "compensation": {
+                    "description": "IRI of the compensating Action (if compensable).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "cost": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/QuantityValue"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Estimated cost."
+                },
+                "expectedEffects": {
+                    "description": "Expected effects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "failureModes": {
+                    "description": "Known failure modes.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "preconditions": {
+                    "description": "Preconditions (SHACL-checkable references).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "requirement": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/Requirement"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Capability requirement to execute this action."
+                },
+                "reversibility": {
+                    "$ref": "#/$defs/ReversibilityClass",
+                    "description": "Reversibility class."
+                }
+            },
+            "required": [
+                "iri",
+                "actionType",
+                "reversibility"
+            ],
+            "title": "Skill",
+            "type": "object"
+        },
+        "SpatialAnchor": {
+            "additionalProperties": false,
+            "description": "A position-plus-time cue.",
+            "properties": {
+                "anchorKind": {
+                    "$ref": "#/$defs/AnchorKind",
+                    "description": "The kind of cue."
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "The cue value (tag id, business key, or serialized embedding ref).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri",
+                "anchorKind"
+            ],
+            "title": "SpatialAnchor",
+            "type": "object"
+        },
+        "Task": {
+            "additionalProperties": false,
+            "description": "Assignable work derived from a Goal.",
+            "properties": {
+                "assignedTo": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "goal": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "requirement": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/Requirement"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Capability requirement to perform the task."
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Task",
+            "type": "object"
+        },
+        "Tool": {
+            "additionalProperties": false,
+            "description": "An agent-world realization of an Action (an ADK FunctionTool / InformationalRealization).",
+            "properties": {
+                "actionType": {
+                    "description": "The abstract action type (matched against capabilities).",
+                    "type": "string"
+                },
+                "compensation": {
+                    "description": "IRI of the compensating Action (if compensable).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "cost": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/QuantityValue"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Estimated cost."
+                },
+                "expectedEffects": {
+                    "description": "Expected effects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "failureModes": {
+                    "description": "Known failure modes.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "preconditions": {
+                    "description": "Preconditions (SHACL-checkable references).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "requirement": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/Requirement"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Capability requirement to execute this action."
+                },
+                "reversibility": {
+                    "$ref": "#/$defs/ReversibilityClass",
+                    "description": "Reversibility class."
+                }
+            },
+            "required": [
+                "iri",
+                "actionType",
+                "reversibility"
+            ],
+            "title": "Tool",
+            "type": "object"
+        },
+        "WorkflowStep": {
+            "additionalProperties": false,
+            "description": "A business-world realization of an Action (InformationalRealization).",
+            "properties": {
+                "actionType": {
+                    "description": "The abstract action type (matched against capabilities).",
+                    "type": "string"
+                },
+                "compensation": {
+                    "description": "IRI of the compensating Action (if compensable).",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "cost": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/QuantityValue"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Estimated cost."
+                },
+                "expectedEffects": {
+                    "description": "Expected effects.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "failureModes": {
+                    "description": "Known failure modes.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "preconditions": {
+                    "description": "Preconditions (SHACL-checkable references).",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                },
+                "requirement": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/Requirement"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "description": "Capability requirement to execute this action."
+                },
+                "reversibility": {
+                    "$ref": "#/$defs/ReversibilityClass",
+                    "description": "Reversibility class."
+                }
+            },
+            "required": [
+                "iri",
+                "actionType",
+                "reversibility"
+            ],
+            "title": "WorkflowStep",
+            "type": "object"
+        },
+        "Zone": {
+            "additionalProperties": false,
+            "description": "A space carrying meaning and norms (e.g. quarantine zone, corridor, charging bay).",
+            "properties": {
+                "iri": {
+                    "description": "Immutable global identity of an Entity (PROJECT.md \u00a78: instances referenced by IRI).",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Human-readable label. Never an identity cue.",
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                },
+                "norms": {
+                    "description": "IRIs of Norms in force in this zone.",
+                    "items": {
+                        "type": "string"
+                    },
+                    "type": [
+                        "array",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "iri"
+            ],
+            "title": "Zone",
+            "type": "object"
+        }
+    },
+    "$id": "https://musubi.dev/ontology/musubi",
+    "$schema": "https://json-schema.org/draft/2019-09/schema",
+    "additionalProperties": true,
+    "metamodel_version": "1.11.0",
+    "title": "musubi",
+    "type": "object",
+    "version": "0.1.0"
+}

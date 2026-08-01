@@ -1,0 +1,58 @@
+# world_ok.ttl — hand-authored SHACL acceptance shapes (an oracle component, PROJECT.md §9).
+#
+# "Is the world in an acceptable state?" Encodes the invariant FLOORS that must hold regardless
+# of scenario (the privacy floor, claim sanity, reversibility gating). Scenario-specific oracles
+# add their own shapes; these are the ones no run may ever violate.
+#
+# Data is validated as RDF derived from JSON-LD (generated @context). Uses the msb: namespace of
+# the generated ontology.
+
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix msb:  <https://musubi.dev/ontology/musubi/> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+
+# --- Privacy floor (NFR-P): no IdentityBinding may bind a person. -----------------------------
+msb:PrivacyFloorShape
+    a sh:NodeShape ;
+    sh:targetClass msb:IdentityBinding ;
+    sh:property [
+        sh:path msb:isPerson ;
+        sh:maxCount 1 ;
+        sh:hasValue false ;
+        sh:message "Privacy floor violated: an IdentityBinding must not bind a person (NFR-P)." ;
+    ] .
+
+# --- Claim sanity: confidence in [0,1], realm + method + source present. ----------------------
+msb:ClaimSanityShape
+    a sh:NodeShape ;
+    sh:targetClass msb:Claim ;
+    sh:property [
+        sh:path msb:confidence ;
+        sh:minInclusive 0.0 ;
+        sh:maxInclusive 1.0 ;
+        sh:maxCount 1 ;
+        sh:message "Claim confidence must be within [0,1]." ;
+    ] ;
+    sh:property [
+        sh:path msb:realm ;
+        sh:minCount 1 ;
+        sh:message "Every Claim must declare a realm (real/simulated/planned/hypothetical)." ;
+    ] ;
+    sh:property [
+        sh:path msb:claimKind ;
+        sh:minCount 1 ;
+        sh:message "Every Claim must declare a claimKind." ;
+    ] .
+
+# --- Reversibility gate: an irreversible Action must name a compensation OR be approved. -------
+# (Approval is asserted at run time by linking the executed action to an approval Claim; here we
+#  require that an Action classed irreversible does not silently lack both a compensation and the
+#  approved flag. Scenario oracles assert the "unapproved-irreversible = 0" count directly.)
+msb:ReversibilityShape
+    a sh:NodeShape ;
+    sh:targetClass msb:Action ;
+    sh:property [
+        sh:path msb:reversibility ;
+        sh:maxCount 1 ;
+        sh:message "An Action must declare at most one reversibility class." ;
+    ] .

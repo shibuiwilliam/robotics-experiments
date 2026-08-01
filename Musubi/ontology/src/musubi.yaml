@@ -1,0 +1,449 @@
+id: https://musubi.dev/ontology/musubi
+name: musubi
+title: Musubi Core Ontology
+description: >-
+  The single source of meaning for Musubi — the shared ontology binding the physical world
+  (robots), the cognitive world (agents), and the business world (external systems). Concepts,
+  relations, and actions per PROJECT.md §8 and the 14 mechanisms of the Scenario Catalog §4.1.
+  Every schema / SHACL shape / vocabulary / type is generated from THIS source (CLAUDE.md §0-4);
+  it is never hand-written elsewhere. Grounded in W3C SOSA/SSN, PROV-O, OWL-Time, QUDT, GS1 EPCIS.
+license: MIT
+version: 0.1.0
+
+prefixes:
+  msb: https://musubi.dev/ontology/musubi/
+  linkml: https://w3id.org/linkml/
+  xsd: http://www.w3.org/2001/XMLSchema#
+  prov: http://www.w3.org/ns/prov#
+  sosa: http://www.w3.org/ns/sosa/
+  time: http://www.w3.org/2006/time#
+  qudt: http://qudt.org/schema/qudt/
+  skos: http://www.w3.org/2004/02/skos/core#
+default_prefix: msb
+default_range: string
+
+imports:
+  - linkml:types
+
+# =====================================================================================
+# Enumerations — closed vocabularies (the "words" every instance shares).
+# =====================================================================================
+enums:
+  Realm:
+    description: >-
+      The world a Claim belongs to. All realms coexist in one graph and are diff-queryable;
+      only `real` describes the actual world (PROJECT.md §8: Realm).
+    permissible_values:
+      real: {description: The actual physical/business world.}
+      simulated: {description: "A simulation twin's world (e.g. the morning-standup twin, F3)."}
+      planned: {description: An intended future state asserted by a plan.}
+      hypothetical: {description: A counterfactual or what-if state.}
+
+  AspectKind:
+    description: The three faces of an Entity (three-phase aspect model).
+    permissible_values:
+      physical: {description: "PhysicalAspect — the observed face (pose, appearance, tags)."}
+      cognitive: {description: CognitiveAspect — the inferred face (derived beliefs).}
+      business: {description: "BusinessAspect — the ledger face (SKU, lot, ownership, quantity)."}
+
+  AnchorKind:
+    description: A kind of identity cue bundled to ground an Entity's identity.
+    permissible_values:
+      physical: {description: Tag read or appearance embedding.}
+      spatial: {description: A position-plus-time cue.}
+      business_key: {description: A business key such as SKU or serial.}
+
+  Method:
+    description: >-
+      How a Claim was produced. Feeds belief mediation as a tie-breaker rank
+      (config/registry.yaml:claims.method_rank).
+    permissible_values:
+      direct_measurement: {description: A direct sensor measurement.}
+      sensor_fusion: {description: Fusion of multiple sensors.}
+      ledger_of_record: {description: The authoritative business system of record.}
+      inference: {description: Derived by reasoning.}
+      hearsay: {description: "Reported by another party, unverified."}
+
+  ClaimKind:
+    description: The subject-kind of a Claim; selects its confidence-decay half-life.
+    permissible_values:
+      position: {description: Where something is.}
+      pose: {description: Position + orientation.}
+      presence: {description: Whether something is present.}
+      ownership: {description: Who owns / is responsible for something.}
+      tag_read: {description: A tag/label read.}
+      quantity: {description: A counted quantity.}
+      state: {description: A qualitative state (e.g. damaged).}
+      custody: {description: Who currently holds custody.}
+
+  ReversibilityClass:
+    description: >-
+      How undoable an Action is. Drives autonomy and approval requirements — irreversible
+      actions require explicit approval (PROJECT.md §8: ReversibilityClass).
+    permissible_values:
+      reversible: {description: Fully undoable at negligible cost.}
+      compensable: {description: Not directly undoable but a compensating action exists (saga).}
+      irreversible: {description: Cannot be undone (e.g. disposal). Requires approval gate.}
+
+  RealizationKind:
+    description: How an abstract Action is realized (realization polymorphism).
+    permissible_values:
+      physical: {description: PhysicalRealization — a robot skill.}
+      informational: {description: InformationalRealization — an API/business step.}
+      human: {description: "HumanRealization — a person, treated as a first-class realization."}
+
+  NormModality:
+    description: Deontic modality of a Norm.
+    permissible_values:
+      obligation: {description: Must do.}
+      permission: {description: May do.}
+      prohibition: {description: Must not do.}
+
+  NormStrength:
+    description: Whether a Norm is a hard constraint or a soft preference.
+    permissible_values:
+      hard: {description: "Inviolable (e.g. the privacy floor, safety separation)."}
+      soft: {description: A preference tradeable against others.}
+
+  ExceptionDisposition:
+    description: The escalation path for an Exception (deviation from expectation).
+    permissible_values:
+      retry: {description: Retry the action.}
+      replan: {description: Re-plan around the deviation.}
+      redelegate: {description: Change the delegation.}
+      human: {description: Escalate to a human.}
+
+# =====================================================================================
+# Slots — reusable attributes (single vocabulary; no synonyms).
+# =====================================================================================
+slots:
+  iri:
+    description: "Immutable global identity of an Entity (PROJECT.md §8: instances referenced by IRI)."
+    identifier: true
+    range: uriorcurie
+  label:
+    description: Human-readable label. Never an identity cue.
+  createdAt:
+    description: Sim-clock time (seconds since run epoch) the record was created (transactionTime source).
+    range: float
+  validTime:
+    description: When the asserted fact holds in the world (bitemporal — OWL-Time / PROV).
+    range: float
+  transactionTime:
+    description: When the record was written to the store (bitemporal).
+    range: float
+  confidence:
+    description: "Degree of belief in a Claim, 0..1 at validTime (pre-decay)."
+    range: float
+    minimum_value: 0.0
+    maximum_value: 1.0
+  realm:
+    description: The Realm a Claim belongs to.
+    range: Realm
+  source:
+    description: IRI of the asserting actor/sensor/system (provenance).
+    range: uriorcurie
+  method:
+    description: How the Claim was produced.
+    range: Method
+  supersedes:
+    description: IRI of the Claim this one replaces (append-only; losers are never deleted).
+    range: uriorcurie
+
+classes:
+  # ---------------------------------------------------------------------------- identity
+  Entity:
+    description: >-
+      Anything with identity (an immutable IRI): objects, people, places, equipment,
+      organizations, information objects. Its three aspects are an achievement, not a given.
+    slots: [iri, label]
+    attributes:
+      aspects:
+        description: The Entity's aspects (physical/cognitive/business projections).
+        range: Aspect
+        multivalued: true
+        inlined_as_list: true
+      anchorBundle:
+        description: The bundle of identity cues for this Entity.
+        range: AnchorBundle
+
+  Aspect:
+    abstract: true
+    description: A projection (face) of an Entity. Concrete subtypes are the three aspect kinds.
+    slots: [iri]
+    attributes:
+      kind: {description: Which aspect kind., range: AspectKind, required: true}
+      authority:
+        description: The Authority (system of record) for this aspect × scope.
+        range: uriorcurie
+  PhysicalAspect:
+    is_a: Aspect
+    description: "The observed face — pose, appearance, tags. Authority is typically a sensor/perception."
+  CognitiveAspect:
+    is_a: Aspect
+    description: The inferred face — derived beliefs about the Entity.
+  BusinessAspect:
+    is_a: Aspect
+    description: "The ledger face — SKU, lot, ownership, quantity. Authority is a business system."
+
+  Authority:
+    description: >-
+      A declared System of Record for an aspect × scope. There is NO global master of an Entity;
+      authority is per-aspect (PROJECT.md §8: Authority). Reputation may be dynamic (S9).
+    slots: [iri, label]
+    attributes:
+      aspectKind: {description: The aspect this authority is authoritative for., range: AspectKind, required: true}
+      scope: {description: The scope (zone/domain) of authority.}
+      effectiveConfidence:
+        description: Dynamic credit rating of this source (S9 — reputation from track record).
+        range: float
+        minimum_value: 0.0
+        maximum_value: 1.0
+
+  Anchor:
+    abstract: true
+    description: One identity cue. Bundled (not used alone) to ground identity.
+    slots: [iri]
+    attributes:
+      anchorKind: {description: The kind of cue., range: AnchorKind, required: true}
+      value: {description: "The cue value (tag id, business key, or serialized embedding ref)."}
+  PhysicalAnchor: {is_a: Anchor, description: A tag read or appearance-embedding cue.}
+  SpatialAnchor: {is_a: Anchor, description: A position-plus-time cue.}
+  BusinessKeyAnchor: {is_a: Anchor, description: A business key (SKU / serial / lot).}
+
+  AnchorBundle:
+    description: >-
+      The bundle of identity cues (physical / spatial / business-key) held together to support
+      gradual grounding of identity (PROJECT.md §8: Anchor).
+    slots: [iri]
+    attributes:
+      anchors: {description: The bundled anchors., range: Anchor, multivalued: true, inlined_as_list: true}
+
+  IdentityBinding:
+    description: >-
+      A confidence-and-evidence-bearing, RETRACTABLE binding of an observation (TrackedObject) to
+      an Entity. NEVER created for persons (NFR-P privacy floor — anonymous location/pose only).
+    slots: [iri, confidence, createdAt, validTime]
+    attributes:
+      trackedObject: {description: IRI of the observation being bound., range: uriorcurie, required: true}
+      entity: {description: IRI of the Entity bound to., range: uriorcurie, required: true}
+      evidence: {description: IRIs of the anchors/Claims justifying the binding., range: uriorcurie, multivalued: true}
+      retracted: {description: Whether this binding has been retracted., range: boolean, ifabsent: 'boolean(false)'}
+      isPerson:
+        description: >-
+          Must be false. A binding for a person violates the privacy floor (NFR-P) and is rejected
+          by the world_ok shape.
+        range: boolean
+        ifabsent: 'boolean(false)'
+
+  # ---------------------------------------------------------------------------- belief
+  Claim:
+    description: >-
+      An assertion about world state. Never a bare fact — always someone's claim, carrying source,
+      method, confidence, valid/transaction time, and realm. Append-only: replaced via `supersedes`,
+      never deleted (PROJECT.md §8: Claim; CLAUDE.md §0-3).
+    slots: [iri, source, method, confidence, realm, validTime, transactionTime, createdAt, supersedes]
+    attributes:
+      claimKind: {description: The subject-kind (selects decay half-life)., range: ClaimKind, required: true}
+      subject: {description: IRI of the Entity/aspect the Claim is about., range: uriorcurie, required: true}
+      predicate: {description: "The asserted property (e.g. position, ownership)."}
+      objectValue: {description: The asserted value (serialized; may reference a QuantityValue/Pose).}
+      justifiedBy:
+        description: IRIs of upstream Claims/norms/business grounds (accountability chain — NFR-TRACE).
+        range: uriorcurie
+        multivalued: true
+
+  MediationResult:
+    description: >-
+      The adjudication of conflicting Claims by authority × decay-adjusted confidence × method rank.
+      The loser is superseded, not deleted (belief mediation, PROJECT.md §8).
+    slots: [iri, createdAt]
+    attributes:
+      winner: {description: IRI of the winning Claim., range: uriorcurie, required: true}
+      losers: {description: IRIs of superseded Claims., range: uriorcurie, multivalued: true}
+      reason: {description: Why the winner won (authority/confidence/method trace).}
+
+  # ---------------------------------------------------------------------------- values / space
+  QuantityValue:
+    description: A magnitude with a unit (QUDT). No bare numbers (design principle P1).
+    attributes:
+      magnitude: {description: The numeric magnitude., range: float, required: true}
+      unit: {description: The QUDT unit IRI/curie., range: uriorcurie, required: true}
+
+  Frame:
+    description: A coordinate frame. Transforms between frames are themselves Claims.
+    slots: [iri, label]
+  Pose:
+    description: A position (+ optional orientation) expressed in a named Frame. No bare coordinates.
+    attributes:
+      frame: {description: The Frame the coordinates are in., range: uriorcurie, required: true}
+      x: {range: float, required: true}
+      y: {range: float, required: true}
+      z: {range: float, required: true}
+      qw: {range: float}
+      qx: {range: float}
+      qy: {range: float}
+      qz: {range: float}
+
+  Zone:
+    description: "A space carrying meaning and norms (e.g. quarantine zone, corridor, charging bay)."
+    slots: [iri, label]
+    attributes:
+      norms: {description: IRIs of Norms in force in this zone., range: uriorcurie, multivalued: true}
+  Route:
+    description: A connection between Zones.
+    slots: [iri, label]
+    attributes:
+      fromZone: {range: uriorcurie, required: true}
+      toZone: {range: uriorcurie, required: true}
+
+  Affordance:
+    description: An action possibility an object offers (the bridge between perception and action).
+    slots: [iri, label]
+    attributes:
+      actionType: {description: The abstract action this affordance enables., required: true}
+
+  # ---------------------------------------------------------------------------- action
+  Action:
+    description: >-
+      The abstraction of a world-changing act, with preconditions, expected effects, failure modes,
+      compensation, reversibility class, cost, and resource requirements (unified action model).
+    slots: [iri, label]
+    attributes:
+      actionType: {description: The abstract action type (matched against capabilities)., required: true}
+      preconditions: {description: Preconditions (SHACL-checkable references)., multivalued: true}
+      expectedEffects: {description: Expected effects., multivalued: true}
+      failureModes: {description: Known failure modes., multivalued: true}
+      reversibility: {description: Reversibility class., range: ReversibilityClass, required: true}
+      compensation: {description: IRI of the compensating Action (if compensable)., range: uriorcurie}
+      cost: {description: Estimated cost., range: QuantityValue, inlined: true}
+      requirement: {description: Capability requirement to execute this action., range: Requirement, inlined: true}
+  Skill:
+    is_a: Action
+    description: A robot-world realization of an Action (PhysicalRealization).
+  Tool:
+    is_a: Action
+    description: An agent-world realization of an Action (an ADK FunctionTool / InformationalRealization).
+  WorkflowStep:
+    is_a: Action
+    description: A business-world realization of an Action (InformationalRealization).
+
+  Realization:
+    description: A concrete realization of an abstract Action in one world (realization polymorphism).
+    slots: [iri]
+    attributes:
+      realizationKind: {description: physical/informational/human., range: RealizationKind, required: true}
+      action: {description: IRI of the abstract Action realized., range: uriorcurie, required: true}
+      actor: {description: IRI of the actor (robot/agent/person) realizing it., range: uriorcurie, required: true}
+
+  Compensation:
+    description: A compensating action pairing (for compensable actions / sagas).
+    slots: [iri]
+    attributes:
+      forAction: {range: uriorcurie, required: true}
+      compensatingAction: {range: uriorcurie, required: true}
+  Saga:
+    description: A compensation-based distributed execution (physical saga) — an ordered set of steps.
+    slots: [iri, label]
+    attributes:
+      steps: {description: Ordered Action IRIs., range: uriorcurie, multivalued: true}
+      compensations: {description: Compensations registered as steps commit., range: Compensation, multivalued: true, inlined_as_list: true}
+
+  # ---------------------------------------------------------------------------- capability / norms
+  Capability:
+    description: A capacity an actor advertises. Matched to Requirements by subsumption (not string equality).
+    slots: [iri, label]
+    attributes:
+      actor: {description: IRI of the advertising actor., range: uriorcurie, required: true}
+      actionTypes: {description: Abstract action types the actor can perform., multivalued: true, required: true}
+      qos:
+        description: "Quality-of-service (e.g. max payload, accuracy). Measured QoS may override advertised (S9/C3)."
+        range: QuantityValue
+        multivalued: true
+        inlined_as_list: true
+      certified: {description: Whether the capability is conformance-certified., range: boolean, ifabsent: 'boolean(false)'}
+  Requirement:
+    description: "A task's demand, matched against advertised Capabilities by subsumption."
+    slots: [iri, label]
+    attributes:
+      actionType: {description: The required abstract action type., required: true}
+      qosConstraints: {description: Required QoS constraints., range: QuantityValue, multivalued: true, inlined_as_list: true}
+
+  Norm:
+    description: >-
+      An obligation / permission / prohibition with scope, strength (hard/soft), and a link to its
+      source document (normSource). Compiled from documents; checked at plan- and run-time.
+    slots: [iri, label]
+    attributes:
+      modality: {description: obligation/permission/prohibition., range: NormModality, required: true}
+      strength: {description: hard/soft., range: NormStrength, required: true}
+      scope: {description: Where/when the norm applies (zone/regime/time)., multivalued: true}
+      normSource: {description: IRI of the source clause/document (RAG-citable)., range: uriorcurie}
+      regime: {description: "Optional regime this norm belongs to (e.g. emergency overlay, C2)."}
+      priority: {description: Overlay priority (higher overrides lower in a regime switch)., range: integer, ifabsent: int(0)}
+
+  # ---------------------------------------------------------------------------- accountability
+  Delegation:
+    description: >-
+      A delegation of authority/work, carrying a capability token. Chains form the Accountability
+      Chain; recorded alongside any ADK internal call (CLAUDE.md §8).
+    slots: [iri, createdAt]
+    attributes:
+      delegator: {range: uriorcurie, required: true}
+      delegate: {range: uriorcurie, required: true}
+      capabilityToken: {description: Scoped token authorizing the delegate.}
+      task: {description: IRI of the delegated Task., range: uriorcurie}
+  Contract:
+    description: An agreement between actors (chains into the accountability chain).
+    slots: [iri, label]
+    attributes:
+      parties: {range: uriorcurie, multivalued: true, required: true}
+      terms: {description: "Contract terms (e.g. unit price, SLA)."}
+
+  # ---------------------------------------------------------------------------- goals / narrative
+  Goal:
+    description: A declarative goal.
+    slots: [iri, label]
+    attributes:
+      predicate: {description: The desired world condition.}
+  Task:
+    description: Assignable work derived from a Goal.
+    slots: [iri, label]
+    attributes:
+      goal: {range: uriorcurie}
+      requirement: {description: Capability requirement to perform the task., range: Requirement, inlined: true}
+      assignedTo: {range: uriorcurie}
+  Plan:
+    description: An ordered composition of Actions to achieve a Goal. Gated before execution.
+    slots: [iri, label]
+    attributes:
+      goal: {range: uriorcurie}
+      steps: {description: Ordered Action IRIs., range: uriorcurie, multivalued: true}
+      realm: {description: Realm of the plan (usually planned)., range: Realm, ifabsent: Realm(planned)}
+
+  Event:
+    description: A meaningful state change (the base of narrative aggregation).
+    slots: [iri, label, validTime, createdAt]
+    attributes:
+      eventType: {required: true}
+      about: {description: IRI(s) the event concerns., range: uriorcurie, multivalued: true}
+  Episode:
+    description: One purposeful activity (a run of events).
+    slots: [iri, label]
+    attributes:
+      events: {range: uriorcurie, multivalued: true}
+  Case:
+    description: >-
+      A business-unit narrative. Its IRI is the trace key threading order->motor for semantic
+      observability (NFR-OBS).
+    slots: [iri, label]
+    attributes:
+      episodes: {range: uriorcurie, multivalued: true}
+
+  Exception:
+    description: "A deviation from expectation and its handling path (a domain concept on the bus, not a crash)."
+    slots: [iri, label, createdAt]
+    attributes:
+      deviation: {description: What deviated., required: true}
+      disposition: {description: The chosen escalation path., range: ExceptionDisposition, required: true}
+      about: {description: IRI the exception concerns., range: uriorcurie}
