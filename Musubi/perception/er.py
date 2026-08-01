@@ -7,34 +7,16 @@ Gemini Robotics ER points (normalized [y,x], 0..1000) are lifted to world Claims
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
-
-import numpy as np
-
+from clients.er import ERClient, ERPoint  # ER interface lives in clients (PER→CLI, §6.2)
 from core.ids import mint
 from ontology.generated.musubi_types import Claim, ClaimKind, Method, Realm
 from perception.pixel_world import normalized_yx_to_pixel, unproject
 from sim.render import SceneRenderer
 from sim.world import World
 
+__all__ = ["ERPerception", "ERClient", "ERPoint"]
+
 _SENSOR = "msb:sensor/er_cam"
-
-
-@dataclass(frozen=True)
-class ERPoint:
-    """A single ER detection: a normalized [y, x] point (0..1000), optional label + confidence."""
-
-    y: float
-    x: float
-    label: str | None = None
-    confidence: float = 0.8
-
-
-class ERClient(Protocol):
-    """The perception-facing slice of the ER adapter (implemented in clients/, behind the VCR)."""
-
-    def detect_points(self, image: np.ndarray, query: str) -> list[ERPoint]: ...
 
 
 class ERPerception:
