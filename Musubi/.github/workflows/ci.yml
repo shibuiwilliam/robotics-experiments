@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Offline-by-construction: no secrets, no network egress except PyPI for install.
+# Tests run in VCR replay against committed cassettes / FakeGeminiClient.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      MUSUBI_VCR_MODE: replay
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.8.17"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install (offline core, no live extra)
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Regenerate ontology (must match committed artifacts)
+        run: |
+          python -m ontology.generate
+          git diff --exit-code ontology/generated ontology/shapes \
+            || (echo "::error::ontology artifacts out of date — run 'make gen'" && exit 1)
+
+      - name: Lint
+        run: ruff check . && ruff format --check .
+
+      - name: Types
+        run: mypy ontology core sim perception agents external clients bench scoreboard config
+
+      - name: Test (replay)
+        run: pytest -q
+
+      - name: Docs (mermaid)
+        run: python scripts/check_mermaid.py .
