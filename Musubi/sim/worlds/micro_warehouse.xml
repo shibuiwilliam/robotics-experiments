@@ -1,0 +1,105 @@
+<!--
+  micro_warehouse.xml — the MusubiWorld (PROJECT.md §8). A miniature warehouse: a floor with
+  named zones (receiving / storage / quarantine / shipping), a grid of pallets (free bodies with
+  distinct colors + tag sites for segmentation), and a lift-bot mobile base. Cameras render RGB /
+  depth / segmentation offscreen.
+
+  Object handling is idealized (weld/adhesion), not dexterous (PROJECT.md §3.2): skills attach via
+  an equality weld rather than friction grasp. Failures come from probability injection, not
+  physics tuning. Determinism: physics is fully deterministic for a fixed seed + control sequence.
+-->
+<mujoco model="micro_warehouse">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="implicitfast"/>
+
+  <visual>
+    <global offwidth="640" offheight="480"/>
+    <quality shadowsize="2048"/>
+  </visual>
+
+  <default>
+    <geom solimp="0.95 0.99 0.001" solref="0.005 1"/>
+    <default class="pallet">
+      <geom type="box" size="0.12 0.12 0.06" mass="1.0" friction="1 0.05 0.001"/>
+    </default>
+  </default>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.2 0.25 0.3" rgb2="0.25 0.3 0.35"
+             width="512" height="512"/>
+    <material name="grid" texture="grid" texrepeat="8 8" reflectance="0.1"/>
+    <material name="floor_receiving" rgba="0.15 0.30 0.15 1"/>
+    <material name="floor_quarantine" rgba="0.40 0.15 0.15 1"/>
+    <material name="floor_shipping"   rgba="0.15 0.20 0.40 1"/>
+    <material name="lift" rgba="0.85 0.75 0.15 1"/>
+  </asset>
+
+  <worldbody>
+    <light name="sun" pos="0 0 4" dir="0 0 -1" diffuse="0.9 0.9 0.9" specular="0.2 0.2 0.2"/>
+    <geom name="floor" type="plane" size="3 3 0.1" material="grid" pos="0 0 0"/>
+
+    <!-- Zone markers (thin visual pads on the floor; also segmentation targets). -->
+    <geom name="zone_receiving"  type="box" size="0.6 0.6 0.001" pos="-1.2  1.2 0.001"
+          material="floor_receiving" contype="0" conaffinity="0"/>
+    <geom name="zone_quarantine" type="box" size="0.6 0.6 0.001" pos=" 1.2  1.2 0.001"
+          material="floor_quarantine" contype="0" conaffinity="0"/>
+    <geom name="zone_shipping"   type="box" size="0.6 0.6 0.001" pos=" 1.2 -1.2 0.001"
+          material="floor_shipping" contype="0" conaffinity="0"/>
+
+    <!-- Static shelf blocks (obstacles / storage). -->
+    <geom name="shelf_a" type="box" size="0.05 0.6 0.3" pos="-1.2 -1.2 0.3" rgba="0.5 0.5 0.55 1"/>
+    <geom name="shelf_b" type="box" size="0.6 0.05 0.3" pos="0.0 0.0 0.3"   rgba="0.5 0.5 0.55 1"/>
+
+    <!-- Pallets: free bodies, distinct colors, a tag site each (physical anchor). -->
+    <body name="pallet_1" pos="-1.2 1.2 0.06">
+      <freejoint name="pallet_1_free"/>
+      <geom name="pallet_1_geom" class="pallet" rgba="0.90 0.20 0.20 1"/>
+      <site name="pallet_1_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
+    </body>
+    <body name="pallet_2" pos="-0.9 1.2 0.06">
+      <freejoint name="pallet_2_free"/>
+      <geom name="pallet_2_geom" class="pallet" rgba="0.20 0.90 0.20 1"/>
+      <site name="pallet_2_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
+    </body>
+    <body name="pallet_3" pos="-1.2 0.9 0.06">
+      <freejoint name="pallet_3_free"/>
+      <geom name="pallet_3_geom" class="pallet" rgba="0.20 0.20 0.90 1"/>
+      <site name="pallet_3_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
+    </body>
+    <body name="pallet_4" pos="-0.9 0.9 0.06">
+      <freejoint name="pallet_4_free"/>
+      <geom name="pallet_4_geom" class="pallet" rgba="0.90 0.90 0.20 1"/>
+      <site name="pallet_4_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
+    </body>
+    <body name="pallet_5" pos="-1.05 1.05 0.06">
+      <freejoint name="pallet_5_free"/>
+      <geom name="pallet_5_geom" class="pallet" rgba="0.90 0.20 0.90 1"/>
+      <site name="pallet_5_tag" pos="0 0 0.061" size="0.03" rgba="1 1 1 1"/>
+    </body>
+
+    <!-- Unknown pallet: starts hidden below the floor; the Invisible Hand's spawn_unknown
+         reveals it (an untagged, unregistered object — no tag site). -->
+    <body name="pallet_unknown_1" pos="0 0 -1.0">
+      <freejoint name="pallet_unknown_1_free"/>
+      <geom name="pallet_unknown_1_geom" class="pallet" rgba="0.55 0.55 0.55 1"/>
+    </body>
+
+    <!-- Lift-bot: an omnidirectional mobile base (x, y slides + z lift), idealized carrier. -->
+    <body name="lift_bot" pos="0 -1.2 0.1">
+      <joint name="bot_x" type="slide" axis="1 0 0" range="-2.5 2.5" damping="40"/>
+      <joint name="bot_y" type="slide" axis="0 1 0" range="-2.5 2.5" damping="40"/>
+      <geom name="lift_bot_geom" type="box" size="0.15 0.15 0.1" material="lift" mass="10"/>
+      <site name="lift_bot_carry" pos="0 0 0.12" size="0.02" rgba="0 1 1 0.5"/>
+      <camera name="bot_cam" pos="0 0 0.4" xyaxes="1 0 0 0 1 0" fovy="70"/>
+    </body>
+
+    <!-- Overhead + corner cameras for offscreen rendering. -->
+    <camera name="overhead" pos="0 0 4.5" xyaxes="1 0 0 0 1 0" fovy="60"/>
+    <camera name="corner" pos="2.6 -2.6 2.2" xyaxes="0.7 0.7 0 -0.4 0.4 0.8" fovy="55"/>
+  </worldbody>
+
+  <actuator>
+    <position name="bot_x_act" joint="bot_x" kp="200" ctrlrange="-2.5 2.5"/>
+    <position name="bot_y_act" joint="bot_y" kp="200" ctrlrange="-2.5 2.5"/>
+  </actuator>
+</mujoco>
