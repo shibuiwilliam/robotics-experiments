@@ -91,6 +91,7 @@ exclude = ["ontology/generated", "build", "external/docs"]
 module = [
     "mujoco.*", "duckdb.*", "pyshacl.*", "rdflib.*", "linkml.*", "linkml_runtime.*",
     "imageio.*", "PIL.*", "google.*", "yaml.*", "jsonschema.*",
+    "ontology.generated.*",  # generated pydantic types (excluded from checking; imported as data)
 ]
 ignore_missing_imports = true
 
