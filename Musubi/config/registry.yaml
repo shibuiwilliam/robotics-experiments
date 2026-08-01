@@ -1,0 +1,89 @@
+# config/registry.yaml — single source of variable values (CLAUDE.md §0-2, PROJECT.md §14).
+# Model IDs, prices, budgets, dial defaults, thresholds. NEVER hardcode these in code.
+# Secrets (API keys) live in .env, NOT here.
+
+version: 1
+
+# ---------------------------------------------------------------- Gemini models
+# IDs are declared here so model migration (ER 1.6 -> ER 2) is a config swap (PROJECT.md §7.2).
+# Prices are USD; used only for budget accounting. Offline paths never bill.
+models:
+  er:
+    id: gemini-robotics-er-1.6-preview
+    # ER points are normalized [y,x] in 0..1000; boxes [ymin,xmin,ymax,xmax].
+    coord_space: normalized_yx_1000
+    thinking_budget:
+      detection: 512      # low budget for detection
+      relation: 4096      # high budget for spatial relation reasoning
+    price_per_1k_input_tokens: 0.0
+    price_per_1k_output_tokens: 0.0
+  agent:
+    # ADK-driven Gemini for planning/mediation/document work. User-overridable.
+    id: gemini-3.5-flash
+    thinking_budget:
+      default: 2048
+    price_per_1k_input_tokens: 0.0
+    price_per_1k_output_tokens: 0.0
+    retry:
+      max_attempts: 5
+      initial_backoff_s: 1.0
+  embedding:
+    id: gemini-embedding-2
+    dimensions: 768          # MRL default; must NOT mix with gemini-embedding-001 (space-incompatible)
+    price_per_1k_tokens: 0.0
+
+# ---------------------------------------------------------------- cost guard
+budget:
+  daily_usd_cap: 5.0
+  stop_on_exceed: true
+
+# ---------------------------------------------------------------- VCR
+vcr:
+  default_mode: replay        # replay | record | passthrough  (env MUSUBI_VCR_MODE overrides)
+  cassette_dir: clients/vcr/cassettes
+  missing_cassette_is_error: true   # in replay, an unrecorded call raises MissingCassette
+
+# ---------------------------------------------------------------- perception dial
+perception:
+  default_dial: oracle        # oracle | hybrid | live  (G1 decides the real default post-E0.5)
+  oracle_noise:
+    # Calibrated synthetic noise so 'oracle' resembles ER error without the network.
+    position_sigma_m: 0.01
+    dropout_prob: 0.0
+    false_positive_prob: 0.0
+    tag_read_error_prob: 0.0
+
+# ---------------------------------------------------------------- belief / claims
+claims:
+  # Confidence decay half-lives (seconds) by claim kind (PROJECT.md §8: "position minutes, ownership until txn").
+  decay_half_life_s:
+    position: 180
+    pose: 180
+    presence: 600
+    ownership: 86400
+    tag_read: 3600
+    default: 600
+  # Method ranking for belief mediation (higher wins ties after authority + decayed confidence).
+  method_rank:
+    direct_measurement: 5
+    sensor_fusion: 4
+    ledger_of_record: 3
+    inference: 2
+    hearsay: 1
+
+# ---------------------------------------------------------------- capability matching
+matching:
+  subsumption_strict: true
+
+# ---------------------------------------------------------------- determinism
+determinism:
+  default_seed: 0
+  # sub-streams forked deterministically from the master seed by name (core.rng).
+  substreams: [sim_init, fault_injection, invisible_hand, oracle_noise, agent_sampling]
+
+# ---------------------------------------------------------------- reversibility gate
+norms:
+  reversibility:
+    # Irreversible actions require explicit approval; unapproved-irreversible count must be 0.
+    irreversible_requires_approval: true
+    compensable_requires_saga: true
