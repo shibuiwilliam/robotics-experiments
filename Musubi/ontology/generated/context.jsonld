@@ -1,0 +1,302 @@
+{
+  "@context": {
+    "@vocab": "https://musubi.dev/ontology/musubi/",
+    "Action": "https://musubi.dev/ontology/musubi/Action",
+    "Affordance": "https://musubi.dev/ontology/musubi/Affordance",
+    "Anchor": "https://musubi.dev/ontology/musubi/Anchor",
+    "AnchorBundle": "https://musubi.dev/ontology/musubi/AnchorBundle",
+    "AnchorKind": "https://musubi.dev/ontology/musubi/AnchorKind",
+    "Aspect": "https://musubi.dev/ontology/musubi/Aspect",
+    "AspectKind": "https://musubi.dev/ontology/musubi/AspectKind",
+    "Authority": "https://musubi.dev/ontology/musubi/Authority",
+    "BusinessAspect": "https://musubi.dev/ontology/musubi/BusinessAspect",
+    "BusinessKeyAnchor": "https://musubi.dev/ontology/musubi/BusinessKeyAnchor",
+    "Capability": "https://musubi.dev/ontology/musubi/Capability",
+    "Case": "https://musubi.dev/ontology/musubi/Case",
+    "Claim": "https://musubi.dev/ontology/musubi/Claim",
+    "ClaimKind": "https://musubi.dev/ontology/musubi/ClaimKind",
+    "CognitiveAspect": "https://musubi.dev/ontology/musubi/CognitiveAspect",
+    "Compensation": "https://musubi.dev/ontology/musubi/Compensation",
+    "Contract": "https://musubi.dev/ontology/musubi/Contract",
+    "Delegation": "https://musubi.dev/ontology/musubi/Delegation",
+    "Entity": "https://musubi.dev/ontology/musubi/Entity",
+    "Episode": "https://musubi.dev/ontology/musubi/Episode",
+    "Event": "https://musubi.dev/ontology/musubi/Event",
+    "Exception": "https://musubi.dev/ontology/musubi/Exception",
+    "ExceptionDisposition": "https://musubi.dev/ontology/musubi/ExceptionDisposition",
+    "Frame": "https://musubi.dev/ontology/musubi/Frame",
+    "Goal": "https://musubi.dev/ontology/musubi/Goal",
+    "IdentityBinding": "https://musubi.dev/ontology/musubi/IdentityBinding",
+    "MediationResult": "https://musubi.dev/ontology/musubi/MediationResult",
+    "Method": "https://musubi.dev/ontology/musubi/Method",
+    "Norm": "https://musubi.dev/ontology/musubi/Norm",
+    "NormModality": "https://musubi.dev/ontology/musubi/NormModality",
+    "NormStrength": "https://musubi.dev/ontology/musubi/NormStrength",
+    "PhysicalAnchor": "https://musubi.dev/ontology/musubi/PhysicalAnchor",
+    "PhysicalAspect": "https://musubi.dev/ontology/musubi/PhysicalAspect",
+    "Plan": "https://musubi.dev/ontology/musubi/Plan",
+    "Pose": "https://musubi.dev/ontology/musubi/Pose",
+    "QuantityValue": "https://musubi.dev/ontology/musubi/QuantityValue",
+    "Realization": "https://musubi.dev/ontology/musubi/Realization",
+    "RealizationKind": "https://musubi.dev/ontology/musubi/RealizationKind",
+    "Realm": "https://musubi.dev/ontology/musubi/Realm",
+    "Requirement": "https://musubi.dev/ontology/musubi/Requirement",
+    "ReversibilityClass": "https://musubi.dev/ontology/musubi/ReversibilityClass",
+    "Route": "https://musubi.dev/ontology/musubi/Route",
+    "Saga": "https://musubi.dev/ontology/musubi/Saga",
+    "Skill": "https://musubi.dev/ontology/musubi/Skill",
+    "SpatialAnchor": "https://musubi.dev/ontology/musubi/SpatialAnchor",
+    "Task": "https://musubi.dev/ontology/musubi/Task",
+    "Tool": "https://musubi.dev/ontology/musubi/Tool",
+    "WorkflowStep": "https://musubi.dev/ontology/musubi/WorkflowStep",
+    "Zone": "https://musubi.dev/ontology/musubi/Zone",
+    "about": "https://musubi.dev/ontology/musubi/about",
+    "action": {
+      "@id": "https://musubi.dev/ontology/musubi/action",
+      "@type": "@id"
+    },
+    "actionType": "https://musubi.dev/ontology/musubi/actionType",
+    "actionTypes": "https://musubi.dev/ontology/musubi/actionTypes",
+    "actor": "https://musubi.dev/ontology/musubi/actor",
+    "anchorBundle": {
+      "@id": "https://musubi.dev/ontology/musubi/anchorBundle",
+      "@type": "@id"
+    },
+    "anchorKind": "https://musubi.dev/ontology/musubi/anchorKind",
+    "anchors": {
+      "@id": "https://musubi.dev/ontology/musubi/anchors",
+      "@type": "@id"
+    },
+    "aspectKind": "https://musubi.dev/ontology/musubi/aspectKind",
+    "aspects": {
+      "@id": "https://musubi.dev/ontology/musubi/aspects",
+      "@type": "@id"
+    },
+    "assignedTo": {
+      "@id": "https://musubi.dev/ontology/musubi/assignedTo",
+      "@type": "@id"
+    },
+    "authority": {
+      "@id": "https://musubi.dev/ontology/musubi/authority",
+      "@type": "@id"
+    },
+    "capabilityToken": "https://musubi.dev/ontology/musubi/capabilityToken",
+    "certified": {
+      "@id": "https://musubi.dev/ontology/musubi/certified",
+      "@type": "xsd:boolean"
+    },
+    "claimKind": "https://musubi.dev/ontology/musubi/claimKind",
+    "compensatingAction": {
+      "@id": "https://musubi.dev/ontology/musubi/compensatingAction",
+      "@type": "@id"
+    },
+    "compensation": {
+      "@id": "https://musubi.dev/ontology/musubi/compensation",
+      "@type": "@id"
+    },
+    "compensations": {
+      "@id": "https://musubi.dev/ontology/musubi/compensations",
+      "@type": "@id"
+    },
+    "confidence": {
+      "@id": "https://musubi.dev/ontology/musubi/confidence",
+      "@type": "xsd:float"
+    },
+    "cost": {
+      "@id": "https://musubi.dev/ontology/musubi/cost",
+      "@type": "@id"
+    },
+    "createdAt": {
+      "@id": "https://musubi.dev/ontology/musubi/createdAt",
+      "@type": "xsd:float"
+    },
+    "delegate": {
+      "@id": "https://musubi.dev/ontology/musubi/delegate",
+      "@type": "@id"
+    },
+    "delegator": {
+      "@id": "https://musubi.dev/ontology/musubi/delegator",
+      "@type": "@id"
+    },
+    "deviation": "https://musubi.dev/ontology/musubi/deviation",
+    "disposition": "https://musubi.dev/ontology/musubi/disposition",
+    "effectiveConfidence": {
+      "@id": "https://musubi.dev/ontology/musubi/effectiveConfidence",
+      "@type": "xsd:float"
+    },
+    "entity": {
+      "@id": "https://musubi.dev/ontology/musubi/entity",
+      "@type": "@id"
+    },
+    "episodes": {
+      "@id": "https://musubi.dev/ontology/musubi/episodes",
+      "@type": "@id"
+    },
+    "eventType": "https://musubi.dev/ontology/musubi/eventType",
+    "events": {
+      "@id": "https://musubi.dev/ontology/musubi/events",
+      "@type": "@id"
+    },
+    "evidence": {
+      "@id": "https://musubi.dev/ontology/musubi/evidence",
+      "@type": "@id"
+    },
+    "expectedEffects": "https://musubi.dev/ontology/musubi/expectedEffects",
+    "failureModes": "https://musubi.dev/ontology/musubi/failureModes",
+    "forAction": {
+      "@id": "https://musubi.dev/ontology/musubi/forAction",
+      "@type": "@id"
+    },
+    "frame": {
+      "@id": "https://musubi.dev/ontology/musubi/frame",
+      "@type": "@id"
+    },
+    "fromZone": {
+      "@id": "https://musubi.dev/ontology/musubi/fromZone",
+      "@type": "@id"
+    },
+    "goal": "https://musubi.dev/ontology/musubi/goal",
+    "iri": {
+      "@id": "https://musubi.dev/ontology/musubi/iri",
+      "@type": "@id"
+    },
+    "isPerson": {
+      "@id": "https://musubi.dev/ontology/musubi/isPerson",
+      "@type": "xsd:boolean"
+    },
+    "justifiedBy": {
+      "@id": "https://musubi.dev/ontology/musubi/justifiedBy",
+      "@type": "@id"
+    },
+    "kind": "https://musubi.dev/ontology/musubi/kind",
+    "label": "https://musubi.dev/ontology/musubi/label",
+    "linkml": "https://w3id.org/linkml/",
+    "losers": {
+      "@id": "https://musubi.dev/ontology/musubi/losers",
+      "@type": "@id"
+    },
+    "magnitude": {
+      "@id": "https://musubi.dev/ontology/musubi/magnitude",
+      "@type": "xsd:float"
+    },
+    "method": "https://musubi.dev/ontology/musubi/method",
+    "modality": "https://musubi.dev/ontology/musubi/modality",
+    "msb": "https://musubi.dev/ontology/musubi/",
+    "normSource": {
+      "@id": "https://musubi.dev/ontology/musubi/normSource",
+      "@type": "@id"
+    },
+    "norms": {
+      "@id": "https://musubi.dev/ontology/musubi/norms",
+      "@type": "@id"
+    },
+    "objectValue": "https://musubi.dev/ontology/musubi/objectValue",
+    "parties": {
+      "@id": "https://musubi.dev/ontology/musubi/parties",
+      "@type": "@id"
+    },
+    "preconditions": "https://musubi.dev/ontology/musubi/preconditions",
+    "predicate": "https://musubi.dev/ontology/musubi/predicate",
+    "priority": {
+      "@id": "https://musubi.dev/ontology/musubi/priority",
+      "@type": "xsd:integer"
+    },
+    "prov": "http://www.w3.org/ns/prov#",
+    "qos": {
+      "@id": "https://musubi.dev/ontology/musubi/qos",
+      "@type": "@id"
+    },
+    "qosConstraints": {
+      "@id": "https://musubi.dev/ontology/musubi/qosConstraints",
+      "@type": "@id"
+    },
+    "qudt": "http://qudt.org/schema/qudt/",
+    "qw": {
+      "@id": "https://musubi.dev/ontology/musubi/qw",
+      "@type": "xsd:float"
+    },
+    "qx": {
+      "@id": "https://musubi.dev/ontology/musubi/qx",
+      "@type": "xsd:float"
+    },
+    "qy": {
+      "@id": "https://musubi.dev/ontology/musubi/qy",
+      "@type": "xsd:float"
+    },
+    "qz": {
+      "@id": "https://musubi.dev/ontology/musubi/qz",
+      "@type": "xsd:float"
+    },
+    "realizationKind": "https://musubi.dev/ontology/musubi/realizationKind",
+    "realm": "https://musubi.dev/ontology/musubi/realm",
+    "reason": "https://musubi.dev/ontology/musubi/reason",
+    "regime": "https://musubi.dev/ontology/musubi/regime",
+    "requirement": "https://musubi.dev/ontology/musubi/requirement",
+    "retracted": {
+      "@id": "https://musubi.dev/ontology/musubi/retracted",
+      "@type": "xsd:boolean"
+    },
+    "reversibility": "https://musubi.dev/ontology/musubi/reversibility",
+    "scope": "https://musubi.dev/ontology/musubi/scope",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "sosa": "http://www.w3.org/ns/sosa/",
+    "source": {
+      "@id": "https://musubi.dev/ontology/musubi/source",
+      "@type": "@id"
+    },
+    "steps": "https://musubi.dev/ontology/musubi/steps",
+    "strength": "https://musubi.dev/ontology/musubi/strength",
+    "subject": {
+      "@id": "https://musubi.dev/ontology/musubi/subject",
+      "@type": "@id"
+    },
+    "supersedes": {
+      "@id": "https://musubi.dev/ontology/musubi/supersedes",
+      "@type": "@id"
+    },
+    "task": {
+      "@id": "https://musubi.dev/ontology/musubi/task",
+      "@type": "@id"
+    },
+    "terms": "https://musubi.dev/ontology/musubi/terms",
+    "time": "http://www.w3.org/2006/time#",
+    "toZone": {
+      "@id": "https://musubi.dev/ontology/musubi/toZone",
+      "@type": "@id"
+    },
+    "trackedObject": {
+      "@id": "https://musubi.dev/ontology/musubi/trackedObject",
+      "@type": "@id"
+    },
+    "transactionTime": {
+      "@id": "https://musubi.dev/ontology/musubi/transactionTime",
+      "@type": "xsd:float"
+    },
+    "unit": {
+      "@id": "https://musubi.dev/ontology/musubi/unit",
+      "@type": "@id"
+    },
+    "validTime": {
+      "@id": "https://musubi.dev/ontology/musubi/validTime",
+      "@type": "xsd:float"
+    },
+    "value": "https://musubi.dev/ontology/musubi/value",
+    "winner": {
+      "@id": "https://musubi.dev/ontology/musubi/winner",
+      "@type": "@id"
+    },
+    "x": {
+      "@id": "https://musubi.dev/ontology/musubi/x",
+      "@type": "xsd:float"
+    },
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "y": {
+      "@id": "https://musubi.dev/ontology/musubi/y",
+      "@type": "xsd:float"
+    },
+    "z": {
+      "@id": "https://musubi.dev/ontology/musubi/z",
+      "@type": "xsd:float"
+    }
+  }
+}
