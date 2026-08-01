@@ -26,7 +26,7 @@ Live cassette recording (later, needs GOOGLE_API_KEY + budget): `make test-live`
 |---|---|---|
 | P0 Scaffold | ✅ done | tree, uv/ruff/mypy/pytest/pre-commit, Makefile (all §3 targets), registry.yaml, CI, determinism substrate (SimClock, RngRegistry), invariant tests. `make check`/`make gen`/`make docs-check` green offline. |
 | P1 Ontology | ✅ done | 30 core concepts (LinkML, `ontology/src/musubi.yaml`) → generated JSON Schema, Pydantic types, SHACL (canonicalized, deterministic), JSON-LD @context, NL vocab. Hand-authored `world_ok.ttl` (privacy floor + claim sanity). `ontology/artifacts.py` access/validation layer. 7 ontology tests (schema conformance + SHACL privacy-floor rejection). `make gen` deterministic across runs. |
-| P2 Core | ⬜ pending | claimstore, bus, registry, mediator, norms+gates, explain |
+| P2 Core | ✅ done | claimstore (SQLite, append-only, bitemporal `as_of`, decay), bus (JSON-LD envelopes + deterministic toxic mode), registry (entity/authority + capability subsumption+QoS), mediator (authority×decay×method-rank, append-only supersede), norms+gate (SHACL/prohibition/reversibility/resource — unapproved-irreversible=0), explain (accountability chain, trace completeness, IRI-resolvability). ids/clock/rng. 23 core tests. |
 | P3 Sim | ⬜ pending | micro_warehouse.xml, skills+faults, invisible hand, renderer |
 | P4 Perception | ⬜ pending | oracle/hybrid/live dial, ER point→world |
 | P5 Clients/VCR | ⬜ pending | VCR record/replay/passthrough, ER/ADK/embedding adapters, FakeGeminiClient |
