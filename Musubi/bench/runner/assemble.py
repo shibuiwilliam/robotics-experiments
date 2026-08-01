@@ -1,8 +1,8 @@
-"""E0 assembly — wire world + core + perception + agent for the smoke scenario.
+"""Scenario assembly — wire world + core + perception + agent from a Scenario (or the E0 default).
 
-E0 is the vertical-slice smoke: a lift-bot relocates a pallet from receiving to shipping, fully
-offline (oracle dial + ScriptedPlanner). This factory builds the whole stack so the E0 test and
-the CLI share one assembly. The higher ablation arms toggle which machinery is active.
+One place builds the whole stack so every scenario, the E0 smoke, and the CLI share it. The arm
+toggles which machinery is active; the dial selects perception; the Invisible Hand plants the
+divergence the oracle later scores.
 """
 
 from __future__ import annotations
@@ -16,40 +16,67 @@ from agents.scripted import ScriptedPlanner
 from agents.tools import MusubiTools
 from bench.runner.arm import Arm
 from bench.runner.episode import Episode, EpisodeResult
+from bench.scenarios.loader import Scenario
 from clients.chat import ChatAdapter
 from core.bus import EventBus
 from core.claimstore import ClaimStore
 from core.mediator import Mediator
 from core.norms import NormStore
 from core.registry import CapabilityRegistry, EntityRegistry
-from ontology.generated.musubi_types import Capability, Entity
+from ontology.generated.musubi_types import (
+    Capability,
+    Entity,
+    Norm,
+    NormModality,
+    NormStrength,
+)
 from perception.oracle import OraclePerception
+from sim.invisible_hand import InvisibleHand
 from sim.world import ZONES, World
 
 _LIFT_BOT = "msb:robot/lift_bot"
 
 
-def build_e0(
-    seed: int = 0,
-    arm_name: str = "A4",
+def _make_norm(spec: dict[str, Any]) -> Norm:
+    return Norm(
+        iri=str(spec["iri"]),
+        modality=NormModality(spec.get("modality", "prohibition")),
+        strength=NormStrength(spec.get("strength", "hard")),
+        scope=list(spec.get("scope", [])),
+        normSource=spec.get("normSource"),
+        regime=spec.get("regime"),
+        priority=int(spec.get("priority", 0)),
+    )
+
+
+def build_from_scenario(
+    scenario: Scenario,
+    arm_name: str,
+    seed: int,
     planner: Planner | None = None,
     *,
     chat: ChatAdapter | None = None,
-) -> tuple[Episode, dict[str, Any], World]:
-    """Assemble the E0 stack. Returns (episode, goal, world)."""
+) -> tuple[Episode, dict[str, Any], World, list[dict[str, Any]]]:
+    """Assemble a scenario run. Returns (episode, goal, world, planted_perturbations)."""
     world = World(seed=seed)
     arm = Arm.from_name(arm_name)
+
+    # Invisible Hand: plant divergence before the episode reads the world.
+    hand = InvisibleHand(world)
+    perturbations = [
+        {"op": p.op, "targets": list(p.targets), "detail": p.detail}
+        for p in hand.apply_schedule(scenario.invisible_hand)
+    ]
 
     claims = ClaimStore(world.clock)
     entities = EntityRegistry()
     capabilities = CapabilityRegistry()
     norms = NormStore()
+    for spec in scenario.norms:
+        norms.add(_make_norm(spec))
 
-    # register pallet entities (identity) so entity_resolve / registry work
     for body in world.pallet_bodies():
         entities.register(Entity(iri=world.entity_iri(body), label=body))
-
-    # the lift-bot advertises capabilities; the compiler turns them into skills (zero agent code).
     capabilities.advertise(
         Capability(
             iri="msb:cap/lift_bot", actor=_LIFT_BOT, actionTypes=["move", "transport", "perceive"]
@@ -70,7 +97,8 @@ def build_e0(
     if planner is None:
         planner = GeminiPlanner(chat) if chat is not None else ScriptedPlanner()
 
-    oracle = OraclePerception(world)
+    detect = OraclePerception(world).detect  # oracle dial (offline)
+
     episode = Episode(
         world=world,
         tools=tools,
@@ -79,13 +107,34 @@ def build_e0(
         skill_registry=skill_registry,
         zones=zones,
         arm=arm,
-        detect=oracle.detect,
+        detect=detect,
     )
-    goal = {"type": "relocate", "entity": world.entity_iri("pallet_1"), "to_zone": "shipping"}
+    return episode, dict(scenario.goal), world, perturbations
+
+
+# --------------------------------------------------------------------------- E0 convenience
+def _e0_scenario() -> Scenario:
+    return Scenario(
+        name="e0_smoke",
+        goal={"type": "relocate", "entity": "msb:entity/pallet_1", "to_zone": "shipping"},
+        arms=["A0", "A1", "A2", "A3", "A4"],
+        seeds=[0],
+    )
+
+
+def build_e0(
+    seed: int = 0,
+    arm_name: str = "A4",
+    planner: Planner | None = None,
+    *,
+    chat: ChatAdapter | None = None,
+) -> tuple[Episode, dict[str, Any], World]:
+    episode, goal, world, _ = build_from_scenario(
+        _e0_scenario(), arm_name, seed, planner, chat=chat
+    )
     return episode, goal, world
 
 
 def run_e0(seed: int = 0, arm_name: str = "A4", planner: Planner | None = None) -> EpisodeResult:
-    """Build and run the E0 smoke episode."""
     episode, goal, _world = build_e0(seed, arm_name, planner)
     return episode.run(goal)

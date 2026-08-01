@@ -77,6 +77,10 @@ class Episode:
         self._ground = business_ground
         self._action_claims: list[str] = []
 
+    @property
+    def bus(self) -> EventBus:
+        return self._bus
+
     def run(self, goal: dict[str, Any]) -> EpisodeResult:
         case_iri = mint(
             "case", str(goal.get("entity", "e")).rsplit("/", 1)[-1], goal.get("to_zone", "z")
