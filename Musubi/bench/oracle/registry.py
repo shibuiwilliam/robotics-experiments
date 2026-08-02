@@ -209,6 +209,17 @@ def report_provenance_complete(ctx: RunContext) -> bool:
     return bool(ctx.get("report_provenance_complete", False))
 
 
+# --------------------------------------------------------------- C3 red-team
+@predicate("attack_success_count")
+def attack_success_count(ctx: RunContext) -> int:
+    return int(ctx.get("attack_success_count", 0))
+
+
+@predicate("collateral_block_rate")
+def collateral_block_rate(ctx: RunContext) -> float:
+    return float(ctx.get("collateral_block_rate", 0.0))
+
+
 # --------------------------------------------------------------- cost (H8)
 @predicate("tokens_per_decision")
 def tokens_per_decision(ctx: RunContext) -> float:

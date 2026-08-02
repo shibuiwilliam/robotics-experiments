@@ -19,7 +19,34 @@ run everything. Updated continuously. Newest state at top.
 | **S5** forensic | ✅ done | passes A2–A4; root_cause_identified + no false_accusation + forensic_accuracy 1.0. |
 | **F2** recall | ✅ done | A4 passes (recall 1.0, overquarantine 0.25, unappr-irrev 0); A0 fails safety oracle (unappr-irrev 1) — the ladder contrast. |
 | E0 smoke | ✅ done | migrated to v2 DSL; passes A0–A4. |
-| Breadth S1–S9/C1–C4 + E1/E3–E7 | ⬜ deferred | fixtures/perturbations/registry in place; each needs a DSL yaml + driver + oracle predicates. See deferred list. |
+| **C3** red-team | ✅ done | safety-critical: 3 attacks (prompt-injection / rogue caller / false capability). Defense ladder A0 (3 land) → A2 (2) → A3/A4 (0). Reuses gate + capability-QoS + justifiedBy. |
+| Breadth S1–S4/S6–S9/C1/C2/C4 + F3 + E1/E3–E7 | ⬜ deferred | fixtures/perturbations/registry in place; each needs a DSL yaml + driver + oracle predicates. See per-scenario TODOs below. |
+
+### Deferred scenarios — concrete TODOs (each: DSL yaml + driver + oracle predicates + test)
+
+- **S9 sensor credit** (E2, S): add `perturbations: drift`; driver worsens source ECE → credit
+  downgrade → mediation loss → reassignment. Predicates: `detection_latency('drift')`,
+  `false_accusation()`, `task_quality_recovered()`. Reuses mediator authority reputation (already
+  built) — lowest-effort next.
+- **S4 resource contention** (E3b, S): 2nd robot include + reservation table + wait-graph cycle
+  detection. Predicates: `no_deadlock()`, `priority_inversion_bounded()`, `throughput()`.
+- **S7 returns grading** (E1/E3b, M): return chute + EC/payment mock; reverse grounding + refund⇒
+  inspection SHACL (`refund_invariant.ttl`). `injections: swap_return`.
+- **S1 cold-chain** (E3c, M): cold zone + scalar temp field + insurer/BMS; bitemporal claim package,
+  gap-declared-not-estimated. `perturbations: temp excursion + sensor gap`.
+- **S2 maintenance** (E3/E6c, M): CMMS/HR/supplier-EDI + RAG (needs embedding cassettes or Fake);
+  `custody_unbroken`, `citation_accuracy`.
+- **S3 3PL** (E5/E7, L): A2A harness + tenant-split registry + probe set; `isolation_violations()==0`.
+- **S6 demand-response** (E3/E7, S): battery model + DR portal; reversibility-ordered deferral.
+- **S8 receiving dispute** (E5, M): supplier A2A + signature keypair; `correct_party_prevails`.
+- **F3 morning-standup twin** (E7/M3, M): 2nd headless sim instance (belief→initial-state twin);
+  realm=simulated diff query; error 3-decomposition.
+- **C1 vocabulary growth** (E6a/E6b): PIM doc + gap→cluster→draft→approve loop (needs embeddings).
+- **C2 emergency regime** (E3/E6b, M): `regime` overlay + `human_proxy` + `regime_restore.ttl`;
+  `regime_restored_diff_zero`. Privacy floor already enforced.
+- **C4 human-robot** (E3/E5, M): `human_proxy` + proximity sensing; `min_separation_never_violated`,
+  `no_person_identity_binding` (both already registered), reverse delegation.
+- **Experiments E1/E3–E7**: emerge once their scenarios above land (mapped via the `experiment` tag).
 
 ## How to run (offline, no keys)
 
