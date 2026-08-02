@@ -3,11 +3,3 @@ A1: claims=0 bus_events=4 engine=scripted events=['SkillExecuted', 'SkillExecute
 A2: claims=10 bus_events=9 engine=llm:claude events=['Detected', 'Detected', 'Detected', 'Detected', 'Detected', 'SkillExecuted', 'SkillExecuted', 'SkillExecuted']
 A3: claims=10 bus_events=9 engine=llm:claude events=['Detected', 'Detected', 'Detected', 'Detected', 'Detected', 'SkillExecuted', 'SkillExecuted', 'SkillExecuted']
 A4: claims=10 bus_events=9 engine=llm:claude events=['Detected', 'Detected', 'Detected', 'Detected', 'Detected', 'SkillExecuted', 'SkillExecuted', 'SkillExecuted']
-
---- e0 A4 belief sample ---
-  order msb:entity/pallet_1 = relocate->shipping via ledger_of_record
-  position msb:entity/pallet_1 = -1.2047,1.2037,0.0600 via direct_measurement
-  position msb:entity/pallet_2 = -1.7140,1.6975,0.0600 via direct_measurement
-  position msb:entity/pallet_3 = -1.7011,0.7502,0.0600 via direct_measurement
-  position msb:entity/pallet_4 = -0.6977,1.6892,0.0600 via direct_measurement
-  position msb:entity/pallet_5 = -1.7649,1.1982,0.0600 via direct_measurement

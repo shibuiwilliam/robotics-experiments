@@ -43,6 +43,16 @@ def test_metrics_store_aggregates() -> None:
     store.close()
 
 
+def test_metrics_store_scopes_to_latest_run() -> None:
+    """G3: arm_summaries reflects the LATEST ingest batch, not the cumulative append-only history."""
+    store = MetricsStore(":memory:")
+    store.ingest([_rec("A4", 0, True, 0, 1.0), _rec("A4", 1, True, 0, 1.0)])  # batch 1: n=2
+    store.ingest([_rec("A4", 0, True, 0, 1.0)])  # batch 2 (latest): n=1
+    summaries = {s.arm: s for s in store.arm_summaries("e0_smoke")}
+    assert summaries["A4"].n == 1  # not 3 — history does not leak across runs
+    store.close()
+
+
 def test_report_builds_from_records(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from scoreboard.reports import report as report_mod
 

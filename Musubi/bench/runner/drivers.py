@@ -310,7 +310,11 @@ def drive_forensic(
     CRMPortal().open_claim("order-4411", "wrong item shipped")
 
     ctx = _base_ctx(scenario, arm, seed, stack)
-    ctx.ground_truth.setdefault("planted_root_cause", culprit)
+    # The scenario may pre-declare this ground-truth key as null to document it; fill it whenever it
+    # is missing OR None (setdefault alone would leave a declared-null in place -> success always
+    # False despite a correct forensic result). See REPORT.md / IMPROVEMENT.md G2.
+    if ctx.ground_truth.get("planted_root_cause") is None:
+        ctx.ground_truth["planted_root_cause"] = culprit
     root = identified[0] if identified else None
     ctx.extras.update(
         identified_root_cause=root,
