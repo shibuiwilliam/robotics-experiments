@@ -299,6 +299,11 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         "success": success,
         "must": musts,
         "metrics": {k: v for k, v in ctx.extras.items() if isinstance(v, (int, float, bool))},
+        "engine": {
+            "planner": ctx.extras.get("planner", "scripted"),
+            "provider": ctx.extras.get("provider", "none"),
+            "llm_calls": int(ctx.extras.get("llm_calls", 0)),
+        },
         "claims": ctx.claims.count() if ctx.claims else 0,
         "bus_events": len(ctx.events),
         "drilldown": dict(ctx.extras.get("drilldown", {})),
@@ -306,10 +311,12 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         "events_sample": events,
         "api_calls": ctx.api_calls,
     }
+    eng = data["engine"]
     lines = [
         f"# inspect {sc.name} [{args.arm} seed{args.seed}]",
         f"  success: {success}",
         f"  must: {musts}",
+        f"  engine: planner={eng['planner']} provider={eng['provider']} llm_calls={eng['llm_calls']}",
         f"  claims: {data['claims']}  bus_events: {data['bus_events']}  api_calls: {data['api_calls']}",
         f"  metrics: {data['metrics']}",
     ]

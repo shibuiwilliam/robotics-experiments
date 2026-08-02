@@ -13,7 +13,7 @@ Plan / Ontology Design docs.
 | Unified action + reversibility gate | — | E3 | F2 | FR-ACT, FR-GATE | `core/norms` | `gate.py` | `test_core.py::gate`, `test_flagships.py::f2` |
 | Norm compile + prohibition/regime | — | E6b | F2, C2`[PROV]` | FR-NORM | `core/norms` | `store.py`, `gate.py` | `test_core.py::norm` |
 | Capability→tool (new robot = 0 agent code) | — | E4 | — | FR-CAP | `agents/capability_compiler` | `compiler.py` | `test_agents.py::compiler` |
-| Two planner backends (Scripted / Gemini) | — | E7 | e0_smoke | FR-AGENT | `agents/` | `scripted.py`, `gemini.py` | `test_agents.py` |
+| Two planner backends (Scripted / LLM), per-arm contract A0/A1 scripted · A2–A4 LLM | — | E7 | e0_smoke | FR-AGENT | `agents/` | `scripted.py`, `gemini.py`, `grounding.py`, `drivers.py::_select_planner` | `test_agents.py`, `test_engine.py::per_arm_planner` |
 | Single cloud choke point (VCR) | H (repro) | all | all | FR-VCR | `clients/` | `vcr/`, `backends.py` | `test_clients.py`, `test_invariants.py` |
 | Perception dial + pixel→world | — | E0.5 | all | FR-PER | `perception/` | `oracle.py`, `pixel_world.py` | `test_perception.py` |
 | Deterministic sim + Invisible Hand | NFR-DETERM | E0 | all | FR-SIM | `sim/` | `world.py`, `invisible_hand/` | `test_sim.py` |

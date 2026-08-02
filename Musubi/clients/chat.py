@@ -39,6 +39,7 @@ class ChatAdapter:
         # gemini carries a thinking budget; claude uses adaptive thinking (budget ignored).
         self._budget = int(reg.get("models.agent.thinking_budget.default", 0))
         self._backend = backend or select_chat_backend(self._provider)
+        self.calls = 0  # number of generate() invocations (surfaced as llm_calls in run contexts)
 
     @property
     def provider(self) -> str:
@@ -49,6 +50,7 @@ class ChatAdapter:
         return self._model
 
     def generate(self, prompt: str, schema: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.calls += 1
         request: dict[str, Any] = {
             "provider": self._provider,
             "prompt": prompt,
@@ -64,6 +66,15 @@ class ChatAdapter:
 
 
 def make_chat_adapter(provider: str | None = None, *, offline_fake: bool = False) -> ChatAdapter:
-    """Build a ChatAdapter for a provider. ``offline_fake=True`` forces the FakeGeminiClient double."""
-    backend: ChatBackend | None = FakeGeminiClient() if offline_fake else None
-    return ChatAdapter(backend=backend, provider=provider)
+    """Build a ChatAdapter for a provider. ``offline_fake=True`` forces the FakeGeminiClient double.
+
+    The fake is the deterministic offline double (no network), so it runs behind a passthrough VCR —
+    the fake IS the recording; the live-mode VCR gate is for real backends only.
+    """
+    if offline_fake:
+        from clients.vcr import VCR, VcrMode
+
+        return ChatAdapter(
+            vcr=VCR(VcrMode.passthrough), backend=FakeGeminiClient(), provider=provider
+        )
+    return ChatAdapter(provider=provider)
