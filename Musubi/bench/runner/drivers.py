@@ -10,11 +10,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from agents.gemini import PLAN_INTENT, LLMPlanner
+from agents.grounding import RELOCATE_SKELETON
+from agents.planner import Planner
 from agents.scripted import ScriptedPlanner
 from bench.oracle import RunContext
 from bench.runner.assemble import Stack, build_stack
 from bench.runner.episode import Episode
 from bench.scenarios.loader import Scenario
+from clients.backends import FakeGeminiClient
+from clients.chat import ChatAdapter
+from clients.vcr import VCR, VcrMode
 from core.claimstore.decay import decayed_confidence
 from core.explain import accountability_chain, unresolved_references
 from core.ids import mint
@@ -59,14 +65,34 @@ def _wms_all_receiving(stack: Stack, lots: dict[str, str] | None = None) -> WMSL
 
 
 # --------------------------------------------------------------------------- relocate (E0)
+def _select_planner(scenario: Scenario, arm: str) -> tuple[Planner, ChatAdapter | None]:
+    """Honor the SCENARIOS.md §5 arm contract: A0/A1 scripted, A2–A4 the LLM (Claude) planner.
+
+    Offline the LLM planner is backed by ``FakeGeminiClient`` (registered with the canonical relocate
+    skeleton) so it plans deterministically with **0 network calls**; the provider (claude) comes from
+    the registry, so A2–A4 genuinely reason through Claude. Returns the ChatAdapter too, so the driver
+    can surface ``llm_calls`` / ``provider`` for observability.
+    """
+    if scenario.planner_for(arm) == "scripted":
+        return ScriptedPlanner(), None
+    # The FakeGeminiClient is Musubi's deterministic offline double (no network); like every offline
+    # planner/ER path it runs behind a passthrough VCR — the fake IS the "recording". Provider comes
+    # from the registry (claude), so A2–A4 genuinely reason through the Claude engine, offline.
+    fake = FakeGeminiClient()
+    fake.register_generate(PLAN_INTENT, {"steps": [{"action_type": a} for a in RELOCATE_SKELETON]})
+    chat = ChatAdapter(vcr=VCR(VcrMode.passthrough), backend=fake)
+    return LLMPlanner(chat), chat
+
+
 def drive_relocate(
     scenario: Scenario, arm: str, seed: int, variables: dict[str, Any]
 ) -> RunContext:
     stack = build_stack(scenario, arm, seed)
+    planner, chat = _select_planner(scenario, arm)
     episode = Episode(
         world=stack.world,
         tools=stack.tools,
-        planner=ScriptedPlanner(),
+        planner=planner,
         bus=stack.bus,
         skill_registry=stack.skill_registry,
         zones=stack.zones,
@@ -81,6 +107,10 @@ def drive_relocate(
         fulfilled_orders=[scenario.goal.get("entity", "")] if result.success else [],
         unapproved_irreversible=result.unapproved_irreversible,
         norm_violations=len(result.violations),
+        planner=f"llm:{chat.provider}" if chat else planner.name,
+        provider=chat.provider if chat else "none",
+        llm_calls=chat.calls if chat else 0,
+        api_calls=0,  # offline: the Fake is not a network call (replay → 0 real API calls)
     )
     return ctx
 

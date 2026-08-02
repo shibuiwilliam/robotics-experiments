@@ -48,4 +48,6 @@ class Plan:
 class Planner(Protocol):
     """Produces a Plan for a goal, given a planning context (tools, world facts)."""
 
+    name: str  # planner identity (e.g. "scripted", "gemini") — used in action IRIs + observability
+
     def plan(self, goal: dict[str, Any], context: dict[str, Any]) -> Plan: ...

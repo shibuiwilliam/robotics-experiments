@@ -81,6 +81,18 @@ experimenting with Robotics × AI-agent × Ontology. This overrides the letter o
 reproducibility, model-IDs-in-registry) while honoring the explicit user directive; additive and
 non-breaking (default offline path unchanged).
 
+**Follow-up (round 2) — wire the engine per-arm.** The first round made Claude the *registry
+default* but `drive_relocate` still ran `ScriptedPlanner()` for every arm, so no scenario run
+actually invoked the LLM — Claude was the engine in name only. Fixed: `_select_planner` honors the
+SCENARIOS.md §5 arm contract (`scenario.planner_for(arm)`) — A0/A1 scripted, **A2–A4 the LLM
+(Claude) planner**. To keep the ablation isolating the *reasoning backend* (not geometry), the two
+planners now share `agents/grounding.py::ground_relocate`: the LLM authors only the action-type
+*skeleton*, params are grounded deterministically. Offline the LLM planner runs on
+`FakeGeminiClient` behind a **passthrough** VCR — the sanctioned offline-double pattern (same as
+every ER/planner offline test); the fake is not a network call, so `api_calls` stays 0 and
+`make check` is green with no keys. Driver + console `inspect` surface `planner`/`provider`/
+`llm_calls` for observability.
+
 ## D-0009 — Oracle expression language via a restricted AST interpreter (no eval)
 **Context.** SCENARIOS.md §3 requires a safe expression oracle over a fixed predicate registry
 (determinism + safety; no arbitrary eval).

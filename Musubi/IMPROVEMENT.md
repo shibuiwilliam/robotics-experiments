@@ -5,6 +5,32 @@ combination of Robotics × AI-agent × Ontology on Musubi. Grounded in `PROJECT.
 `CLAUDE.md` (HOW + Golden Rules), and the current codebase (P0–P11 platform + v2 scenario layer with
 F1/S5/F2/C3 passing offline). Newest state at top.
 
+## 0. Round 2 — honor the per-arm planner contract (Claude is *actually* the engine)
+
+**Gap found (audit).** Prior round made Claude the registry-default provider and added the console,
+but `bench/runner/drivers.py` hardcoded `ScriptedPlanner()` for **every** arm. So scenario runs never
+invoked the LLM — Claude was the engine in name only, and the arm contract (SCENARIOS.md §5: A0/A1
+`scripted`, A2–A4 `gemini`/`claude`) was unmet. The ablation ladder only varied envelopes/claims/
+norms, not the *planner backend*.
+
+**Fix (this round).**
+- Extract a shared `agents/grounding.py::ground_relocate(goal, ctx, action_types)` — grounds a
+  relocate *skeleton* (move-standoff → pick → move-zone → place) to correct params from belief. Both
+  planners use it, so plans are identical and deterministic regardless of who authored the skeleton.
+- `ScriptedPlanner` emits the canonical skeleton and grounds it.
+- `LLMPlanner` (Claude/Gemini via `ChatAdapter`) asks the LLM for the *skeleton* (action-type
+  sequence) and grounds params itself — so offline the `FakeGeminiClient` returns a static skeleton
+  while coordinates stay runtime-correct. `ChatAdapter` gains a `.calls` counter.
+- `drive_relocate` selects the planner **per arm** via `scenario.planner_for(arm)`: scripted for
+  A0/A1; `LLMPlanner` over `ChatAdapter(FakeGeminiClient)` (provider from registry = claude) for
+  A2–A4. It records `planner`, `provider`, and `llm_calls` in the RunContext; `api_calls` stays 0
+  (the Fake is not a network call — offline determinism preserved).
+- Console `inspect` surfaces `planner`/`provider`/`llm_calls`.
+
+**Why it matters.** This makes Claude genuinely the reasoning engine for A2–A4 across the ablation
+ladder (E0/flagships), honoring the SCENARIOS.md §5 arm contract, while `make check` stays green
+offline (replay → 0 API calls; live Claude cassettes still pending keys).
+
 ## 1. Objective (restated)
 
 Two dimensions, delivered together:

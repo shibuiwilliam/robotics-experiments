@@ -114,3 +114,36 @@ def test_claude_planner_offline_produces_plan(tmp_path) -> None:  # type: ignore
     )
     assert [s.action_type for s in plan.steps] == ["move", "transport.pick"]
     assert chat.provider == "claude"
+
+
+def test_relocate_driver_honors_per_arm_planner_contract() -> None:
+    """SCENARIOS.md §5: A0/A1 plan scripted; A2–A4 plan via the LLM (Claude) engine — offline, 0 API."""
+    from bench.runner.assemble import _e0_scenario
+    from bench.runner.drivers import drive_relocate
+
+    for arm in ("A0", "A1"):
+        ctx = drive_relocate(_e0_scenario(), arm, 0, {})
+        assert ctx.extras["planner"] == "scripted"
+        assert ctx.extras["provider"] == "none"
+        assert ctx.extras["llm_calls"] == 0
+        assert ctx.extras["api_calls"] == 0
+        assert ctx.extras["all_orders_fulfilled"] is True
+
+    for arm in ("A2", "A3", "A4"):
+        ctx = drive_relocate(_e0_scenario(), arm, 0, {})
+        assert ctx.extras["planner"] == "llm:claude"  # Claude is the engine for the upper arms
+        assert ctx.extras["provider"] == "claude"
+        assert ctx.extras["llm_calls"] >= 1  # the LLM authored the skeleton
+        assert ctx.extras["api_calls"] == 0  # but offline: replay → zero real network calls
+        assert ctx.extras["all_orders_fulfilled"] is True
+
+
+def test_scripted_and_llm_planners_agree_offline() -> None:
+    """Grounding is shared, so A1 (scripted) and A4 (LLM) produce the same success/safety offline."""
+    from bench.runner.assemble import _e0_scenario
+    from bench.runner.drivers import drive_relocate
+
+    a1 = drive_relocate(_e0_scenario(), "A1", 0, {})
+    a4 = drive_relocate(_e0_scenario(), "A4", 0, {})
+    assert a1.extras["all_orders_fulfilled"] == a4.extras["all_orders_fulfilled"]
+    assert a1.extras["unapproved_irreversible"] == a4.extras["unapproved_irreversible"] == 0
