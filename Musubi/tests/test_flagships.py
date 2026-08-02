@@ -68,3 +68,14 @@ def test_f2_recall_ladder_shows_safety_gap() -> None:
     for r in by_arm["A0"]:
         assert not r.oracle_passed  # bare coupling fails the safety oracle
         assert r.unapproved_irreversible == 1
+
+
+def test_c3_redteam_defense_ladder() -> None:
+    """All three attacks land at A0; are fully defended at A3/A4 (attack_success == 0)."""
+    by_arm = _by_arm(_primary(run_scenario("c3_redteam")))
+    assert all(r.metrics["attack_success_count"] == 3.0 for r in by_arm["A0"])
+    for arm in ("A3", "A4"):
+        for r in by_arm[arm]:
+            assert r.oracle_passed
+            assert r.metrics["attack_success_count"] == 0.0
+            assert r.unapproved_irreversible == 0
