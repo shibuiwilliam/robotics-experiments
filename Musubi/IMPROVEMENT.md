@@ -31,6 +31,50 @@ norms, not the *planner backend*.
 ladder (E0/flagships), honoring the SCENARIOS.md §5 arm contract, while `make check` stays green
 offline (replay → 0 API calls; live Claude cassettes still pending keys).
 
+## 0b. Findings from the full scenario run (2026-08-02, commit `5d98c26`) — see `REPORT.md`
+
+Running all 5 scenarios × arms offline (120 runs, API 0) surfaced concrete data/observability gaps
+and one defect. Logs in `logs/`; analysis in `REPORT.md`. Newest findings:
+
+- **G1 — Claude engine exercised only by e0.** The per-arm planner contract now works, but only the
+  `relocate` driver (e0_smoke) routes through the Episode/planner, so only e0's A2–A4 record
+  `engine=llm:claude, llm_calls=1`. The flagship drivers (`confidence_audit`, `forensic`, `recall`,
+  `redteam`) construct their result procedurally and never invoke a planner — so at A2–A4 they still
+  show `engine=scripted/none`. **The "Claude is the primary engine" claim is validated on 1 of 5
+  scenarios.** *Fix direction:* give at least one flagship an agentic planning step (or add an E7
+  ablation that swaps planner backends on a scenario that uses one), so agent reasoning quality is
+  actually measured on a business task.
+- **G2 — s5 `success` predicate is silently always False (DEFECT).** `s5_ghost.yaml` declares
+  `ground_truth: {planted_root_cause: null}`; `drive_forensic` uses
+  `ctx.ground_truth.setdefault("planted_root_cause", culprit)`, which does **not** overwrite the
+  existing `null` key, so `root_cause_identified('planted_root_cause')` returns False even though
+  `forensic_accuracy=1.0` and the root cause IRI is correctly identified. The scenario's oracle still
+  "passes" (must + endpoints), masking the broken headline. *Fix (1 line):* remove
+  `planted_root_cause: null` from the yaml, or change the driver to direct assignment
+  `ctx.ground_truth["planted_root_cause"] = culprit` (matches the other drivers' intent).
+- **G3 — Scoreboard is cumulative, not run-scoped.** `MetricsStore.ingest` appends rows with no
+  run-id/session key, so per-arm `n` and rates in the ladder table grow across invocations (e0
+  showed `n=6` after two runs). Longitudinal tables are untrustworthy without a manual DB reset.
+  *Fix direction:* add a `run_id`/timestamp column and scope `arm_summaries` to the latest run (or
+  provide `make scoreboard-reset`).
+- **G4 — No stochastic variation captured.** With the LLM faked, all seeds are identical, so the
+  planned per-seed distribution / CI statistics (Experiment Plan §8) are absent. Real variance needs
+  live cassettes; until then the `ci_low`/`over_repeats` machinery is exercised but never non-trivial.
+- **G5 — f2_recall ladder is 2-point (A0, A4) only.** The safety contrast is binary, not a gradient;
+  A1–A3 are undefined, so we cannot see *which* rung (envelopes vs claims vs norms) first closes the
+  unapproved-irreversible gap. *Fix:* declare A0–A4 for f2 like c3.
+- **G6 — `success` vs `oracle_passed` conflation in summaries.** For scenarios whose `success`
+  predicate is undefined/irrelevant/broken (s5), the ladder `success` column reads 0.00 while the
+  oracle passes — misleading. *Fix direction:* render `success` as `n/a` when the predicate is
+  absent, and separate "headline success" from "oracle verdict" in the console/report output.
+- **G7 — Semantic-envelope bus observability only in e0.** Flagship drivers bypass the Episode bus
+  (`bus_events=0` for f1/s5/f2/c3), so the envelope trace / accountability chain is only visible for
+  relocate. Any observability claim about the bus rests on one scenario.
+- **G8 — No token/latency/cost telemetry.** `llm_calls` counts calls but not tokens or wallclock;
+  offline this is 0-cost, but the record path needs token accounting before any live Claude-vs-Gemini
+  comparison is meaningful. *Fix direction:* have the VCR/ChatAdapter capture usage on live calls and
+  surface it in RunContext.extras.
+
 ## 1. Objective (restated)
 
 Two dimensions, delivered together:

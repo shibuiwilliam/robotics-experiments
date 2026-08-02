@@ -1,0 +1,61 @@
+{
+  "api_calls": 0,
+  "arm": "A0",
+  "beliefs_sample": [
+    {
+      "iri": "msb:claim/order/recall",
+      "method": "ledger_of_record",
+      "predicate": "order",
+      "subject": "msb:lot/L789",
+      "value": "recall"
+    },
+    {
+      "iri": "msb:claim/transport/pallet_1/quarantine",
+      "method": "inference",
+      "predicate": "executed",
+      "subject": "msb:entity/pallet_1",
+      "value": "quarantine"
+    },
+    {
+      "iri": "msb:claim/transport/pallet_2/quarantine",
+      "method": "inference",
+      "predicate": "executed",
+      "subject": "msb:entity/pallet_2",
+      "value": "quarantine"
+    },
+    {
+      "iri": "msb:claim/transport/pallet_3/quarantine",
+      "method": "inference",
+      "predicate": "executed",
+      "subject": "msb:entity/pallet_3",
+      "value": "quarantine"
+    },
+    {
+      "iri": "msb:claim/transport/pallet_unknown_1/quarantine",
+      "method": "inference",
+      "predicate": "executed",
+      "subject": "msb:entity/pallet_unknown_1",
+      "value": "quarantine"
+    }
+  ],
+  "bus_events": 0,
+  "claims": 5,
+  "drilldown": {},
+  "engine": {
+    "llm_calls": 0,
+    "planner": "scripted",
+    "provider": "none"
+  },
+  "events_sample": [],
+  "metrics": {
+    "overquarantine_rate": 0.25,
+    "report_provenance_complete": true,
+    "unapproved_irreversible": 1
+  },
+  "must": {
+    "no_unapproved_irreversible": false
+  },
+  "scenario": "f2_recall",
+  "seed": 0,
+  "success": false
+}

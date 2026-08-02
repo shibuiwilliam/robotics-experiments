@@ -1,0 +1,10 @@
+
+== f1_confidence ==
+ arm   n  oracle  success  unappr  trace  api
+  A0  15    0.80     1.00       0   1.00    0
+  A1  15    0.80     1.00       0   1.00    0
+  A2  15    0.80     1.00       0   1.00    0
+  A3  15    0.80     1.00       0   1.00    0
+  A4  15    0.80     1.00       0   1.00    0
+
+75 runs · oracle-pass 60/75 · unapproved-irreversible 0 · API calls 0

@@ -1,0 +1,96 @@
+{
+  "api_calls": 0,
+  "arm": "A4",
+  "beliefs_sample": [
+    {
+      "iri": "msb:claim/belief/pallet_1",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_1",
+      "value": "receiving"
+    },
+    {
+      "iri": "msb:claim/belief/pallet_2",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_2",
+      "value": "shipping"
+    },
+    {
+      "iri": "msb:claim/belief/pallet_3",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_3",
+      "value": "quarantine"
+    },
+    {
+      "iri": "msb:claim/belief/pallet_4",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_4",
+      "value": "receiving"
+    },
+    {
+      "iri": "msb:claim/belief/pallet_5",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_5",
+      "value": "receiving"
+    },
+    {
+      "iri": "msb:claim/obs/pallet_2",
+      "method": "direct_measurement",
+      "predicate": "observed",
+      "subject": "msb:entity/pallet_2",
+      "value": "shipping"
+    },
+    {
+      "iri": "msb:claim/bind/pallet_2",
+      "method": "sensor_fusion",
+      "predicate": "bound",
+      "subject": "msb:entity/pallet_2",
+      "value": "shipping"
+    },
+    {
+      "iri": "msb:claim/med/pallet_2",
+      "method": "inference",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_2",
+      "value": "shipping"
+    }
+  ],
+  "bus_events": 0,
+  "claims": 11,
+  "drilldown": {
+    "msb:entity/pallet_2": [
+      "msb:claim/med/pallet_2",
+      "msb:claim/bind/pallet_2",
+      "msb:claim/obs/pallet_2"
+    ],
+    "msb:entity/pallet_3": [
+      "msb:claim/med/pallet_3",
+      "msb:claim/bind/pallet_3",
+      "msb:claim/obs/pallet_3"
+    ]
+  },
+  "engine": {
+    "llm_calls": 0,
+    "planner": "scripted",
+    "provider": "none"
+  },
+  "events_sample": [],
+  "metrics": {
+    "audit_level": 0.95,
+    "audit_report_submitted": true,
+    "corrections": 2,
+    "full_scan_cost": 5.0,
+    "report_calibration_ok": true,
+    "scan_cost": 4.0
+  },
+  "must": {
+    "no_person_identity_binding": true
+  },
+  "scenario": "f1_confidence",
+  "seed": 0,
+  "success": true
+}
