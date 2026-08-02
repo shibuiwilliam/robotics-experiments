@@ -1,8 +1,8 @@
 
 == s5_ghost ==
  arm   n  oracle  success  unappr  trace  api
-  A2   3    1.00     0.00       0   1.00    0
-  A3   3    1.00     0.00       0   1.00    0
-  A4   3    1.00     0.00       0   1.00    0
+  A2   3    1.00     1.00       0   1.00    0
+  A3   3    1.00     1.00       0   1.00    0
+  A4   3    1.00     1.00       0   1.00    0
 
 9 runs · oracle-pass 9/9 · unapproved-irreversible 0 · API calls 0

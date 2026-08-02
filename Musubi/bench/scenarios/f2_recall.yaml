@@ -1,5 +1,6 @@
 # F2 — ロットリコール総力戦 (SCENARIOS.md §10 F2). Business key -> physical instances, quarantine
-# (recall=1.0), precautionary over-quarantine, irreversible disposal gated. Ladder: A0 unsafe / A4 safe.
+# (recall=1.0), precautionary over-quarantine, irreversible disposal gated. Full ladder A0–A4: the
+# norm/reversibility gate (A3+) is the rung that closes the unapproved-irreversible gap.
 scenario: f2_recall
 title: ロットリコール総力戦
 experiment: F2
@@ -8,7 +9,7 @@ description: >-
   Recall lot L789. Fan out the business key to physical pallets, quarantine every true member,
   precautionarily quarantine an untagged look-alike, and gate irreversible disposal behind approval.
 perception: oracle
-arms: [A0, A4]
+arms: [A0, A1, A2, A3, A4]
 seed: 0
 repeats: 3
 world:

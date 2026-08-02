@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS runs (
     oracle_passed BOOLEAN, success BOOLEAN,
     unapproved_irreversible INTEGER, trace_completeness DOUBLE,
     claims INTEGER, bus_events INTEGER, api_calls INTEGER,
-    plan_steps INTEGER, executed INTEGER, reason TEXT
+    plan_steps INTEGER, executed INTEGER, reason TEXT,
+    run_id BIGINT
 );
 """
 
@@ -66,10 +67,18 @@ class MetricsStore:
         self._con = duckdb.connect(str(path))
         self._con.execute(_SCHEMA)
 
+    def _next_run_id(self) -> int:
+        # Deterministic monotonic batch id (not wallclock — keeps NFR-DETERM). Each ingest() call is
+        # one batch, so arm_summaries can scope to the latest run instead of aggregating history.
+        row = self._con.execute("SELECT COALESCE(MAX(run_id), 0) FROM runs").fetchone()
+        return (int(row[0]) if row and row[0] is not None else 0) + 1
+
     def ingest(self, records: list[dict[str, Any]]) -> int:
-        rows = [[r.get(c) for c in _COLUMNS] for r in records]
-        placeholders = ",".join(["?"] * len(_COLUMNS))
-        self._con.executemany(f"INSERT INTO runs VALUES ({placeholders})", rows)
+        batch = self._next_run_id()
+        cols = [*_COLUMNS, "run_id"]
+        rows = [[r.get(c) for c in _COLUMNS] + [batch] for r in records]
+        placeholders = ",".join(["?"] * len(cols))
+        self._con.executemany(f"INSERT INTO runs ({', '.join(cols)}) VALUES ({placeholders})", rows)
         return len(rows)
 
     def clear(self, scenario: str | None = None) -> None:
@@ -79,19 +88,22 @@ class MetricsStore:
             self._con.execute("DELETE FROM runs")
 
     def arm_summaries(self, scenario: str | None = None) -> list[ArmSummary]:
-        where = "WHERE scenario = ?" if scenario else ""
+        # Scope to each scenario's LATEST run batch so per-arm n/rates reflect one run, not the
+        # cumulative append-only history (fixes the "n grows across invocations" observability bug).
+        where = "AND r.scenario = ?" if scenario else ""
         params = [scenario] if scenario else []
         rows = self._con.execute(
             f"""
-            SELECT scenario, arm, COUNT(*) AS n,
-                   AVG(CAST(oracle_passed AS DOUBLE)) AS oracle_rate,
-                   AVG(CAST(success AS DOUBLE)) AS success_rate,
-                   SUM(unapproved_irreversible) AS unappr,
-                   AVG(trace_completeness) AS mean_trace,
-                   SUM(api_calls) AS total_api
-            FROM runs {where}
-            GROUP BY scenario, arm
-            ORDER BY scenario, arm
+            SELECT r.scenario, r.arm, COUNT(*) AS n,
+                   AVG(CAST(r.oracle_passed AS DOUBLE)) AS oracle_rate,
+                   AVG(CAST(r.success AS DOUBLE)) AS success_rate,
+                   SUM(r.unapproved_irreversible) AS unappr,
+                   AVG(r.trace_completeness) AS mean_trace,
+                   SUM(r.api_calls) AS total_api
+            FROM runs r
+            WHERE r.run_id = (SELECT MAX(run_id) FROM runs WHERE scenario = r.scenario) {where}
+            GROUP BY r.scenario, r.arm
+            ORDER BY r.scenario, r.arm
             """,
             params,
         ).fetchall()

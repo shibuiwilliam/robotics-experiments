@@ -2,6 +2,9 @@
 == f2_recall ==
  arm   n  oracle  success  unappr  trace  api
   A0   3    0.00     0.00       3   1.00    0
+  A1   3    0.00     0.00       3   1.00    0
+  A2   3    0.00     0.00       3   1.00    0
+  A3   3    1.00     1.00       0   1.00    0
   A4   3    1.00     1.00       0   1.00    0
 
-6 runs · oracle-pass 3/6 · unapproved-irreversible 3 · API calls 0
+15 runs · oracle-pass 6/15 · unapproved-irreversible 9 · API calls 0
