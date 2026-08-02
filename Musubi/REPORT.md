@@ -1,10 +1,10 @@
 # REPORT.md — Musubi シナリオ実行レポート
 
-> **改訂 (rev.2)**: 初回レポートで検出した指摘のうち **G2（s5 success 欠陥）・G3（スコアボード累積）・
-> G5（f2 梯子 2 点）を修正**したうえで全シナリオを再実行した。本文の数値・表は修正後の値。修正内容は §8、
-> 未対応の指摘（G1/G4/G6/G7/G8）は `IMPROVEMENT.md` 参照。
+> **改訂 (rev.3)**: 全シナリオを再実行し、**(a) 再現性を二重実行の差分で実証**（§4.2）、**(b) シードが
+> 完全に不活性（3 リピートが coverage を生まない）ことを発見**（§4.2・新指摘 G9）。標準ログは rev.2 と
+> **バイト単位で一致**（＝ドリフト無し・決定性の実証）。rev.2 で修正した G2/G3/G5 は §8、未対応は §6・`IMPROVEMENT.md`。
 
-**実行日時**: 2026-08-02（rev.2 再実行）/ **VCR**: `replay`（オフライン・ネット遮断）
+**実行日時**: 2026-08-02（rev.3 再実行）/ **VCR**: `replay`（オフライン・ネット遮断）
 **プロバイダ**: `claude` (`claude-opus-4-8`) / **鍵**: GOOGLE=なし・ANTHROPIC=なし / **choke-point clean**: ✓ / **offline_ready**: ✓
 
 本レポートは `bench/scenarios/*.yaml` の全 5 シナリオを `make check` 緑のコードベース上で
@@ -131,11 +131,21 @@ A2 が計測 QoS による能力照合で偽能力 1 件を弾き（3→2）、A
 不変条件（CLAUDE.md §12）を、f2・c3 の両方で **同じ段（A3）** として対照実証したことを意味する。**必達アサート
 「未承認不可逆 0」はゲート有効アームで成立**。
 
-### 4.2 決定性・コスト
+### 4.2 決定性・再現性・シード不活性（rev.3 で実証）
 
-全 129 ラン `api_calls=0`。3 シードで metrics 完全一致（replay 決定性）。埋め込み・ER・エージェント推論いずれも
-実クラウド未到達。**このレポートの数値はすべてオフライン double（`FakeGeminiClient` の静的スケルトン）由来**であり、
-実 Claude の挙動（トークン・遅延・推論の揺れ）は含まない（§6 妥当性の脅威）。
+全 129 ラン `api_calls=0`。実クラウド未到達（埋め込み・ER・エージェント推論すべてオフライン double）。
+本節の主張は rev.3 で **実測により裏付けた**（`logs/40_reproducibility.txt`・`logs/41_seed_determinism.txt`）：
+
+- **再現性（run-to-run）**: 全スイートを 2 回連続実行し梯子サマリを差分 → **bit-for-bit 一致**。さらに
+  今回の標準ログ（`10_/11_/20_/30_/31_`）は**前回コミット rev.2 とバイト単位で一致**（git 差分ゼロ）。
+  別プロセス・別セッションでも replay が完全再現することを示す（NFR-DETERM）。
+- **シード不活性（新指摘 G9）**: `repeats: 3`（seed 0/1/2）だが、**世界ジオメトリも全 metrics もシード間で
+  完全一致**（pallet_0 は全シードで `(-1.2,1.2,0.06)`）。ベース MJCF は固定で、現行 5 本の invisible_hand は
+  固定座標のみ（シード付き RNG を消費しない）。したがって **3 リピートは統計的・カバレッジ的価値を持たず**、
+  `over_repeats`／CI は同一入力を集約しているだけ。→ `IMPROVEMENT.md` G9。
+
+**含意**: 数値はすべてオフライン double（`FakeGeminiClient` の静的スケルトン）由来であり、実 Claude の挙動
+（トークン・遅延・推論の揺れ）も、シードによる分布も含まない（§6 妥当性の脅威 G4/G9）。
 
 ### 4.3 検出した欠陥と修正：s5 の `success` 述語が常に False だった問題（rev.2 で解決）
 
@@ -184,7 +194,8 @@ relocate ドライバを使う e0 のみ**。flagship 4 本は監査・フォレ
 2. **planner 経路が e0 限定**（§5）。flagship はドライバが結論を直接構成するため、シナリオの「難しさ」は
    エージェント推論ではなくドライバ実装に担われている。（未対応 G1/G7）
 3. ~~f2 の梯子が 2 点~~ → **rev.2 で A0–A4 に拡張済み**（§3.4・§8 G5）。
-4. **stochastic 変動ゼロ**：LLM が fake で決定的なため、シード分散・ばらつき統計（実験計画 §8）は未取得。（G4）
+4. **stochastic 変動ゼロ＋シード不活性**：LLM が fake で決定的なだけでなく、**世界ジオメトリもシード間で不変**
+   のため、リピートは分散・ばらつき統計を生まない（§4.2、G4/**G9**）。
 5. **success 述語の一般的曖昧さ**（§4.4、G6）。s5 の具体的欠陥は解消。
 6. **正典設計文書（Ontology Design / Experiment Plan）が不在**のため、閾値・公理・統計判断は暫定（STATUS 参照）。
 
@@ -197,8 +208,9 @@ Musubi のオフライン基盤は **安全性の対照実験（未承認不可�
 アブレーション梯子は e0 で機構的に、**f2・c3 で「規範ゲートの A3 が安全ギャップを閉じる」段として一致して**区別できている。
 
 rev.2 で **s5 success 欠陥（G2）・スコアボード累積（G3）・f2 梯子 2 点（G5）を修正**し、テストで固定した。
-残る限界は (a) Claude 主エンジンの実働がまだ e0 の 1 経路に限られる（G1/G7）、(b) 実モデル挙動・トークン/遅延が
-未計測（G4/G8）、の 2 系統で、いずれも `IMPROVEMENT.md` に指摘として残置している。
+rev.3 では **再現性を二重実行の差分で実証**し、**シード不活性（G9）** を新たに特定した。残る限界は
+(a) Claude 主エンジンの実働がまだ e0 の 1 経路に限られる（G1/G7）、(b) 実モデル挙動・トークン/遅延が未計測
+（G4/G8）、(c) リピートが分散を生まない（G9）、の 3 系統で、いずれも `IMPROVEMENT.md` に指摘として残置している。
 
 ---
 
@@ -225,7 +237,17 @@ done
 python -m console inspect <S> --arm <A> --seed 0 --json                 # アーム別 詳細
 ```
 生ログ: `logs/00_status.txt`・`logs/10_*_summary.txt`・`logs/11_*_run.json`・`logs/20_inspect_*.json`・
-`logs/30_digest.txt`・`logs/31_e0_trace.txt`。
+`logs/30_digest.txt`・`logs/31_e0_trace.txt`・`logs/40_reproducibility.txt`（二重実行差分）・
+`logs/41_seed_determinism.txt`（シード不変性）。
+
+再現性・シード不活性の検証:
+
+```bash
+# 二重実行の差分（bit-for-bit 一致を確認）
+for i in A B; do rm -f data/scoreboard.duckdb; for S in e0_smoke f1_confidence s5_ghost f2_recall c3_redteam; do
+  MUSUBI_VCR_MODE=replay python -m bench.runner scenario --name "$S"; done > /tmp/run_$i.txt; done
+diff /tmp/run_A.txt /tmp/run_B.txt        # 差分なし = 再現性あり
+```
 
 ## 付録 B. 集計（本セッションの clean 実行）
 

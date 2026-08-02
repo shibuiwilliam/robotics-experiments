@@ -1,0 +1,5 @@
+# Reproducibility — full suite run twice under replay, summaries diffed
+stamp: 2026-08-02T02:40:19Z
+
+pass A vs pass B:
+  IDENTICAL (bit-for-bit) — replay is reproducible, 0 API calls both passes
