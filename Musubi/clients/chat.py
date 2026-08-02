@@ -1,7 +1,9 @@
-"""ADK/chat adapter — Gemini agent reasoning behind the VCR.
+"""Chat adapter — provider-agnostic agent reasoning behind the VCR.
 
-Bench calls are stateless (no Interactions API) so replay stays valid (CLAUDE.md §8). The adapter
-keys the VCR on (model, prompt, schema, thinking-budget) and returns a structured dict.
+The agent-reasoning LLM is registry-selected (``llm.provider``: gemini | claude). Claude is the
+primary engine (see IMPROVEMENT.md). Bench calls are stateless so replay stays valid (CLAUDE.md §8);
+the adapter keys the VCR on (provider, model, prompt, schema, budget) and returns a structured dict.
+Offline uses ``FakeGeminiClient`` regardless of provider.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ import hashlib
 import json
 from typing import Any
 
-from clients.backends import ChatBackend, FakeGeminiClient
+from clients.backends import ChatBackend, FakeGeminiClient, select_chat_backend
 from clients.vcr import VCR
 from config import load_registry
 
@@ -22,17 +24,33 @@ def _schema_sig(schema: dict[str, Any] | None) -> str:
 
 
 class ChatAdapter:
-    """VCR-wrapped structured-generation client (ADK/Gemini). Offline uses FakeGeminiClient."""
+    """VCR-wrapped structured-generation client for the selected LLM provider."""
 
-    def __init__(self, vcr: VCR | None = None, backend: ChatBackend | None = None) -> None:
+    def __init__(
+        self,
+        vcr: VCR | None = None,
+        backend: ChatBackend | None = None,
+        provider: str | None = None,
+    ) -> None:
         self._vcr = vcr or VCR()
-        self._backend = backend or FakeGeminiClient()
         reg = load_registry()
-        self._model = reg.model_id("agent")
-        self._budget = int(reg.require("models.agent.thinking_budget.default"))
+        self._provider = provider or reg.llm_provider()
+        self._model = reg.agent_model(self._provider)
+        # gemini carries a thinking budget; claude uses adaptive thinking (budget ignored).
+        self._budget = int(reg.get("models.agent.thinking_budget.default", 0))
+        self._backend = backend or select_chat_backend(self._provider)
+
+    @property
+    def provider(self) -> str:
+        return self._provider
+
+    @property
+    def model(self) -> str:
+        return self._model
 
     def generate(self, prompt: str, schema: dict[str, Any] | None = None) -> dict[str, Any]:
         request: dict[str, Any] = {
+            "provider": self._provider,
             "prompt": prompt,
             "schema": _schema_sig(schema),
             "thinking_budget": self._budget,
@@ -43,3 +61,9 @@ class ChatAdapter:
             live_fn=lambda: self._backend.generate(prompt, self._model, schema, self._budget),
         )
         return result
+
+
+def make_chat_adapter(provider: str | None = None, *, offline_fake: bool = False) -> ChatAdapter:
+    """Build a ChatAdapter for a provider. ``offline_fake=True`` forces the FakeGeminiClient double."""
+    backend: ChatBackend | None = FakeGeminiClient() if offline_fake else None
+    return ChatAdapter(backend=backend, provider=provider)

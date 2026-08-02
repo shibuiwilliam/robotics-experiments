@@ -6,7 +6,7 @@ capability->tool compiler (new robots add zero agent code). Cloud calls go throu
 from __future__ import annotations
 
 from agents.capability_compiler import compile_capabilities
-from agents.gemini import GeminiPlanner
+from agents.gemini import GeminiPlanner, LLMPlanner, make_planner
 from agents.planner import Plan, Planner, PlanStep
 from agents.scripted import ScriptedPlanner
 from agents.tools import MusubiTools
@@ -17,6 +17,8 @@ __all__ = [
     "PlanStep",
     "ScriptedPlanner",
     "GeminiPlanner",
+    "LLMPlanner",
+    "make_planner",
     "MusubiTools",
     "compile_capabilities",
 ]

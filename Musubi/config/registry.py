@@ -62,6 +62,19 @@ class Registry:
     def default_seed(self) -> int:
         return int(self.require("determinism.default_seed"))
 
+    def llm_provider(self) -> str:
+        """Effective agent-LLM provider: env MUSUBI_LLM_PROVIDER wins over registry ``llm.provider``."""
+        env = os.environ.get("MUSUBI_LLM_PROVIDER")
+        if env:
+            return env
+        return str(self.get("llm.provider", "gemini"))
+
+    def agent_model(self, provider: str | None = None) -> str:
+        """The agent-reasoning model id for a provider (gemini→models.agent, claude→models.claude)."""
+        provider = provider or self.llm_provider()
+        key = "models.claude.id" if provider == "claude" else "models.agent.id"
+        return str(self.require(key))
+
 
 @lru_cache(maxsize=8)
 def _load_cached(path_str: str) -> Registry:

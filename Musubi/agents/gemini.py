@@ -1,8 +1,10 @@
-"""GeminiPlanner — LLM-backed planning via the ADK/chat adapter (behind the VCR).
+"""LLM-backed planning via the provider-agnostic chat adapter (behind the VCR).
 
-Requests a structured plan (JSON) and converts it to a robot-agnostic Plan. Offline, the
-ChatAdapter is backed by ``FakeGeminiClient``; register a canned plan for the ``MUSUBI_RELOCATE_PLAN``
-intent (build-prompt §4: LLM paths use schema-valid canned outputs so replay is meaningful).
+Requests a structured plan (JSON) and converts it to a robot-agnostic Plan. The reasoning LLM is
+registry-selected (Claude is the primary engine; Gemini is also supported) — this planner is
+provider-neutral because it talks only to ``ChatAdapter``. Offline, the ChatAdapter is backed by
+``FakeGeminiClient``; register a canned plan for the ``MUSUBI_RELOCATE_PLAN`` intent so replay is
+meaningful. ``GeminiPlanner`` is the historical name; ``LLMPlanner`` is the provider-neutral alias.
 """
 
 from __future__ import annotations
@@ -79,3 +81,14 @@ class GeminiPlanner:
                 )
             )
         return Plan(goal=goal, steps=steps)
+
+
+#: Provider-neutral name for the LLM planner (Claude or Gemini, selected via the registry).
+LLMPlanner = GeminiPlanner
+
+
+def make_planner(provider: str | None = None, *, offline_fake: bool = False) -> GeminiPlanner:
+    """Build an LLM planner over a ChatAdapter for the given provider (default: registry)."""
+    from clients.chat import make_chat_adapter
+
+    return GeminiPlanner(make_chat_adapter(provider, offline_fake=offline_fake))

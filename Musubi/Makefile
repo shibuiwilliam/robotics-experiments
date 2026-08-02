@@ -19,7 +19,7 @@ E    ?=
 .DEFAULT_GOAL := help
 
 .PHONY: help setup gen fmt lint types test test-live check \
-        scenario experiment dashboard demo docs-check report clean
+        scenario experiment console dashboard demo docs-check report clean
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -42,7 +42,7 @@ lint:  ## Lint (ruff check + format diff check)
 	$(RUFF) format --check .
 
 types:  ## Type check with mypy
-	$(MYPY) ontology core sim perception agents external clients bench scoreboard config
+	$(MYPY) ontology core sim perception agents external clients bench scoreboard config console
 
 test:  ## Run tests (VCR replay, offline, CI-equivalent)
 	MUSUBI_VCR_MODE=replay $(PYTEST)
@@ -57,6 +57,9 @@ scenario:  ## Run one scenario: make scenario S=<name> [MODE=replay|record] [ARM
 
 experiment:  ## Run one experiment program: make experiment E=<E0..E7>
 	MUSUBI_VCR_MODE=$(MODE) $(PY) -m bench.runner experiment --name "$(E)"
+
+console:  ## Musubi operator cockpit: make console ARGS="status" | "run scenario e0_smoke --json"
+	$(PY) -m console $(ARGS)
 
 dashboard:  ## Generate & open the semantic-observability dashboard
 	$(PY) -m scoreboard.dashboard build

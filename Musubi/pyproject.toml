@@ -28,10 +28,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Cloud SDKs — only needed for VCR record/passthrough (live Gemini). Offline core never imports these.
+# Cloud SDKs — only needed for VCR record/passthrough (live LLMs). Offline core never imports these.
 live = [
     "google-genai>=0.3",
     "google-adk>=0.1",
+    "anthropic>=0.40",
 ]
 dev = [
     "pytest>=8.0",
@@ -55,6 +56,7 @@ packages = [
     "bench",
     "scoreboard",
     "config",
+    "console",
 ]
 
 [tool.hatch.metadata]
@@ -90,7 +92,7 @@ exclude = ["ontology/generated", "build", "external/docs"]
 [[tool.mypy.overrides]]
 module = [
     "mujoco.*", "duckdb.*", "pyshacl.*", "rdflib.*", "linkml.*", "linkml_runtime.*",
-    "imageio.*", "PIL.*", "google.*", "yaml.*", "jsonschema.*",
+    "imageio.*", "PIL.*", "google.*", "anthropic.*", "yaml.*", "jsonschema.*",
     "ontology.generated.*",  # generated pydantic types (excluded from checking; imported as data)
 ]
 ignore_missing_imports = true

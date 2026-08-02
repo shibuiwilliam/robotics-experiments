@@ -28,28 +28,13 @@ def _python_files(pkg: str) -> list[Path]:
     return [p for p in root.rglob("*.py") if "generated" not in p.parts]
 
 
-def _imports_gemini(path: Path) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.startswith(("google.genai", "google.adk")):
-                    return True
-        elif isinstance(node, ast.ImportFrom):
-            mod = node.module or ""
-            if mod.startswith(("google.genai", "google.adk")):
-                return True
-    return False
+def test_no_llm_sdk_import_outside_clients() -> None:
+    """Golden Rule #1 (generalized): NO LLM SDK — Gemini or Anthropic — may be imported outside
+    clients/. The single cloud choke point now spans multiple providers (DECISIONS D-0012)."""
+    from clients.guard import llm_imports_outside_clients
 
-
-def test_no_gemini_import_outside_clients() -> None:
-    """Golden Rule #1: Gemini SDKs may only be imported inside clients/."""
-    offenders: list[str] = []
-    for pkg in _PACKAGES:  # note: clients/ deliberately excluded
-        for path in _python_files(pkg):
-            if _imports_gemini(path):
-                offenders.append(str(path.relative_to(_ROOT)))
-    assert not offenders, f"Gemini imported outside clients/: {offenders}"
+    offenders = llm_imports_outside_clients()
+    assert not offenders, f"LLM SDK imported outside clients/: {offenders}"
 
 
 def _naive_wallclock_calls(path: Path) -> list[str]:

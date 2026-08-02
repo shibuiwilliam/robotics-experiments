@@ -59,6 +59,73 @@ class GeminiBackend:
         )
 
 
+# --------------------------------------------------------------------------- Anthropic / Claude (live)
+class AnthropicBackend:
+    """Real Claude agent backend (ChatBackend). Lazy-imports ``anthropic`` so offline never loads it.
+
+    Uses adaptive thinking + effort and structured outputs (``output_config.format``) so the response
+    is schema-valid JSON — the same contract the planner consumes. Model id + effort + max_tokens come
+    from ``config/registry.yaml`` (models.claude). Claude does agent reasoning only; ER/embedding stay
+    Gemini (Anthropic offers neither).
+    """
+
+    _SYSTEM = (
+        "You are Musubi's planning agent. Return ONLY the JSON your schema requires — no prose. "
+        "Respect the ontology vocabulary and the reversibility/norm gates."
+    )
+
+    def detect_points(
+        self, image: np.ndarray, query: str, model_id: str, thinking_budget: int
+    ) -> list[dict[str, Any]]:  # pragma: no cover - Claude has no ER; use Gemini ER
+        raise NotImplementedError("AnthropicBackend does not do ER pointing; ER stays on Gemini.")
+
+    def embed(self, content: str, model_id: str, dim: int) -> list[float]:  # pragma: no cover
+        raise NotImplementedError(
+            "AnthropicBackend does not do embeddings; embeddings stay on Gemini."
+        )
+
+    def generate(
+        self, prompt: str, model_id: str, schema: dict[str, Any] | None, thinking_budget: int
+    ) -> dict[str, Any]:  # pragma: no cover - requires ANTHROPIC_API_KEY + network
+        import json as _json
+
+        import anthropic  # lazy: only on live record/passthrough
+
+        from config import load_registry
+
+        reg = load_registry()
+        effort = str(reg.get("models.claude.effort", "high"))
+        max_tokens = int(reg.get("models.claude.max_tokens", 16000))
+
+        output_config: dict[str, Any] = {"effort": effort}
+        if schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
+
+        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        response = client.messages.create(
+            model=model_id,  # e.g. claude-opus-4-8 (registry)
+            max_tokens=max_tokens,
+            system=self._SYSTEM,
+            thinking={"type": "adaptive"},  # budget_tokens is removed on 4.8 (would 400)
+            output_config=output_config,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = next((b.text for b in response.content if b.type == "text"), "")
+        result: dict[str, Any] = _json.loads(text) if text else {}
+        return result
+
+
+def select_chat_backend(provider: str) -> ChatBackend:
+    """Return the live ChatBackend for a provider (claude → Anthropic, else Gemini).
+
+    Offline paths never call this backend (replay serves cassettes / a FakeGeminiClient is injected);
+    it is the live backend used only in record/passthrough.
+    """
+    if provider == "claude":
+        return AnthropicBackend()
+    return GeminiBackend()
+
+
 # --------------------------------------------------------------------------- Fake (offline)
 def _seeded_vector(content: str, dim: int) -> list[float]:
     seed = int.from_bytes(hashlib.sha256(content.encode()).digest()[:8], "big")
