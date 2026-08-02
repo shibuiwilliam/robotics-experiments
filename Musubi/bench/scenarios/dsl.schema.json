@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://musubi.dev/bench/scenario-dsl",
+  "title": "Musubi Scenario DSL",
+  "description": "Schema for bench/scenarios/*.yaml (SCENARIOS.md §2). Unknown keys fail.",
+  "type": "object",
+  "required": ["scenario"],
+  "additionalProperties": false,
+  "properties": {
+    "scenario": {"type": "string"},
+    "title": {"type": "string"},
+    "description": {"type": "string"},
+    "experiment": {"type": ["string", "null"]},
+    "driver": {"type": "string"},
+    "seed": {"type": "integer"},
+    "repeats": {"type": "integer", "minimum": 1},
+    "seeds": {"type": "array", "items": {"type": "integer"}},
+    "arms": {"type": "array", "items": {"type": "string", "pattern": "^A[0-4]$"}},
+    "perception": {"type": "string", "enum": ["oracle", "hybrid", "live"]},
+    "planner": {"type": "object", "additionalProperties": {"type": "string"}},
+    "goal": {"type": "object"},
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base": {"type": "string"},
+        "include": {"type": "array", "items": {"type": "string"}},
+        "spawn": {"type": "array"}
+      }
+    },
+    "entities": {"type": "array", "items": {"type": "object"}},
+    "ledger": {"type": "object"},
+    "external": {"type": "object"},
+    "documents": {"type": "array", "items": {"type": "object"}},
+    "norms_active": {"type": "array", "items": {"type": "string"}},
+    "norms": {"type": "array", "items": {"type": "object"}},
+    "orders": {"type": "array", "items": {"type": "object"}},
+    "tasks": {"type": "array", "items": {"type": "object"}},
+    "invisible_hand": {"type": "array", "items": {"type": "object"}},
+    "faults": {"type": "array", "items": {"type": "object"}},
+    "injections": {"type": "array", "items": {"type": "object"}},
+    "perturbations": {"type": "array", "items": {"type": "object"}},
+    "regime": {"type": ["object", "null"]},
+    "agents_external": {"type": "array"},
+    "human_proxy": {"type": ["object", "null"]},
+    "sweep": {"type": ["object", "null"]},
+    "ground_truth": {"type": "object"},
+    "oracle": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "success": {"type": "string"},
+            "must": {"type": "array", "items": {"type": "string"}},
+            "acceptable_world": {"type": "string"},
+            "endpoints": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        {"type": "array", "items": {"type": "string"}}
+      ]
+    }
+  }
+}

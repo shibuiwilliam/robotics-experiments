@@ -1,16 +1,24 @@
-# S5 — Ghost-inventory forensic (Scenario Catalog §2). Bitemporally replay a 3-day-old failure to
-# find the planted root cause (a premature IdentityBinding used before a swap was detected), without
-# falsely blaming an innocent claim.
-name: s5_ghost
+# S5 — 幽霊在庫フォレンジック (SCENARIOS.md §10 S5). Bitemporal replay pins the planted root cause
+# (a premature IdentityBinding used before a swap was detected) without falsely blaming the innocent.
+scenario: s5_ghost
+title: 幽霊在庫フォレンジック
 experiment: E2
+driver: forensic
 description: >-
   A customer complains about a failed order. The investigation replays "what did the system believe
-  then?" and pins the root cause to a premature binding — not the innocent, correct scan.
-goal:
-  type: forensic
-  order: order-4411
-arms: [A4]
-seeds: [0, 1, 2]
-invisible_hand: []
-norms: []
-oracle: [root_cause_identified, no_false_blame, bitemporal_replay]
+  then?" and identifies the premature binding as root cause, not the innocent correct scan.
+perception: oracle
+arms: [A2, A3, A4]        # A0/A1 keep no history -> "unidentifiable" contrast (documented)
+seed: 0
+repeats: 3
+world: {base: micro_warehouse.xml}
+external:
+  crm: {enabled: true}
+  wms: {enabled: true}
+ground_truth:
+  planted_root_cause: null     # filled by the driver (the premature-binding Claim IRI)
+oracle:
+  success: "root_cause_identified('planted_root_cause') and not false_accusation()"
+  must: [no_person_identity_binding]
+  endpoints:
+    - "over_repeats('mean', forensic_accuracy()) >= 0.8"

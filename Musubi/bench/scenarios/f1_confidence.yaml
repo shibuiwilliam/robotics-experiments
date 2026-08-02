@@ -1,20 +1,32 @@
-# F1 — Confidence-driven inventory (Scenario Catalog §1, the recommended first flagship). Audit asks
-# for a 95%-confidence inventory; the system verifies only the low-confidence stock, detects the
-# planted discrepancies, and files corrections — proving cost < full count.
-name: f1_confidence
+# F1 — 確信度駆動棚卸 (SCENARIOS.md §10 F1). Prove inventory at an audit level with the minimal
+# confidence-driven scan; drilldown returns an observation→binding→mediation IRI chain.
+scenario: f1_confidence
+title: 確信度駆動棚卸
 experiment: E2
+driver: confidence_audit
 description: >-
-  Prove inventory at a confidence level without a full stop-and-scan. Build a confidence map, verify
-  only the decayed/low-confidence items, catch the planted book/reality divergences.
-goal:
-  type: confidence_audit
-  level: 0.95
-arms: [A4]
-seeds: [0, 1, 2]
+  Inventory is held as confidence-decayed Claims. The auditor asks for a 95%-confidence inventory;
+  the system verifies only the low-confidence stock, catches the planted divergences, and reports
+  per-item confidence with IRI provenance. A level sweep draws the confidence–cost curve.
+perception: oracle
+arms: [A0, A1, A2, A3, A4]
+seed: 0
+repeats: 3
+world: {base: micro_warehouse.xml}
+external:
+  audit_portal: {enabled: true, level: 0.95}
+  wms: {enabled: true}
 invisible_hand:
-  - {op: move, pallet: pallet_2, x: 1.2, y: -1.2}   # moved to shipping (book still says receiving)
-  - {op: degrade_tag, pallet: pallet_2}             # -> low confidence -> gets verified
-  - {op: move, pallet: pallet_3, x: 1.2, y: 1.2}    # moved to quarantine
-  - {op: degrade_tag, pallet: pallet_3}
-norms: []
-oracle: [planted_discrepancies_found, cost_reduced_vs_full_count, corrections_filed]
+  - {op: move, pallet: pallet_2, x: 1.2, y: -1.2, at: -600s}    # booked receiving, actually shipping
+  - {op: move, pallet: pallet_3, x: 1.2, y: 1.2, at: -600s}     # booked receiving, actually quarantine
+faults:
+  - {skill: transport.pick, p: 0.03}
+sweep: {param: audit_level, values: [0.7, 0.9, 0.95, 0.99]}
+ground_truth:
+  planted_divergences: []       # filled by the driver (moved entity IRIs)
+oracle:
+  success: "audit_report_submitted() and detection_recall('planted_divergences') >= level"
+  must: [no_person_identity_binding]
+  endpoints:
+    - "over_repeats('mean', scan_cost()) < full_scan_cost()"
+    - "report_calibration_ok()"

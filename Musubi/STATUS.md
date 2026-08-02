@@ -3,12 +3,23 @@
 Honest, running account of what is implemented + tested, what is deferred + why, and how to
 run everything. Updated continuously. Newest state at top.
 
-> **Canonical-docs caveat.** Of the three canonical design docs, the **Scenario Catalog**
-> (`SCENARIOS.md`, 結の十六景) IS present and authoritative — it supplies the 16 scenarios with
-> machine-scorable oracles, the rig-delta tree, and (§4.1) the 14 core ontology mechanisms.
-> Still **absent**: the **Ontology Design** (設計書) and **Experiment Plan** (実験計画). So the
-> exact LinkML concept axioms/SHACL and the experiment statistics remain **best-effort
-> `[PROVISIONAL]`**, grounded on `PROJECT.md §8` + `SCENARIOS.md §4.1`. See `DECISIONS.md`.
+> **Canonical-docs caveat.** `SCENARIOS.md` is now the **v2 Scenario Implementation Guide** (DSL §2,
+> oracle language §3, perturbations §4, arms §5, metrics §6, fixtures §7, per-scenario specs §10).
+> Still **absent**: the **Ontology Design** (設計書) and **Experiment Plan** (実験計画). So exact
+> LinkML axioms/SHACL and experiment statistics remain **`[PROVISIONAL]`**. See `DECISIONS.md`.
+
+## Scenario implementation (SCENARIOS.md v2 contract)
+
+| Piece | State | Notes |
+|---|---|---|
+| Oracle engine (§3) | ✅ done | `bench/oracle`: safe AST evaluator (no eval), predicate registry, 4 quadrants (success/must/acceptable_world/endpoints), `over_repeats` aggregation (mean/min/max/ci_low). 8 tests. |
+| DSL (§2) + JSON-Schema validation | ✅ done | full DSL (`bench/scenarios/loader.py` + `dsl.schema.json`, unknown keys fail). Per-arm planner, sweep, ground_truth, oracle-dict. |
+| Runner v2 (§5) | ✅ done | driver registry → RunContext → oracle scoring; arms×repeats×sweep; metrics to scoreboard (`is_sweep` marked). |
+| **F1** confidence audit | ✅ done | primary oracle passes A0–A4; confidence-cost **sweep curve** (4→4→4→5); drilldown mediation→binding→observation IRI chain (all resolvable). |
+| **S5** forensic | ✅ done | passes A2–A4; root_cause_identified + no false_accusation + forensic_accuracy 1.0. |
+| **F2** recall | ✅ done | A4 passes (recall 1.0, overquarantine 0.25, unappr-irrev 0); A0 fails safety oracle (unappr-irrev 1) — the ladder contrast. |
+| E0 smoke | ✅ done | migrated to v2 DSL; passes A0–A4. |
+| Breadth S1–S9/C1–C4 + E1/E3–E7 | ⬜ deferred | fixtures/perturbations/registry in place; each needs a DSL yaml + driver + oracle predicates. See deferred list. |
 
 ## How to run (offline, no keys)
 

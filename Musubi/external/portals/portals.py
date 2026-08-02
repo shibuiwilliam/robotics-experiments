@@ -61,6 +61,9 @@ class RegulatorPortal(_PortalBase):
 class CRMPortal(_PortalBase):
     """Customer complaint portal (S5): opens a claim to investigate."""
 
+    def __init__(self) -> None:
+        super().__init__("crm")
+
     def open_claim(self, order: str, complaint: str) -> Submission:
         return self.submit("claim", {"order": order, "complaint": complaint})
 

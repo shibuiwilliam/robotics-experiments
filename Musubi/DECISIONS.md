@@ -60,6 +60,34 @@ and by a test.
 **Rationale.** Keeps the bus honest (Rule #3, Claims append-only) and the boundary self-describing
 without hand-writing schema (Rule #4).
 
+## D-0009 — Oracle expression language via a restricted AST interpreter (no eval)
+**Context.** SCENARIOS.md §3 requires a safe expression oracle over a fixed predicate registry
+(determinism + safety; no arbitrary eval).
+**Decision.** `bench/oracle` implements a restricted `ast`-based interpreter allowing only predicate
+calls, boolean/comparison/logic ops, literals, and scenario `vars` names. Predicates live in a
+registry with unit tests. `over_repeats(agg, expr)` is handled specially at endpoint time
+(aggregates the inner expr across repeat contexts). Drivers populate `RunContext.extras` (the
+episode log) from real sim/Claim data; predicates read those + `ground_truth` — never system beliefs.
+**Rationale.** Meets the "no free eval" contract, keeps scoring declarative in the DSL, and separates
+"run the scenario" (driver) from "score it" (oracle).
+
+## D-0010 — Scenario DSL schema is hand-authored (not ontology-derived)
+**Context.** SCENARIOS.md §2 says "validate the DSL against a JSON Schema from ontology/". The DSL is
+a bench concern, not an ontology concept.
+**Decision.** The DSL JSON Schema is hand-authored at `bench/scenarios/dsl.schema.json`
+(`additionalProperties:false` so unknown keys fail) and validated with `jsonschema` on load.
+**Rationale.** The DSL vocabulary (arms/perturbations/oracle) isn't in the meaning ontology; deriving
+it from `ontology/` would be a category error. Committed + validated satisfies the intent.
+
+## D-0011 — Sweep points are a curve, not a pass/fail gate
+**Context.** F1's `sweep: audit_level` + endpoint `scan_cost < full_scan_cost`: at level 0.99 you must
+scan everything, so the cost endpoint legitimately fails at that extreme.
+**Decision.** The scenario oracle is gated at the **primary** level (default vars); sweep points are
+run additionally for the confidence-cost **curve** and marked `is_sweep=1` in metrics. The primary
+records determine "the scenario passes"; sweep records are transparent curve data.
+**Rationale.** Preserves the honest finding (99% confidence ⇒ full scan) while letting F1 pass at its
+audit level across A0–A4.
+
 ## D-0007 — External systems are in-process mocks (not networked FastAPI) for the benchmark path
 **Context.** PROJECT.md §7.1 lists FastAPI+SQLite mocks; NFR-LOCAL forbids network egress except
 Gemini; the benchmark harness runs in-process and must stay deterministic + offline.
