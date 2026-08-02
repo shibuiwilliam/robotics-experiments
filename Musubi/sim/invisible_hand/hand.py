@@ -80,12 +80,26 @@ class InvisibleHand:
         return self._record(Perturbation("churn", tuple(chosen), {"jitter": jitter}))
 
     # -- scheduled application ----------------------------------------------
+    #: DSL annotation keys that are metadata, not op arguments.
+    _META_KEYS = ("at", "class")
+
     def apply(self, op: str, **kwargs: Any) -> Perturbation:
-        """Apply an operation by name (used by the Scenario DSL)."""
+        """Apply an operation by name (used by the Scenario DSL).
+
+        DSL timeline metadata (``at``, ``class``) is stripped from the op args and recorded in the
+        Perturbation detail. NOTE: scheduling at a positive ``at`` (during the run) is not yet
+        modeled — all perturbations apply at build time (correct for divergences planted at ``-Ns``;
+        mid-run scheduling is a documented TODO).
+        """
         method = getattr(self, op, None)
         if method is None or op.startswith("_"):
             raise ValueError(f"unknown invisible-hand op: {op!r}")
+        meta = {k: kwargs.pop(k) for k in self._META_KEYS if k in kwargs}
         result: Perturbation = method(**kwargs)
+        if meta:
+            replaced = Perturbation(result.op, result.targets, {**result.detail, **meta})
+            self._history[-1] = replaced
+            return replaced
         return result
 
     def apply_schedule(self, schedule: list[dict[str, Any]]) -> list[Perturbation]:

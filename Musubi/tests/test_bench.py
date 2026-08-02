@@ -25,7 +25,7 @@ def test_run_scenario_single_arm_oracle_passes() -> None:
     assert r.oracle_passed and r.success
     assert r.unapproved_irreversible == 0
     assert r.api_calls == 0
-    assert r.checks["relocate_reached"] and r.checks["trace_complete"]
+    assert r.checks["must_ok"] and r.checks["acceptable"]
 
 
 def test_metrics_store_aggregates() -> None:

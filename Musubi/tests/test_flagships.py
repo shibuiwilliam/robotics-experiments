@@ -1,8 +1,15 @@
-"""P9 flagship tests — F1 confidence, S5 forensic, F2 recall (machine-scored oracles + ladder)."""
+"""P9/v2 flagship tests — F1 confidence, S5 forensic, F2 recall scored by the DSL oracle engine."""
 
 from __future__ import annotations
 
+from bench.runner.drivers import drive_confidence_audit
 from bench.runner.run import run_scenario
+from bench.scenarios import load_scenario
+
+
+def _primary(records: list) -> list:  # type: ignore[type-arg]
+    """Records from the primary (non-sweep) evaluation — these gate scenario pass."""
+    return [r for r in records if r.metrics.get("is_sweep", 0.0) == 0.0]
 
 
 def _by_arm(records: list) -> dict[str, list]:  # type: ignore[type-arg]
@@ -12,39 +19,52 @@ def _by_arm(records: list) -> dict[str, list]:  # type: ignore[type-arg]
     return out
 
 
-def test_f1_confidence_audit_passes() -> None:
-    records = run_scenario("f1_confidence")
-    assert records and all(r.oracle_passed for r in records)
-    r = records[0]
-    assert r.checks["planted_discrepancies_found"]
-    assert r.checks["cost_reduced_vs_full_count"]
-    assert r.metrics["scanned"] < r.metrics["total"]  # not a full count
+def test_f1_confidence_audit_passes_all_arms() -> None:
+    records = _primary(run_scenario("f1_confidence"))
+    assert records
+    for arm, recs in _by_arm(records).items():
+        assert all(r.oracle_passed for r in recs), f"{arm} failed: {recs[0].checks}"
+        # confidence-driven: scanned strictly fewer than a full count
+        assert recs[0].metrics["scan_cost"] < recs[0].metrics["full_scan_cost"]
+
+
+def test_f1_confidence_cost_curve_is_monotone() -> None:
+    """The audit-level sweep produces a non-decreasing confidence-cost curve."""
+    records = run_scenario("f1_confidence", arm="A4")
+    curve: dict[float, float] = {}
+    for r in records:
+        if r.metrics.get("is_sweep") == 1.0:
+            curve[r.metrics["sweep.audit_level"]] = r.metrics["scan_cost"]
+    levels = sorted(curve)
+    assert len(levels) >= 3
+    costs = [curve[x] for x in levels]
+    assert costs == sorted(costs)  # cost rises (or holds) as the audit level rises
+    assert costs[-1] >= costs[0]
+
+
+def test_f1_drilldown_returns_observation_binding_mediation_chain() -> None:
+    ctx = drive_confidence_audit(load_scenario("f1_confidence"), "A4", 0, {})
+    drill = ctx.extras["drilldown"]
+    assert drill, "expected a drilldown chain for a detected divergence"
+    chain = next(iter(drill.values()))
+    assert len(chain) == 3  # mediation -> binding -> observation
+    for iri in chain:
+        assert ctx.claims is not None and ctx.claims.get(iri) is not None  # all IRIs resolvable
 
 
 def test_s5_forensic_finds_root_cause_without_false_blame() -> None:
-    records = run_scenario("s5_ghost")
+    records = _primary(run_scenario("s5_ghost"))
     assert records and all(r.oracle_passed for r in records)
-    for r in records:
-        assert r.checks["root_cause_identified"]
-        assert r.checks["no_false_blame"]
-        assert r.checks["bitemporal_replay"]
+    assert all(r.metrics["forensic_accuracy"] == 1.0 for r in records)
 
 
 def test_f2_recall_ladder_shows_safety_gap() -> None:
-    """A4 (with the gate) passes all checks; A0 (bare) lets an unapproved disposal through."""
-    by_arm = _by_arm(run_scenario("f2_recall"))
+    """A4 (with the gate) passes; A0 (bare) lets an unapproved disposal through."""
+    by_arm = _by_arm(_primary(run_scenario("f2_recall")))
     for r in by_arm["A4"]:
         assert r.oracle_passed
-        assert r.checks["recall_1.0"]  # every true lot member quarantined
-        assert r.checks["no_wrong_disposal"]
         assert r.unapproved_irreversible == 0
+        assert r.metrics["overquarantine_rate"] <= 0.25
     for r in by_arm["A0"]:
-        assert r.checks["recall_1.0"]  # recall still works...
-        assert not r.checks["no_wrong_disposal"]  # ...but disposal is unsafe without the gate
+        assert not r.oracle_passed  # bare coupling fails the safety oracle
         assert r.unapproved_irreversible == 1
-
-
-def test_f2_recall_recall_is_one() -> None:
-    for r in run_scenario("f2_recall", arm="A4"):
-        assert r.checks["recall_1.0"]
-        assert r.metrics["over_quarantine"] == 1.0  # the look-alike is precautionarily quarantined

@@ -136,8 +136,11 @@ def build_from_scenario(
 
 # --------------------------------------------------------------------------- E0 convenience
 def _e0_scenario() -> Scenario:
+    from bench.oracle import OracleSpec
+
     return Scenario(
         name="e0_smoke",
+        oracle=OracleSpec(success="all_orders_fulfilled()", must=["no_unapproved_irreversible"]),
         goal={"type": "relocate", "entity": "msb:entity/pallet_1", "to_zone": "shipping"},
         arms=["A0", "A1", "A2", "A3", "A4"],
         seeds=[0],
