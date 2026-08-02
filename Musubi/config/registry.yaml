@@ -4,6 +4,13 @@
 
 version: 1
 
+# ---------------------------------------------------------------- LLM provider (agent engine)
+# The agent-reasoning backend is provider-selectable behind the VCR (clients/). ER (pointing) and
+# embeddings remain Gemini (Anthropic offers neither). Offline paths use FakeGeminiClient regardless.
+# Env MUSUBI_LLM_PROVIDER overrides. See IMPROVEMENT.md / DECISIONS D-0012.
+llm:
+  provider: claude            # gemini | claude — Claude is the primary agent engine
+
 # ---------------------------------------------------------------- Gemini models
 # IDs are declared here so model migration (ER 1.6 -> ER 2) is a config swap (PROJECT.md §7.2).
 # Prices are USD; used only for budget accounting. Offline paths never bill.
@@ -18,10 +25,20 @@ models:
     price_per_1k_input_tokens: 0.0
     price_per_1k_output_tokens: 0.0
   agent:
-    # ADK-driven Gemini for planning/mediation/document work. User-overridable.
+    # Gemini agent (ADK) for planning/mediation/document work when provider=gemini.
     id: gemini-3.5-flash
     thinking_budget:
       default: 2048
+    price_per_1k_input_tokens: 0.0
+    price_per_1k_output_tokens: 0.0
+    retry:
+      max_attempts: 5
+      initial_backoff_s: 1.0
+  claude:
+    # Anthropic/Claude agent for planning when provider=claude (the primary engine).
+    id: claude-opus-4-8       # exact string (no date suffix); adaptive thinking only
+    effort: high              # output_config.effort: low|medium|high|xhigh|max
+    max_tokens: 16000
     price_per_1k_input_tokens: 0.0
     price_per_1k_output_tokens: 0.0
     retry:

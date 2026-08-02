@@ -21,6 +21,8 @@ Plan / Ontology Design docs.
 | Accountability chain / observability | NFR-TRACE, NFR-OBS | all | F1, F2 | FR-SCORE | `core/explain`, `scoreboard` | `service.py`, `dashboard.py` | `test_core.py::explain` |
 | Ablation ladder A0→A4 scored | H (value) | E7 | F2 | FR-BENCH | `bench/` | `arm.py`, `run.py` | `test_e0_smoke.py`, `test_flagships.py::f2_ladder` |
 | Privacy floor (no person binding) | — | — | C2/C4`[PROV]` | NFR-P | `ontology/shapes` | `world_ok.ttl` | `test_ontology.py::person` |
+| Multi-provider LLM engine (Claude primary, behind VCR) | — | E7 | all | FR-AGENT/VCR | `clients/` | `backends.py::AnthropicBackend`, `chat.py`, `guard.py` | `test_engine.py`, `test_invariants.py` |
+| Operator cockpit (Claude Code interface) | — | — | all | NFR-OBS | `console/` | `app.py` | `test_console.py` |
 
 ## Result columns (post-run, from the scoreboard)
 

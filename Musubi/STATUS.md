@@ -88,6 +88,15 @@ Live cassette recording (later, needs GOOGLE_API_KEY + budget): `make test-live`
 - Live cassettes: none recorded yet (no keys during build). Offline paths use `FakeGeminiClient`.
   **To record:** set `GOOGLE_API_KEY`, run `make test-live` (record mode) — wires `GeminiBackend`.
 
+## Claude Code as engine & interface (D-0012, IMPROVEMENT.md)
+
+| Piece | State | Notes |
+|---|---|---|
+| **Interface — Musubi Console** | ✅ done | `console/` cockpit: `make console ARGS="…"` / `python -m console` with `--json`. Commands: `status`/`doctor` (env, VCR, provider, keys, artifacts, invariants, offline-ready), `providers`, `ontology concepts|validate`, `scenarios ls|show`, `run scenario|experiment` (oracle breakdown), `inspect` (beliefs/events/oracle/**drilldown IRI chain**/unappr-irrev). Read-only observer. 6 tests. |
+| **Engine — Claude backend** | ✅ done | Registry `llm.provider` (gemini\|claude, **default claude**); per-provider agent models (`claude-opus-4-8`). `AnthropicBackend` (behind VCR, lazy `anthropic`, adaptive thinking + effort, structured-output planning) in `clients/`; `select_chat_backend()`; `ChatAdapter` provider-neutral (provider in VCR key); `LLMPlanner`/`make_planner`. ER + embeddings stay Gemini. 6 engine tests. |
+| **Choke point** | ✅ generalized | Golden Rule #1 → "all LLM egress via `clients/`, provider from registry" (`clients/guard.py`); invariant test forbids `anthropic`/`google.genai`/`google.adk` outside `clients/`. |
+| **Offline guarantee** | ✅ held | Claude never called in replay; `FakeGeminiClient`/cassettes cover A2–A4; `make check` green, no keys, 0 API calls. **Live Claude cassettes pending keys** (`ANTHROPIC_API_KEY` + `MUSUBI_VCR_MODE=record`). |
+
 ## §5 Acceptance run (offline, no keys) — PASS
 
 - `make setup` → `make gen` → `make check` — green; generated artifacts match committed (CI diff).

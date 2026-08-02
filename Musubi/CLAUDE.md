@@ -10,7 +10,7 @@
 
 違反はレビューで即差し戻し。これらは §7 の不変条件の要約であり、最優先。
 
-1. **Gemini を `clients/` の外で呼ばない。** ER・ADK・埋め込みへのアクセスは必ず VCR 経由（`clients/`）。他モジュールから `google.genai` / `google.adk` を直接 import しない。
+1. **LLM を `clients/` の外で呼ばない（単一クラウド境界）。** ER・エージェント推論・埋め込みへのアクセスは必ず VCR 経由（`clients/`）。他モジュールから `google.genai` / `google.adk` / `anthropic` を直接 import しない（`clients/guard.py` が強制）。**D-0012**：エージェント推論 LLM は registry で選択（`llm.provider`：gemini | claude、既定 claude）。Claude を主エンジンに採用（Gemini-only の緩和・ユーザ承認済）だが出口は `clients/` 一点のまま。ER・埋め込みは Gemini 継続。オフラインは Fake/カセットで決定的（replay で API 呼出 0）。
 2. **モデルID・単価・予算・閾値をコードに書かない。** すべて `config/registry.yaml`。ハードコードされたモデル名を見たら直す。
 3. **Claim は追記のみ。** 更新は `supersede`、削除はしない。真値スナップショットをシステム経路に混ぜない（採点専用）。
 4. **オントロジーは単一ソース。** 型・スキーマ・語彙を手書きしない。`ontology/src/`（LinkML）を編集し `make gen` で再生成する。

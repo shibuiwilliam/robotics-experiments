@@ -60,6 +60,27 @@ and by a test.
 **Rationale.** Keeps the bus honest (Rule #3, Claims append-only) and the boundary self-describing
 without hand-writing schema (Rule #4).
 
+## D-0012 — Multi-provider LLM choke point + Claude as the primary agent engine; Musubi Console
+**Context.** The user directed that **Claude Code be the primary engine and interface** for
+experimenting with Robotics × AI-agent × Ontology. This overrides the letter of Golden Rule #1
+("Gemini only") and the "network egress = Gemini only" rule (NFR-LOCAL). See `IMPROVEMENT.md`.
+**Decision (authorized deviation, flagged per build-prompt §0.2).**
+- **Engine.** The agent-reasoning LLM is registry-selected (`llm.provider`: `gemini` | `claude`,
+  default **claude**). A real `AnthropicBackend` (`clients/backends.py`, lazy `anthropic`,
+  `claude-opus-4-8`, adaptive thinking + effort, structured-output planning) sits **behind the VCR**,
+  inside `clients/`. ER (pointing) and embeddings stay Gemini (Anthropic offers neither). Rule #1 is
+  **generalized** to "all LLM egress via `clients/`, provider from registry" — one choke point, now
+  multi-provider. The invariant test forbids `anthropic` / `google.genai` / `google.adk` imports
+  outside `clients/` (`clients/guard.py`). Offline stays deterministic: Claude is never called in
+  replay; `FakeGeminiClient`/cassettes cover A2–A4; replay → 0 API calls; `make check` green with no
+  keys. Live Claude needs `ANTHROPIC_API_KEY` + `MUSUBI_VCR_MODE=record` (documented, pending keys).
+- **Interface.** A read-only `console/` cockpit (`python -m console` / `make console`) with `--json`:
+  `status`/`doctor`, `providers`, `ontology`, `scenarios`, `run`, `inspect` — the surface Claude Code
+  drives.
+**Rationale.** Preserves the invariants' *intent* (single choke point, offline determinism,
+reproducibility, model-IDs-in-registry) while honoring the explicit user directive; additive and
+non-breaking (default offline path unchanged).
+
 ## D-0009 — Oracle expression language via a restricted AST interpreter (no eval)
 **Context.** SCENARIOS.md §3 requires a safe expression oracle over a fixed predicate registry
 (determinism + safety; no arbitrary eval).
