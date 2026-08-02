@@ -34,8 +34,9 @@ offline (replay → 0 API calls; live Claude cassettes still pending keys).
 ## 0b. Findings from the full scenario run (2026-08-02, commit `5d98c26`) — see `REPORT.md`
 
 Running all 5 scenarios × arms offline surfaced concrete data/observability gaps and one defect.
-Logs in `logs/`; analysis in `REPORT.md`. **G2/G3/G5 are now fixed (rev.2, `make check` green, 101
-tests); G1/G4/G6/G7/G8 remain open.** Findings:
+Logs in `logs/`; analysis in `REPORT.md`. **G2/G3/G5 are fixed (rev.2, `make check` green, 101
+tests); rev.3 verified reproducibility and found G9 (seed inertness). G1/G4/G6/G7/G8/G9 remain
+open.** Findings:
 
 - **G1 — Claude engine exercised only by e0.** The per-arm planner contract now works, but only the
   `relocate` driver (e0_smoke) routes through the Episode/planner, so only e0's A2–A4 record
@@ -76,6 +77,18 @@ tests); G1/G4/G6/G7/G8 remain open.** Findings:
   offline this is 0-cost, but the record path needs token accounting before any live Claude-vs-Gemini
   comparison is meaningful. *Fix direction:* have the VCR/ChatAdapter capture usage on live calls and
   surface it in RunContext.extras.
+- **G9 — `repeats: 3` is inert; seeds change nothing (found rev.3).** Verified empirically
+  (`logs/41_seed_determinism.txt`): world geometry is identical across seeds 0/1/2 (pallet_0 fixed at
+  `(-1.2,1.2,0.06)`) and every per-(arm,seed) metric is bit-identical in all 5 scenarios. The base
+  MJCF is fixed and no scenario's `invisible_hand` op samples seeded RNG, so the seed never reaches a
+  metric. Consequence: the 3 repeats triple runtime + DB rows for **zero** statistical/coverage value;
+  `over_repeats`/CI aggregate identical inputs (a superset of G4 — it's not just the faked LLM, the
+  *sim* is seed-invariant too). Separately confirmed **run-to-run reproducibility**
+  (`logs/40_reproducibility.txt`): two full-suite passes are bit-for-bit identical and this run's
+  standard logs match the committed rev.2 byte-for-byte. *Fix direction:* either (a) make the
+  Invisible Hand / world placement consume seeded RNG (jitter pallet poses, tag-degradation timing,
+  look-alike position) so repeats sample a distribution, or (b) drop `repeats` to 1 and stop implying
+  triplicate coverage until live LLM variance (G4) or seeded perturbations exist.
 
 ## 1. Objective (restated)
 

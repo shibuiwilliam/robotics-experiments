@@ -1,0 +1,17 @@
+# Seed-invariance evidence (repeats: 3 -> seeds 0,1,2)
+
+## World geometry by seed (pallet_0 xyz):
+  seed 0: (-1.2, 1.2, 0.06)
+  seed 1: (-1.2, 1.2, 0.06)
+  seed 2: (-1.2, 1.2, 0.06)
+  => geometry identical across seeds (base MJCF is fixed; no seeded perturbation)
+
+## Per-(arm,seed) primary metrics — do repeats add coverage?
+  e0_smoke      : 3 seeds/arm, seed_invariant=True
+  f1_confidence : 3 seeds/arm, seed_invariant=True
+  s5_ghost      : 3 seeds/arm, seed_invariant=True
+  f2_recall     : 3 seeds/arm, seed_invariant=True
+  c3_redteam    : 3 seeds/arm, seed_invariant=True
+
+  => all metrics identical across seeds in every scenario: repeats provide NO
+     statistical/coverage value today (over_repeats aggregates identical inputs).

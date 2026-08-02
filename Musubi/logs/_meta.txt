@@ -1,3 +1,3 @@
-run stamp: 2026-08-02T02:31:23Z
-git: 2779ff0-dirty(fixes G2/G3/G5)
+run stamp: 2026-08-02T02:40:19Z
+git: 280ac53 (rev.3 re-run: reproducibility + seed-invariance evidence)
 vcr mode: replay
