@@ -35,7 +35,7 @@ Live cassette recording (later, needs GOOGLE_API_KEY + budget): `make test-live`
 | P8 External | ✅ done | In-process mocks (D-0007): WMS ledger (book state + lot fanout + append-only corrections), portals (audit/regulator/CRM + disposal manifest with irreversible-gate). |
 | P9 Flagships | ✅ done | **F1 confidence audit**, **S5 forensic**, **F2 recall** — all machine-scored, oracles pass. F2 ladder: A0 oracle 0.00 / unappr-irrev 3 (unsafe) vs A4 1.00 / 0 (safe). 4 tests. |
 | P10 Breadth | 🟡 partial | S1–S9/C1–C4 + E1–E7 beyond the above are **deferred** (see below) — need the absent Experiment Plan + Ontology Design docs to author faithfully. |
-| P11 Polish | 🟡 in progress | docs-check clean; trace matrix + demo + final report pending. |
+| P11 Polish | ✅ done | `make demo` records `demos/e0_smoke.gif` (headless, offline); `make docs-check` clean (11 files); trace matrix (`scoreboard/reports/trace_matrix.md`); acceptance run below. |
 
 ## Deferred / provisional (running list)
 
@@ -50,6 +50,20 @@ Live cassette recording (later, needs GOOGLE_API_KEY + budget): `make test-live`
 - Live cassettes: none recorded yet (no keys during build). Offline paths use `FakeGeminiClient`.
   **To record:** set `GOOGLE_API_KEY`, run `make test-live` (record mode) — wires `GeminiBackend`.
 
-## Test / verification log
+## §5 Acceptance run (offline, no keys) — PASS
 
-- (pending) first `make check` run.
+- `make setup` → `make gen` → `make check` — green; generated artifacts match committed (CI diff).
+- `make check`: ruff + mypy (81 source files) + **76 tests** in VCR replay.
+- `make experiment E=E0` → 15 runs (A0–A4 × seeds 0–2), oracle-pass **15/15**,
+  unapproved-irreversible **0**, API calls **0**. `make dashboard` renders; `make report E=E0` writes.
+- Flagships in replay: **F1** (1.00), **S5** (1.00), **F2** A4 (1.00) / A0 (0.00, unappr-irrev 3 —
+  the ablation safety contrast). `make report E=F2` / `E=E2` written.
+- Determinism: bit-identical `qpos` across repeated seeds; replay → 0 API calls. Invariant tests:
+  no-Gemini-import-outside-`clients/`, no-naive-wallclock, Claims append-only.
+- `make demo` → `demos/e0_smoke.gif`. `make docs-check` clean.
+
+## Toolchain notes
+
+- Offscreen GL rendering works in this environment; slow render tests skip gracefully where it
+  doesn't (headless CI). `make demo` is headless (no `mjpython` needed); Makefile keeps `mjpython`
+  for the optional interactive viewer.
