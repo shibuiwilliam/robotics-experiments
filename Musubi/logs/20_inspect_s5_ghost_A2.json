@@ -1,0 +1,54 @@
+{
+  "api_calls": 0,
+  "arm": "A2",
+  "beliefs_sample": [
+    {
+      "iri": "msb:claim/binding/premature",
+      "method": "inference",
+      "predicate": "identity",
+      "subject": "msb:entity/pallet_1",
+      "value": "obs-after-swap"
+    },
+    {
+      "iri": "msb:claim/swap/detected",
+      "method": "direct_measurement",
+      "predicate": "swap",
+      "subject": "msb:entity/pallet_1",
+      "value": "pallet_1<->pallet_2"
+    },
+    {
+      "iri": "msb:claim/ship/decision",
+      "method": "inference",
+      "predicate": "shipped",
+      "subject": "msb:entity/pallet_1",
+      "value": "order-4411"
+    },
+    {
+      "iri": "msb:claim/scan/ok",
+      "method": "direct_measurement",
+      "predicate": "position",
+      "subject": "msb:entity/pallet_4",
+      "value": "ok"
+    }
+  ],
+  "bus_events": 0,
+  "claims": 4,
+  "drilldown": {},
+  "engine": {
+    "llm_calls": 0,
+    "planner": "scripted",
+    "provider": "none"
+  },
+  "events_sample": [],
+  "metrics": {
+    "as_of_t0_count": 1,
+    "false_accusation": false,
+    "forensic_accuracy": 1.0
+  },
+  "must": {
+    "no_person_identity_binding": true
+  },
+  "scenario": "s5_ghost",
+  "seed": 0,
+  "success": false
+}

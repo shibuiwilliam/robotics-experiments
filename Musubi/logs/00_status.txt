@@ -1,0 +1,10 @@
+# Musubi status
+  python              3.11.8
+  vcr_mode            replay
+  llm_provider        claude
+  agent_model         claude-opus-4-8
+  keys                GOOGLE=False ANTHROPIC=False
+  ontology_artifacts  OK
+  scenarios           c3_redteam, e0_smoke, f1_confidence, f2_recall, s5_ghost
+  choke-point clean   ✓
+  offline_ready       ✓
