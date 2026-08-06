@@ -59,3 +59,4 @@ MUJOCO_LOG.TXT
 demos/*.gif
 demos/*.mp4
 scoreboard/dashboard/index.html
+blog/
