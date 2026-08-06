@@ -27,7 +27,7 @@ ENV/
 .env
 .envrc
 
-# MWS experiment artifacts (append-only, not committed)
+# Experiment runtime artifacts (regenerable, not committed)
 runs/
 data/
 
@@ -49,5 +49,13 @@ Thumbs.db
 # Coverage
 htmlcov/
 .coverage
-blog/
+
+# Runtime logs
+*.log
 MUJOCO_LOG.TXT
+
+# Generated / regenerable outputs. NOTE: ontology/generated/ and
+# clients/vcr/cassettes/ are reproducibility-critical and stay COMMITTED.
+demos/*.gif
+demos/*.mp4
+scoreboard/dashboard/index.html
