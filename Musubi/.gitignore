@@ -49,3 +49,5 @@ Thumbs.db
 # Coverage
 htmlcov/
 .coverage
+blog/
+MUJOCO_LOG.TXT
