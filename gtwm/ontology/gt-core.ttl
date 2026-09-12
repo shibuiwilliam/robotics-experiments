@@ -271,3 +271,20 @@ gt:reviewStatus a owl:DatatypeProperty ;
   rdfs:comment "概念候補の人によるレビュー状態（pending/approved/rejected）。"@ja ;
   rdfs:domain gt:ConceptCandidate ;
   rdfs:range xsd:string .
+
+#################################################################
+# プロパティ — 接地層（意味プローブ α）の状態・関係ファクト（着手順5で追加）
+# poc_plan.md 5.4「意味プローブ α」の状態（ディスポジション分類）・関係（集約：ケース→
+# パレットの所属）ヘッドの出力を格納するために必要な最小限の追加プロパティ。
+#################################################################
+
+gt:disposition a owl:DatatypeProperty ;
+  rdfs:label "ディスポジション"@ja , "disposition"@en ;
+  rdfs:comment "個体の状態（稼働中/静止等）。CBV の disposition 語彙の値（urn:epcglobal:cbv:disp:*）を取る。"@ja ;
+  rdfs:range xsd:string .
+
+gt:aggregatedInto a owl:ObjectProperty ;
+  rdfs:label "集約先"@ja , "aggregatedInto"@en ;
+  rdfs:comment "ケースが積載されているパレット（意味プローブの関係ヘッドが推定する集約関係）。"@ja ;
+  rdfs:domain gt:Case ;
+  rdfs:range gt:Pallet .
