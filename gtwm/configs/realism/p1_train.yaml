@@ -1,0 +1,16 @@
+# p1_train 用：P1相当の一般ノイズ（センサ雑さ）は p1.yaml と同じだが、注入（injections）は
+# 0件のまま（学習データに検知評価用の意図的な異常を混ぜない。異常は p1_eval 側だけに入れる、
+# docs/prompts.md セッション08「p1_train...p1_eval（5分×10本、注入入り）」）。
+
+anchor_jitter_s_min: 0.1
+anchor_jitter_s_max: 0.3
+anchor_miss_rate: 0.05
+
+record_delay_s_min: 0.0
+record_delay_s_max: 3.0
+record_loss_rate: 0.03
+record_misregistration_rate: 0.02
+
+occlusion_extra_miss_boost: 0.03
+
+# injections は指定なし＝全型0件（既定）。
