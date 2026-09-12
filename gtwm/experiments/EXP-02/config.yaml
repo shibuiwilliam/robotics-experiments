@@ -1,0 +1,8 @@
+# EXP-02 遮蔽下の同一性維持。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+set_name: smoke
+episode_id: ep_0000_seed0
+full_run:
+  seeds: [0, 1, 2]
+  estimated_data: "P0で棚裏通過・積み重ね・作業者隠蔽シナリオ 200回相当"
