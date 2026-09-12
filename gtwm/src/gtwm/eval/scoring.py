@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import pandas as pd
 
@@ -43,6 +44,8 @@ class DetectionScoring:
     n_detected: int  # 対象(entity)・型(injection_type)が正しく一致した検知
     n_false_alarms: int  # 注入台帳に該当が無い台帳エントリ数
     matched_pairs: list[tuple[str, str]]  # (discrepancy_id, injection側の行の識別に使う文字列)
+    latencies_s: list[float]  # 検知遅延（付録A）＝検知時刻－注入時刻、検知した分だけ
+    detected_types: list[str]  # 検知できた注入の型（型別検知率の集計に使う）
 
 
 def score_detection(
@@ -64,6 +67,8 @@ def score_detection(
     injected_rows = injection_ledger.to_dict("records")
     matched_injection_idx: set[int] = set()
     matched_pairs: list[tuple[str, str]] = []
+    latencies_s: list[float] = []
+    detected_types: list[str] = []
     n_detected = 0
     n_false_alarms = 0
 
@@ -78,15 +83,23 @@ def score_detection(
                 continue
             detected_at = entry.get("detected_at")
             t_true = inj.get("t_true")
+            dt = 0.0
             if detected_at is not None and t_true is not None:
                 try:
-                    dt = abs(float(str(detected_at)) - float(str(t_true)))
+                    # `ledger.py` は `entry.detected_at.isoformat()`（`grounding/probes.utc()`
+                    # が `datetime.fromtimestamp(t_s, tz=UTC)` で作った、エピソード内時刻
+                    # そのものを Unix epoch 起点として解釈した絶対時刻）で保存している。
+                    # `.timestamp()` で元の episode-relative 秒に戻して比較する。
+                    detected_s = datetime.fromisoformat(str(detected_at)).timestamp()
+                    dt = abs(detected_s - float(str(t_true)))
                 except (TypeError, ValueError):
                     dt = 0.0
                 if dt > time_tolerance_s:
                     continue
             matched_injection_idx.add(i)
             matched_pairs.append((str(entry.get("discrepancy_id")), str(inj.get("entity"))))
+            latencies_s.append(dt)
+            detected_types.append(str(inj.get("injection_type")))
             n_detected += 1
             found = True
             break
@@ -98,6 +111,8 @@ def score_detection(
         n_detected=n_detected,
         n_false_alarms=n_false_alarms,
         matched_pairs=matched_pairs,
+        latencies_s=latencies_s,
+        detected_types=detected_types,
     )
 
 
