@@ -24,6 +24,7 @@ class EpisodeMeta:
     episode_id: str
     cameras: list[str]
     n_frames: int
+    log_hz: float = 10.0
 
 
 def list_episodes(set_name: str) -> list[EpisodeMeta]:
@@ -42,6 +43,7 @@ def list_episodes(set_name: str) -> list[EpisodeMeta]:
                 episode_id=meta["episode_id"],
                 cameras=meta["cameras"],
                 n_frames=n_frames,
+                log_hz=float(meta["log_hz"]),
             )
         )
     episodes.sort(key=lambda e: e.episode_id)
@@ -112,10 +114,26 @@ def camera_names(episodes: list[EpisodeMeta]) -> list[str]:
     return episodes[0].cameras
 
 
+def read_single_frame(ep: EpisodeMeta, frame_idx: int) -> Tensor:
+    """指定エピソードの1フレームを全カメラぶん読む -> [1,1,C,3,H,W] float32(0..1)（B=1,T=1）。
+
+    接地層（session 05）のアンカー時刻教師あり学習のように、シーケンスではなく
+    単一時刻のスロットだけが必要な用途向け。`encode_sequence` にそのまま渡せる。
+    """
+    per_cam = []
+    for cam in ep.cameras:
+        frame_u8 = _read_camera_frames(ep.episode_dir, cam, [frame_idx])  # [1,H,W,3]
+        per_cam.append(frame_u8[0])
+    stacked = np.stack(per_cam, axis=0)  # [C,H,W,3]
+    stacked = stacked.transpose(0, 3, 1, 2).astype(np.float32) / 255.0  # [C,3,H,W]
+    return torch.from_numpy(stacked).unsqueeze(0).unsqueeze(0)  # [1,1,C,3,H,W]
+
+
 __all__ = [
     "EpisodeMeta",
     "list_episodes",
     "chronological_split",
     "WMSequenceDataset",
     "camera_names",
+    "read_single_frame",
 ]

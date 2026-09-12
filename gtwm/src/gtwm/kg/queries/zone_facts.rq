@@ -1,0 +1,7 @@
+# snapshot(t) が返す平坦グラフ（reification 解決済み）から、
+# 「どの個体がどのゾーンにいるか」を取り出す。conditioning.py（γ）が部分グラフ抽出に使う。
+PREFIX gt: <https://example.org/gtwm/gt#>
+
+SELECT ?subject ?zone WHERE {
+  ?subject gt:currentZone ?zone .
+}

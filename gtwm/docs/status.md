@@ -10,7 +10,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - [x] 2. sim（MJCF 倉庫、センサ、アンカー、WMS モック、`make sim-smoke`）
 - [x] 3. kg（gt-core.ttl、SHACL 3本、KGStore、EPCIS 取込）
 - [x] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
-- [ ] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
+- [x] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
 - [ ] 6. eval（ランナー、EXP-01/02/03/06）
 - [ ] 7. whatif + ui
 - [ ] 8. P1 相当（realism、EXP-04/05/11）
@@ -51,3 +51,13 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - **MPS 固有の不具合を発見・修正**：`nn.TransformerEncoderLayer` の既定 dropout(0.1) が `torch.no_grad()` 推論経路でのみ `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` を起こす（学習時の勾配ありパスでは再現しない＝SDPA バックエンド選択の違い）。`DynamicsHead` で `dropout=0.0` を明示して回避（詳細は上の「既知の制約」）。
 - **`make train-smoke` の受入結果**：所要時間 **4.1〜4.4秒**（目標3分以内に大幅な余裕）、`mlflow`（ローカル `mlruns/`、ファイルストア。新しめの mlflow はファイルストアを既定拒否するため `MLFLOW_ALLOW_FILE_STORE=true` を `train()` 内で明示設定）に real な減少損失曲線を記録済み（5.65→3.29、6ステップ）。ピークメモリは `/usr/bin/time -l` 実測で **maximum resident set size ≈ 838MB**（12GB予算に対し大幅な余裕）。合成系列（等速直線運動・静止+遮蔽）の10ステップ先コサイン距離はどちらも `configs/wm/base.yaml` の `synthetic_eval.max_latent_cosine_distance=0.2` を十分下回る（実測 ~0.005〜0.02、テストで検証）。
 - チェックポイントは「損失改善時に保存、maxステップ到達時にも直近状態を必ず保存」に修正（当初 max_steps で早期終了すると保存されないバグがあったため、`_save_checkpoint` をステップ単位の判定に統一）。
+
+## 着手順5（grounding）の実装メモ（2026-09-12）
+- 契約通りに実装：`Probe`（existence/zone分類+床面座標回帰/state/relations の4ヘッド。型は `SlotModule.type_logits` を再利用）、`Conditioner`（γ：`rgcn`/`text` の2実装を config で切替、`KGSubgraph` は `KGStore.snapshot(t)` から `kg/queries/zone_facts.rq` で局所部分グラフを抽出）、`Consistency.epsilon`（`configs/grounding/epsilon.yaml` の重みを読み、ε_h と3分解を返す）、`identity.py`（scipy ハンガリアン割当＋距離ゲート、遮蔽保持、`force_reidentify`）、`ledger.py`（SQLite、状態遷移 open→confirmed/dismissed→resolved を型で強制。poc_plan.md 5.4「PoCでは自動反映は行わず、全件人が判定する」に従い、open からの遷移は全て `resolver` 必須）。
+- **α の学習方式**：`grounding/train_probes.py` がアンカー時刻（`events.parquet` の `event_type=="anchor"` 行、`zone` 列あり）だけを教師にした自己教師あり学習を行う（world_model.md「全真値ではなくアンカー時刻の真値のみを使う」）。DETR 系と同様、各サンプルで現在の床面座標予測に最も近いスロットへその場で教師信号を割り当てる（K個のスロットのうちどれが対象個体かは事前固定できないため）。F1/ECE の**評価**はシミュレーション全真値（`poses.parquet`）を使ってよい（world_model.mdの明記通り、学習ラベルとは別扱い）。
+- **重要な実装上の教訓**：クラス不均衡（Storage_A が smoke データの過半数）に対して重み無し交差エントロピーだと多数派クラスへの一様予測に崩壊し、accuracy は高く見えても macro-F1 が低い（実測：accuracy 0.61 / macro-F1 0.21）という偽陽性を検出した。逆頻度クラス重み＋ステップ数を250→6000に増加（バッチ8×6000ステップでも smoke データ全体で24秒、3分予算に大幅な余裕）した結果、真に4クラス全てを学習した上で **zone_f1_macro=0.658（目標0.6以上を達成）、zone_accuracy=0.722、ECE 0.117→0.099（較正後改善）** を得た。単一 accuracy 指標だけで「学習できた」と判断しない教訓として記録する。
+- **ε の簡略化（要フォローアップ）**：F^h（業務プロセスの遷移）は、対象個体の「今後 h 秒以内の予定イベント」をWMSモックから引く仕組みをまだ持たないため、暫定的に恒等写像（記録上のゾーンは h 秒後も不変という仮定）として実装した。3分解（知覚誤り/プロセス不遵守/オントロジー欠落）も、現在時刻の α が真値と一致するかどうかで知覚誤りを切り分ける簡易ヒューリスティック（オントロジー欠落は概念発見ループ稼働まで常に0）。将来 `wms_mock.generate_orders` の割当を使った真の F^h に置き換えることを次セッションへの申し送りとする。
+- **同一性損失は未接続**：`identity.py` はバッチ単位のトラック情報を持つ形になっていないため、`wm/train.py` の `loss_weights.identity` はまだ配線していない（anchor_grounding と constraint は配線済み、`probe`/`anchor_samples` を明示的に渡した場合のみ有効化・両方 None なら既存 configs の挙動は不変）。
+- **`gtwm ground run --episode ep_0000_seed0 --set smoke` の実行結果**（実機確認）：beliefs=285、ledger_entries=44（全て open）、ε_10s=0.284（decomposition: perception=0.031, process_deviation=0.253, ontology_gap=0.0, n=64）。30秒エピソードでは h=60s/300s/1800s はエピソード長を超えるため計算されない（ログにも出力されない。エピソード長を超えるホライズンを黙って0扱いにするのではなく、正直にスキップする設計）。
+- 循環 import 回避：`wm/train.py` は `grounding.constraints`（`wm` に依存しない純粋関数）のみ実 import し、`Probe`/`AnchorSample` 型は `TYPE_CHECKING` 下でのみ import する（`grounding.train_probes` が `wm.train` に依存する方向とは逆になるため）。
+- `tests/unit/test_blindness.py` は AST 解析で `grounding/`・`wm/` 配下の全 `.py` を検査し、`gtwm.sim.wms_mock` の import と `data/injections` 文字列参照を禁止する（import 文の静的検査であり、実行時 import の有無に関わらず検知する）。
