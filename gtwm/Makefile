@@ -35,7 +35,9 @@ test-int:
 	uv run pytest -m integration -q
 
 up:
-	docker compose --profile core up -d --wait
+	docker compose --profile core up -d
+	@echo "Oxigraph の起動待ち（HTTP ポーリング。イメージに healthcheck 用の shell/wget/curl が無いため）..."
+	uv run python scripts/wait_for_oxigraph.py
 
 down:
 	docker compose --profile core down

@@ -78,6 +78,20 @@ def kg_main(ctx: typer.Context) -> None:
         _not_implemented("kg")
 
 
+@kg_app.command("validate")
+def kg_validate() -> None:
+    """ontology/ の ttl 構文・SHACL 自己整合・queries/*.rq 構文を検査する。"""
+    from gtwm.kg.validate_cli import validate_all
+
+    issues = validate_all()
+    if not issues:
+        console.print("[green]OK[/green]: gt-core.ttl / shapes / queries はすべて検証済み")
+        return
+    for issue in issues:
+        console.print(f"[red]NG[/red] {issue}")
+    raise typer.Exit(code=1)
+
+
 @wm_app.callback(invoke_without_command=True)
 def wm_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:

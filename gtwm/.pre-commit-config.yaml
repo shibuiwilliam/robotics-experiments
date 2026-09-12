@@ -16,4 +16,11 @@ repos:
     hooks:
       - id: check-added-large-files
         args: [--maxkb=5120]
-# TODO(session 03): ontology/ 変更時に `gtwm kg validate` を local hook として追加する。
+  - repo: local
+    hooks:
+      - id: gtwm-kg-validate
+        name: gtwm kg validate
+        entry: uv run gtwm kg validate
+        language: system
+        files: ^(ontology/|src/gtwm/kg/queries/)
+        pass_filenames: false

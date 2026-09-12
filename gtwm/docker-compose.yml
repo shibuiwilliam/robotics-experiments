@@ -1,0 +1,20 @@
+services:
+  oxigraph:
+    image: ghcr.io/oxigraph/oxigraph:latest
+    profiles: ["core"]
+    platform: linux/arm64
+    ports:
+      - "7878:7878"
+    volumes:
+      - ./.data/oxigraph:/data
+    command: ["serve", "--location", "/data", "--bind", "0.0.0.0:7878"]
+    # NOTE: このイメージは distroless 相当で shell/wget/curl を一切含まないため
+    # （`docker run --entrypoint sh ...` が `exec: "sh": executable file not found` で失敗する
+    # ことを確認済み）、Docker の CMD ベース healthcheck は書けない。infra.md は
+    # 「全サービスに healthcheck を付ける」としているが、この制約により
+    # コンテナ側の healthcheck は省略し、`make up` 側で SPARQL エンドポイントへの
+    # HTTP ポーリングによる起動待ちを実装する（Makefile 参照）。docs/status.md に記録。
+
+# 他の core サービス（timescaledb, minio, grafana）は現時点で消費するコンポーネントが
+# 無いため追加しない（infra.md「まず『なくても回るか』を検討する」）。必要になった
+# 着手順で追加する。
