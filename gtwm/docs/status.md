@@ -12,7 +12,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - [x] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
 - [x] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
 - [x] 6. eval（ランナー、EXP-01/02/03/06）
-- [ ] 7. whatif + ui
+- [x] 7. whatif + ui
 - [ ] 8. P1 相当（realism、EXP-04/05/11）
 - [ ] 9. P2 相当（概念発見、2拠点連合、EXP-07/08/09、EXP-10 準備）
 
@@ -77,3 +77,17 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
   3. EXP-06のsmoke設定では、既定のMPPIパラメータ（`noise_std=1.0`）では候補行動が小さすぎてゾーン予測をほとんど動かせず、シールド有無の差が全く出なかった（診断済み：huge action(*50)でようやくゾーン確率の標準偏差0.19が出る）。`noise_std=25`・`temperature=0.3`・`shortcut_bonus=30`に調整することで、意味のある対比（shield無し3/3違反→shield有り0/3違反）を得た。
 - `src/gtwm/grounding/ground_run.py` の `_encode_single_frame_slots`（1フレームをスロットへ符号化する共通ロジック）を `encode_single_frame_slots` として公開し、EXP-06からも再利用する（重複実装を避けるための小リファクタ、`__all__`に追加）。
 - 4実験（EXP-01/02/03/06）のsmoke実測時間：27.3s / 0.9s / 7.4s / 27.0s（いずれも5分予算に大幅な余裕）。
+
+## 着手順7（whatif + ui）の実装メモ（2026-09-13）
+- **文法の解釈補足**：poc_plan.md 付録Cは `<filter> ::= <triple-pattern> {"AND" <triple-pattern>}` と書くが `<triple-pattern>` 自体の生成規則を与えていない。例文 `WHERE station = gt:Station_S3` を正とし、`<triple-pattern> ::= IDENT "=" <entity-or-literal>` と解釈した（`src/gtwm/kg/whatif/grammar.lark` 冒頭のコメントに明記）。付録Cの他の記述と矛盾しないため、付録C自体の修正は不要と判断。
+- **付録Cの例文は実質1つのみ**：docs/prompts.md セッション07プロンプトは「付録Cの例文3つ」を前提にしていたが、poc_plan.md 本体（5.6節）にはコンベア速度の例文が1つしか無い（付録Cはグラフィカルには例文を含まずBNFのみ）。文法の受理/拒否は`tests/unit/test_whatif_grammar.py`で19件の合成例文（AND条件、absent、current+/-、SAMPLES/INTERVAL/MODELの単独・組合せ等）でカバーした。
+- **実体の置き換え**：poc_plan.md 5.6の例文が使う `gt:Station_S3`（「station」という概念自体が本オントロジーに存在しない）・`gt:Conveyor_C1` はこの倉庫の `sim/assets/registry.yaml` に存在しない。実行確認には `gt:Zone_Pick`（既知ゾーン）・`gt:Equipment_Conveyor_0001`（実際のコンベア個体ID）に置き換えた（`gtwm whatif "PREDICT ?queue_len AT +1s, +2s WHERE station = gt:Zone_Pick GIVEN do(gt:Equipment_Conveyor_0001.speed := 1.2 * current) SAMPLES 20 INTERVAL 0.9"` で実行確認済み）。
+- **KPI実装はqueue_lenのみ**：`cycle_time`（例文が要求するもう1つの変数）はイベントベースの滞在時間計測が必要で本セッションのスコープ外。`kg/whatif/engine.py`は未対応の変数を`WhatIfUnsupportedVarError`で明示的に拒否する（黙って0を返すことはしない）。
+- **行動空間とdo()の対応は簡略化（要フォローアップ／ADR候補）**：`wm/dynamics.py`のDynamicsは意味付けの無い抽象行動ベクトル（action_dim次元）しか持たず、エンティティ×プロパティ別の制御チャンネルが無い。`kg/whatif/compiler.py`は全ての`do(entity.property := ...)`を行動ベクトルの次元0への一様上書きとして解釈し、`current`の基準値は正規化された1.0のプレースホルダーとする（`ACTION_DIM_FOR_INTERVENTION`/`DEFAULT_CURRENT_VALUE`にコメントで明記）。行動空間を意味付けする設計は将来のセッション（P2以降）の課題。
+- **実装中に発見・修正した実バグ**：`kpi_queue_length.rq`を`zone_facts.rq`と同じ「平坦化済みグラフ」前提で書いたが、`KGStore.query()`は具象化（reification）された生グラフに対して実行されるため、`?subject gt:currentZone ?zone`という平坦パターンは常にゼロ件だった。`tests/unit/test_whatif_engine.py`の`test_queue_len_filters_by_zone`が新規作成の合成Probeテストでこれを検出（フィルタ無し=5件、同じゾーンでフィルタ=0件という矛盾）。修正：`store.snapshot(t)`（材質化済みグラフ）に対してクエリするよう`engine.py`を変更。
+- **シールドの汎化**：`grounding/shield.py`に`ComplianceShield`を追加（単一ゾーン制約`gt:PalletSingleLocationShape`＋任意のゾーン容量制約`gt:ZoneCapacityShape`を1回のベクトル化ロールアウトで同時検証）。EXP-06専用の`RestrictedZoneShield`はそのまま残し、変更後もEXP-06 smoke再実行でshield有り0件/無し3件を再確認（回帰なし）。危険物隣接制約（`gt:HazmatAdjacencyShape`）はαに危険物クラス予測ヘッドが無いため対象外（EXP-06と同じ簡略化理由）。
+- **ダッシュボードの簡略化**：「εの推移」は本来1エピソード内の時系列だが、現状`gtwm ground run`は1回の実行につきホライズンごとに1つの集計値しか出さないため、エピソード横断（実行ごとに1点）を時系列の代替軸として使う（画面内にその旨のcaptionを表示）。「将来違反の予兆」は台帳のopenかつseverity high/mediumの一覧に留め、`ComplianceShield`によるリアルタイム先読みの常時ジョブは未接続（将来セッションへ申し送り）。NL→WHAT-IF変換（LLM経由）はllm.md/session09の範囲でありUIには組み込んでいない。
+- **UI検証方法**：Streamlit公式のヘッドレステストAPI（`streamlit.testing.v1.AppTest`）で4タブすべてを1回のスクリプト実行で検証（`st.tabs`は選択タブに関わらず全タブのコードが毎回実行されるため、1回の`at.run()`で全画面をカバーできる）。`at.exception`が空であることを確認し、さらに乖離台帳タブの確認（confirm）ボタンを実際にクリックして`open→confirmed`遷移とフィードバックJSONL（`runs/ui_feedback.jsonl`）への追記が動くことも確認した。`curl`によるHTTP到達性確認（200 OK）も別途実施したが、これは静的シェルの到達確認に過ぎずスクリプト実行の検証にはならない点に注意（AppTestが本体の検証手段）。
+
+## 既知の制約・記録（追加、着手順7）
+- 行動空間のエンティティ×プロパティへの意味付けが無い（上記参照）。ADR候補として次セッションで判断する。
