@@ -84,10 +84,34 @@ class MPPIPlanner:
             # 全候補がシールドで棄却された場合は無介入（ゼロ行動）を返す。
             return torch.zeros(cfg.horizon, cfg.action_dim, dtype=dtype, device=device)
 
-        fill_value = float(costs[finite].max().item()) * 10.0 + 1.0
+        # 棄却候補には「有限コストの中で最悪のものより明確に悪い」値を割り当てる。
+        # 単純に `max * 10 + 1` にすると、cost_fn が負の値を返す場合（例：報酬形の
+        # コスト）に符号が反転し、棄却候補の方がむしろ魅力的になってしまう
+        # （tests/unit/test_wm_planner.py で確認済みの実バグ）。有限コストの
+        # 「広がり」に対する相対マージンを使うことで符号に依存しない。
+        finite_costs = costs[finite]
+        spread = float((finite_costs.max() - finite_costs.min()).clamp_min(1.0).item())
+        fill_value = float(finite_costs.max().item()) + spread * 10.0 + 1.0
         costs = torch.where(finite, costs, torch.full_like(costs, fill_value))
         weights = torch.softmax(-costs / cfg.temperature, dim=0)  # [N]
         best_actions = torch.einsum("n,nha->ha", weights, candidate_actions)
+
+        if self.shield is not None:
+            # 安全網：受理された候補の重み付き平均（凸結合）は、Dynamics/Probe が
+            # 非線形であるため、平均自体がシールドを再度満たす保証がない
+            # （個々の受理候補は違反しなくても、その線形結合が違反する経路上に
+            # 乗ってしまう場合がある）。EXP-06 の smoke 実行で実際に観測された
+            # （docs/status.md 参照）。平均後の行動を再検査し、違反していれば
+            # 単一候補（受理済みの中で最小コスト）にフォールバックすることで、
+            # 「シールドを通った行動しか返さない」という契約を厳密に守る。
+            blended_valid = self.shield(best_actions.unsqueeze(0))[0]
+            if not bool(blended_valid.item()):
+                inf_costs = torch.full_like(costs, float("inf"))
+                accepted_costs = torch.where(valid_mask, costs, inf_costs)
+                best_idx = int(torch.argmin(accepted_costs).item())
+                if torch.isfinite(accepted_costs[best_idx]):
+                    best_actions = candidate_actions[best_idx]
+
         return best_actions
 
 
