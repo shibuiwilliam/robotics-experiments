@@ -41,7 +41,7 @@ down:
 	docker compose --profile core down
 
 sim-smoke:
-	@echo "未実装: sim-smoke は着手順2で実装する"; exit 1
+	uv run gtwm sim gen --set smoke --episodes 1 --duration 30 --seed 0
 
 train-smoke:
 	@echo "未実装: train-smoke は着手順4で実装する"; exit 1

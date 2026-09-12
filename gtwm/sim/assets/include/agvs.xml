@@ -1,0 +1,14 @@
+<mujocoinclude>
+  <body name="agv:1" pos="-5.0 -3.0 0.15">
+    <joint name="agv:1_x" type="slide" axis="1 0 0" damping="5"/>
+    <joint name="agv:1_y" type="slide" axis="0 1 0" damping="5"/>
+    <joint name="agv:1_yaw" type="hinge" axis="0 0 1" damping="2"/>
+    <geom name="agv:1" type="box" size="0.3 0.25 0.15" rgba="0.9 0.6 0.1 1" mass="60"/>
+  </body>
+  <body name="agv:2" pos="5.0 3.0 0.15">
+    <joint name="agv:2_x" type="slide" axis="1 0 0" damping="5"/>
+    <joint name="agv:2_y" type="slide" axis="0 1 0" damping="5"/>
+    <joint name="agv:2_yaw" type="hinge" axis="0 0 1" damping="2"/>
+    <geom name="agv:2" type="box" size="0.3 0.25 0.15" rgba="0.9 0.6 0.1 1" mass="60"/>
+  </body>
+</mujocoinclude>

@@ -56,6 +56,22 @@ def sim_main(ctx: typer.Context) -> None:
         _not_implemented("sim")
 
 
+@sim_app.command("gen")
+def sim_gen(
+    set_name: str = typer.Option(..., "--set", help="出力先セット名（data/sim/<set>/）"),
+    episodes: int = typer.Option(1, "--episodes", help="生成するエピソード数"),
+    duration: float = typer.Option(30.0, "--duration", help="1エピソードの長さ（秒）"),
+    seed: int = typer.Option(0, "--seed", help="開始シード（エピソードごとに +1 される）"),
+) -> None:
+    """MuJoCo 倉庫シミュレーションでエピソードを生成する。"""
+    from gtwm.sim.generate import GenConfig, generate_set
+
+    cfg = GenConfig(set_name=set_name, episodes=episodes, duration_s=duration, seed=seed)
+    dirs = generate_set(cfg)
+    for d in dirs:
+        console.print(f"[green]生成完了[/green]: {d}")
+
+
 @kg_app.callback(invoke_without_command=True)
 def kg_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:

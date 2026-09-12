@@ -1,0 +1,11 @@
+<mujocoinclude>
+  <body name="worker:1" mocap="true" pos="-3.0 3.2 0.5">
+    <geom type="capsule" fromto="0 0 -0.4 0 0 0.4" size="0.18" rgba="0.2 0.6 0.9 1" contype="0" conaffinity="0"/>
+  </body>
+  <body name="worker:2" mocap="true" pos="1.0 3.2 0.5">
+    <geom type="capsule" fromto="0 0 -0.4 0 0 0.4" size="0.18" rgba="0.2 0.6 0.9 1" contype="0" conaffinity="0"/>
+  </body>
+  <body name="worker:3" mocap="true" pos="3.0 -3.2 0.5">
+    <geom type="capsule" fromto="0 0 -0.4 0 0 0.4" size="0.18" rgba="0.2 0.6 0.9 1" contype="0" conaffinity="0"/>
+  </body>
+</mujocoinclude>

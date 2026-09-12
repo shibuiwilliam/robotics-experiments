@@ -1,0 +1,35 @@
+<mujoco model="gtwm_warehouse">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.005" gravity="0 0 -9.81" integrator="implicitfast"/>
+  <visual>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+  </visual>
+
+  <default>
+    <geom friction="0.8 0.02 0.001"/>
+  </default>
+
+  <asset>
+    <texture type="2d" name="floor_tex" builtin="checker" rgb1="0.75 0.75 0.75"
+      rgb2="0.65 0.65 0.65" width="128" height="128"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="12 8" reflectance="0.0"/>
+  </asset>
+
+  <worldbody>
+    <light name="light_main" pos="0 0 6" dir="0 0 -1" diffuse="0.8 0.8 0.8" directional="true"/>
+    <geom name="floor" type="plane" size="6.0 4.0 0.05" material="floor_mat"/>
+
+    <include file="include/zones.xml"/>
+    <include file="include/racks.xml"/>
+    <include file="include/docks.xml"/>
+    <include file="include/conveyor.xml"/>
+    <include file="include/agvs.xml"/>
+    <include file="include/workers.xml"/>
+    <include file="include/objects.xml"/>
+    <include file="include/cameras.xml"/>
+  </worldbody>
+
+  <actuator>
+    <include file="include/agv_actuators.xml"/>
+  </actuator>
+</mujoco>

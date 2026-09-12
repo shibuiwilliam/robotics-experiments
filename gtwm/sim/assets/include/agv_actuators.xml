@@ -1,0 +1,8 @@
+<mujocoinclude>
+  <velocity name="agv:1_x_act" joint="agv:1_x" kv="200"/>
+  <velocity name="agv:1_y_act" joint="agv:1_y" kv="200"/>
+  <velocity name="agv:1_yaw_act" joint="agv:1_yaw" kv="50"/>
+  <velocity name="agv:2_x_act" joint="agv:2_x" kv="200"/>
+  <velocity name="agv:2_y_act" joint="agv:2_y" kv="200"/>
+  <velocity name="agv:2_yaw_act" joint="agv:2_yaw" kv="50"/>
+</mujocoinclude>
