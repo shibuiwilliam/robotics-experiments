@@ -103,16 +103,30 @@ def update_occluded_entities(
     result: AssignmentResult,
     predicted_next_xy: dict[str, np.ndarray],
     step: int,
+    slot_positions: np.ndarray | None = None,
 ) -> list[TrackedEntity]:
-    """未マッチの個体は「遮蔽中」として WM 予測位置で保持する（アンカーが来るまで確定しない）。"""
+    """マッチした個体は観測位置（`slot_positions`）で更新し、未マッチの個体は「遮蔽中」
+    として WM 予測位置（`predicted_next_xy`）で保持する（アンカーが来るまで確定しない）。
+
+    `slot_positions` を省略した場合（後方互換）、マッチ済み個体の `predicted_xy` は
+    更新されず前回の値のまま保持される点に注意：連続フレームでの追跡には
+    `slot_positions` を渡すこと（EXP-02 で発見：省略すると観測位置が反映されず、
+    マッチしても位置が更新されない）。
+    """
     matched_ids = set(result.slot_to_entity.values())
+    slot_by_entity = {
+        entity_gt_id: slot_idx for slot_idx, entity_gt_id in result.slot_to_entity.items()
+    }
     updated: list[TrackedEntity] = []
     for ent in entities:
         if ent.entity_gt_id in matched_ids:
+            new_xy = ent.predicted_xy
+            if slot_positions is not None:
+                new_xy = slot_positions[slot_by_entity[ent.entity_gt_id]]
             updated.append(
                 TrackedEntity(
                     entity_gt_id=ent.entity_gt_id,
-                    predicted_xy=ent.predicted_xy,
+                    predicted_xy=new_xy,
                     appearance=ent.appearance,
                     last_seen_step=step,
                     occluded=False,
