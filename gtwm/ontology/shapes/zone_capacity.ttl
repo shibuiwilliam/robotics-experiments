@@ -1,0 +1,18 @@
+@prefix gt: <https://example.org/gtwm/gt#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# ゾーン容量超過の検査（poc_plan.md 5.3）。pyshacl advanced=True の SPARQL 制約として実行する。
+gt:ZoneCapacityShape a sh:NodeShape ;
+  sh:targetClass gt:Zone ;
+  sh:severity sh:Warning ;
+  sh:sparql [
+    sh:message "ゾーン容量超過"@ja , "Zone capacity exceeded"@en ;
+    sh:select """
+      PREFIX gt: <https://example.org/gtwm/gt#>
+      SELECT $this WHERE {
+        $this gt:capacity ?cap .
+        { SELECT $this (COUNT(?o) AS ?n) WHERE { ?o gt:currentZone $this } GROUP BY $this }
+        FILTER(?n > ?cap)
+      }
+    """ ;
+  ] .

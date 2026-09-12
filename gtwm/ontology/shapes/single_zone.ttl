@@ -1,0 +1,13 @@
+@prefix gt: <https://example.org/gtwm/gt#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# パレットは同一有効時刻に複数ゾーンに存在できない（poc_plan.md 5.3）。
+# 誤報率を見て sh:Violation へ昇格する（昇格は ADR に記録）。
+gt:PalletSingleLocationShape a sh:NodeShape ;
+  sh:targetClass gt:Pallet ;
+  sh:property [
+    sh:path gt:currentZone ;
+    sh:maxCount 1 ;
+    sh:severity sh:Warning ;
+    sh:message "パレットは同一有効時刻に複数ゾーンに存在できない"@ja , "A pallet cannot be in more than one zone at the same valid time"@en ;
+  ] .

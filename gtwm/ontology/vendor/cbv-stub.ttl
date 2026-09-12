@@ -1,0 +1,39 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+# STUB — this file is NOT the official GS1 Core Business Vocabulary (CBV) 2.0 RDF.
+# The official CBV is published only as HTML/PDF at https://ref.gs1.org/cbv/ ;
+# no machine-readable RDF/Turtle/JSON-LD serialization of the full CBV vocabulary
+# was reachable from this environment (ref.gs1.org returned 404 for every
+# JSON-LD context path tried, and gs1.org/voc/ returned 403).
+#
+# This stub defines ONLY the CBV terms that gtwm actually uses (see
+# src/gtwm/sim/wms_mock.py CBV_BIZSTEP / CBV_DISPOSITION_ACTIVE and
+# ontology/gt-core.ttl), as plain skos:Concept individuals with the same URIs
+# GS1 assigns them, so gt-core.ttl and the SHACL shapes can reference real CBV
+# URIs without depending on unfetchable content. It carries no normative
+# semantics beyond a label and must not be treated as a full CBV import.
+
+<urn:epcglobal:cbv:bizstep:receiving> a skos:Concept ;
+  rdfs:label "receiving"@en ;
+  skos:definition "パレット・ケースの入荷を表すビジネスステップ（stub）。"@ja .
+
+<urn:epcglobal:cbv:bizstep:inspecting> a skos:Concept ;
+  rdfs:label "inspecting"@en ;
+  skos:definition "検品を表すビジネスステップ（stub）。"@ja .
+
+<urn:epcglobal:cbv:bizstep:storing> a skos:Concept ;
+  rdfs:label "storing"@en ;
+  skos:definition "棚入れを表すビジネスステップ（stub）。"@ja .
+
+<urn:epcglobal:cbv:bizstep:picking> a skos:Concept ;
+  rdfs:label "picking"@en ;
+  skos:definition "ピッキングを表すビジネスステップ（stub）。"@ja .
+
+<urn:epcglobal:cbv:bizstep:shipping> a skos:Concept ;
+  rdfs:label "shipping"@en ;
+  skos:definition "出荷を表すビジネスステップ（stub）。"@ja .
+
+<urn:epcglobal:cbv:disp:active> a skos:Concept ;
+  rdfs:label "active"@en ;
+  skos:definition "対象が稼働中/有効であることを表すディスポジション（stub）。"@ja .
