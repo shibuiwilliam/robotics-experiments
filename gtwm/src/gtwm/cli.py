@@ -98,6 +98,71 @@ def wm_main(ctx: typer.Context) -> None:
         _not_implemented("wm")
 
 
+@wm_app.command("train")
+def wm_train(
+    config: str = typer.Option("configs/wm/base.yaml", "--config", help="Hydra 設定ファイルのパス"),
+) -> None:
+    """世界モデルを学習する（`gtwm.wm.train.train`）。"""
+    from gtwm.utils.config import load_config
+    from gtwm.wm.train import train as run_train
+
+    cfg = load_config(config)
+    metrics = run_train(cfg)
+    console.print(f"[green]学習完了[/green]: {metrics}")
+
+
+@wm_app.command("rollout")
+def wm_rollout(
+    config: str = typer.Option(
+        "configs/wm/smoke.yaml", "--config", help="Hydra 設定ファイルのパス"
+    ),
+    horizon: int = typer.Option(10, "--horizon", help="ロールアウトのステップ数"),
+) -> None:
+    """学習済みチェックポイントからロールアウトし、潜在誤差を表示する（簡易版）。"""
+    import torch
+
+    from gtwm.utils.config import load_config
+    from gtwm.utils.device import get_device
+    from gtwm.wm.dataset import camera_names, list_episodes
+    from gtwm.wm.train import build_modules, encode_sequence
+
+    cfg = load_config(config)
+    device = get_device()
+    episodes = list_episodes(cfg.train.data_set)
+    if not episodes:
+        _not_implemented("wm rollout（データが無い: gtwm sim gen で生成してください）")
+        return
+
+    from gtwm.utils.paths import repo_root
+
+    modules = build_modules(cfg, device)
+    checkpoint_path = repo_root() / cfg.train.checkpoint_dir / "best.pt"
+    if checkpoint_path.exists():
+        state = torch.load(checkpoint_path, map_location=device)
+        modules.slot_module.load_state_dict(state["slot_module"])
+        modules.fusion.load_state_dict(state["fusion"])
+        modules.dynamics.load_state_dict(state["dynamics"])
+        modules.encoder.adapter.load_state_dict(state["adapter"])
+        console.print(f"[green]チェックポイント読込[/green]: {checkpoint_path}")
+    else:
+        console.print("[yellow]チェックポイント無し[/yellow]: 初期化状態でロールアウトします")
+
+    modules.slot_module.eval()
+    modules.fusion.eval()
+    modules.dynamics.eval()
+
+    cam_names = camera_names(episodes)
+    from gtwm.wm.dataset import WMSequenceDataset
+
+    ds = WMSequenceDataset(episodes, seq_len=2, frame_stride=1)
+    frames = ds[0].unsqueeze(0).to(device)
+    with torch.no_grad():
+        fused = encode_sequence(modules, frames, cam_names)
+        context = fused[:, 0]
+        rollout = modules.dynamics.rollout(context, None, None, horizon)
+    console.print(f"[green]ロールアウト完了[/green]: shape={tuple(rollout.shape)}")
+
+
 @ground_app.callback(invoke_without_command=True)
 def ground_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:

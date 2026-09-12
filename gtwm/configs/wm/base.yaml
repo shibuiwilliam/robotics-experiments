@@ -1,0 +1,49 @@
+encoder:
+  model_name: facebook/dinov2-small
+  freeze_backbone: true
+  adapter_dim: 128
+
+slots:
+  n_slots: 16
+  slot_dim: 128
+  n_iters: 3
+  n_types: 6
+
+fusion:
+  n_slots: 16
+  slot_dim: 128
+  n_heads: 4
+
+dynamics:
+  n_layers: 4
+  d_model: 256
+  n_heads: 8
+  ensemble_size: 3
+  action_dim: 4
+  cond_dim: 64
+
+planner:
+  n_samples: 256
+  horizon: 20
+
+train:
+  data_set: p0_train
+  seed: 0
+  batch_size: 4
+  seq_len: 16
+  frame_stride: 1
+  lr: 3.0e-4
+  max_epochs: 20
+  max_steps: null
+  early_stop_patience: 5
+  checkpoint_dir: runs/wm/checkpoints
+  mlflow_experiment: gtwm-wm
+  loss_weights:
+    prediction: 1.0
+    anchor_grounding: 0.0
+    constraint: 0.0
+    identity: 0.0
+
+synthetic_eval:
+  horizon: 10
+  max_latent_cosine_distance: 0.2
