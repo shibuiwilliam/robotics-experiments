@@ -69,6 +69,20 @@ def test_create_requires_open_status(tmp_path: Path) -> None:
     ledger.close()
 
 
+def test_create_is_idempotent_for_same_id(tmp_path: Path) -> None:
+    """`gtwm ground run` の discrepancy_id はエピソード内容から決定的に決まるため、
+    同一エピソードの再実行は同じ ID を再生成する。台帳は永続化されるので、2回目の
+    実行が UNIQUE 制約違反で落ちてはならない（冪等にスキップされる）。"""
+    ledger = DiscrepancyLedger(tmp_path / "ledger.sqlite")
+    ledger.create(_entry("d1"))
+    assert ledger.last_create_was_duplicate is False
+
+    ledger.create(_entry("d1"))
+    assert ledger.last_create_was_duplicate is True
+    assert len(ledger.list_by_status("open")) == 1
+    ledger.close()
+
+
 def test_list_by_status(tmp_path: Path) -> None:
     ledger = DiscrepancyLedger(tmp_path / "ledger.sqlite")
     ledger.create(_entry("d1"))
