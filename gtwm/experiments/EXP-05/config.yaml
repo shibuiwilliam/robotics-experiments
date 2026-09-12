@@ -1,0 +1,13 @@
+# EXP-05 乖離注入と検知。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+n_episodes: 2
+duration_s: 30.0
+probe_config: configs/grounding/probe_train_smoke.yaml
+realism_config: configs/realism/p1.yaml
+full_run:
+  seeds: [0, 1, 2]
+  n_episodes: 14 # 2週間相当（1日1エピソード近似）
+  duration_s: 300.0
+  probe_config: configs/grounding/probe_train_full.yaml # 本実行時に作成する
+  estimated_data: "p1_eval(5分x10本、注入入り)相当を14本に拡張"

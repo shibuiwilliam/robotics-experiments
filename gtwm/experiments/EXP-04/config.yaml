@@ -1,0 +1,14 @@
+# EXP-04 整合性ギャップの計測とドリフト注入。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+n_baseline_episodes: 2
+n_drift_episodes: 2
+duration_s: 30.0
+probe_config: configs/grounding/probe_train_smoke.yaml
+full_run:
+  seeds: [0, 1, 2]
+  n_baseline_episodes: 14 # 2週間相当（1日1エピソード近似）
+  n_drift_episodes: 6 # 検品位置変更3日 + ピッキング順序変更3日
+  duration_s: 90.0 # h60s（60秒先）のε評価に必要な最低限（300s推奨）
+  probe_config: configs/grounding/probe_train_full.yaml # 本実行時に作成する
+  estimated_data: "p1_train(5分x20本)相当の平常運転ログ + ドリフト後ログ"
