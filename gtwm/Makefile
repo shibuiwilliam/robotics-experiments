@@ -55,4 +55,4 @@ exp:
 	uv run python experiments/$(EXP)/run.py
 
 dashboard:
-	@echo "未実装: dashboard は着手順7で実装する"; exit 1
+	uv run streamlit run src/gtwm/ui/app.py
