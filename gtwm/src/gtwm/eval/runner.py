@@ -62,6 +62,11 @@ def _write_mlflow(
         import mlflow
     except ImportError:  # pragma: no cover - devの最小構成では起きない
         return
+    # 新しめの mlflow はファイルストア（`mlruns/`）を既定で拒否し sqlite への移行を促す
+    # （`wm/train.py` と同じワークアラウンド）。
+    import os
+
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(str(repo_root() / "mlruns"))
     mlflow.set_experiment(exp_id)
     with mlflow.start_run(run_name=run_name):
