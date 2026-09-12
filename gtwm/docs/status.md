@@ -8,7 +8,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 ## 着手順チェックリスト
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
 - [x] 2. sim（MJCF 倉庫、センサ、アンカー、WMS モック、`make sim-smoke`）
-- [ ] 3. kg（gt-core.ttl、SHACL 3本、KGStore、EPCIS 取込）
+- [x] 3. kg（gt-core.ttl、SHACL 3本、KGStore、EPCIS 取込）
 - [ ] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
 - [ ] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
 - [ ] 6. eval（ランナー、EXP-01/02/03/06）
@@ -35,3 +35,11 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - 30秒 smoke（`make sim-smoke`）の生成時間は **7.1秒**（実時間の約0.24倍、目標2倍以内に対し余裕あり）。オブジェクト数の削減は不要だった。内訳目安：物理6000ステップ≈0.8秒、4カメラ×3パス×300フレームのレンダリング≈3.2秒（レンダラーのウォームアップ後）。
 - WMS 記録イベントは、着手順2の時点ではアンカー検出結果から即時導出している（gate:1→receiving、gate:2→shipping、scale→inspecting、scan+ゾーンで storing/picking）。遅延・欠落・誤登録などの乖離注入（`InjectionConfig`）は全件数0のデフォルトで no-op、実装は着手順8。
 - `tests/sim`（決定性・アンカー検出・書出形状、計8件）は `make test-sim` で3秒未満、GUI ウィンドウは一切開かない。
+
+## 着手順3（kg）の実装メモ（2026-09-12）
+- **RDF-star からの逸脱（要ADR）**：ontology.md / CLAUDE.md は信念を RDF-star の埋め込み三つ組で格納する前提だが、pyproject.toml が固定する rdflib 7.6.0 には Turtle-star/SPARQL-star のパーサが無いことを確認した（`rdflib.plugin.plugins(kind=Parser)` に該当プラグインが無く、`<< s p o >>` 構文は N3 パーサが `BadSyntax` で拒否する）。代わりに標準 RDF 具象化（reification：`_:b a rdf:Statement, gt:Belief ; rdf:subject s ; rdf:predicate p ; rdf:object o ; gt:confidence ...`）を rdflib/Oxigraph 両バックエンド共通の表現として採用した（`src/gtwm/kg/schema.py` の NOTE 参照）。将来 RDF-star が必要になれば ADR で採否を判断する。
+- **vendor/ の取得結果**：PROV-O（`https://www.w3.org/ns/prov.ttl`）、SOSA（`https://www.w3.org/ns/sosa/`）、SSN（`https://www.w3.org/ns/ssn/`）は公式 Turtle を実際に取得・parse 確認済み。BFO は `http://purl.obolibrary.org/obo/bfo.owl`（OBO PURL 経由の公式 RDF/XML、CC BY 4.0）を実物取得。EPCIS 2.0 は公式の JSON-LD `@context`（`https://ref.gs1.org/standards/epcis/epcis-context.jsonld`）を実物取得したが、これは語彙定義のみで完全な OWL 公理ではない。**CBV のみスタブ**：`ref.gs1.org/cbv/` 配下の JSON-LD コンテキストは全て404、`gs1.org/voc/` は403 で、機械可読な CBV RDF を取得できなかったため、`wms_mock.py`/`gt-core.ttl` が実際に使う biz-step/disposition の URI だけを最小定義した `cbv-stub.ttl` を作成（詳細は `ontology/vendor/LICENSES.md`）。
+- **snapshot(t) の実装方針**：`kg/epcis.py` は同一個体の新しい `currentZone` 信念が来た時点で直前の信念の `valid_to` を閉じる（そうしないと移動履歴の全信念が「現在も有効」のまま残り、`snapshot(t)` や SHACL の `maxCount 1` が誤検知する）。`KGStore.snapshot(t)`/`validate()` は意図的に (subject, predicate) の重複排除をしない：正しく閉区間化されていれば同一時刻の重複は発生せず、それでも重複が残る場合こそ「同一時刻に複数の値を主張している」という真の乖離であり、SHACL の maxCount 制約はこれを検出するためにある。
+- **docker-compose**：`profile core` に Oxigraph のみ追加（timescaledb/minio/grafana は消費するコンポーネントが無いため見送り、infra.md「まず『なくても回るか』を検討する」に従う）。Oxigraph の公式イメージ（`ghcr.io/oxigraph/oxigraph`、arm64 実物確認済み）は distroless 相当で shell/wget/curl を一切含まない（`docker run --entrypoint sh ...` が `exec: "sh": executable file not found` で失敗することを確認済み）ため、infra.md が求める **コンテナ側 CMD healthcheck を実装できない**。代わりに `make up` から `scripts/wait_for_oxigraph.py` を呼び、SPARQL クエリエンドポイントへの HTTP ポーリングで起動待ちする。`make up`/`make test-int` は実機で確認済み（3件の integration テストが green）。
+- `.pre-commit-config.yaml` の TODO（session 01 で保留）を解消：`ontology/` `src/gtwm/kg/queries/` 変更時に `gtwm kg validate` を local hook として実行する。
+- `gtwm kg validate` は ttl構文・SHACL自己整合（shapes を空データグラフに対して pyshacl 実行できるか）・queries/*.rq の SPARQL構文を検査する実用的な定義とした。

@@ -1,0 +1,9 @@
+# pyshacl の検証結果グラフから focusNode/message/severity を抽出する。
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+
+SELECT ?focusNode ?message ?severity WHERE {
+  ?result a sh:ValidationResult ;
+          sh:focusNode ?focusNode ;
+          sh:resultMessage ?message ;
+          sh:resultSeverity ?severity .
+}

@@ -1,0 +1,16 @@
+# 全 gt:Belief 具象化を平坦なタプルとして取り出す内部ヘルパクエリ。
+# KGStore.snapshot(t) と KGStore.validate() の両方がこれを基に Python 側でフィルタ/重複排除する。
+PREFIX gt: <https://example.org/gtwm/gt#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+SELECT ?subject ?predicate ?object ?confidence ?source ?validFrom ?validTo ?transactionTime WHERE {
+  ?stmt a gt:Belief ;
+        rdf:subject ?subject ;
+        rdf:predicate ?predicate ;
+        rdf:object ?object ;
+        gt:confidence ?confidence ;
+        gt:source ?source ;
+        gt:validFrom ?validFrom ;
+        gt:transactionTime ?transactionTime .
+  OPTIONAL { ?stmt gt:validTo ?validTo }
+}

@@ -1,0 +1,19 @@
+# 個体 ?pallet の時刻 ?t における gt:currentZone を引く。
+# ?pallet と ?t は KGStore.query(sparql, bindings={"pallet": ..., "t": ...}) で束縛する。
+PREFIX gt: <https://example.org/gtwm/gt#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?zone ?confidence ?validFrom ?transactionTime WHERE {
+  ?stmt a gt:Belief ;
+        rdf:subject ?pallet ;
+        rdf:predicate gt:currentZone ;
+        rdf:object ?zone ;
+        gt:confidence ?confidence ;
+        gt:validFrom ?validFrom ;
+        gt:transactionTime ?transactionTime .
+  OPTIONAL { ?stmt gt:validTo ?validTo }
+  FILTER(?validFrom <= ?t)
+  FILTER(!BOUND(?validTo) || ?validTo > ?t)
+}
+ORDER BY DESC(?validFrom)
