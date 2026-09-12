@@ -77,16 +77,27 @@ class DiscrepancyLedger:
         self._conn = sqlite3.connect(self.db_path)
         self._conn.execute(_SCHEMA)
         self._conn.commit()
+        self.last_create_was_duplicate = False
 
     def create(self, entry: DiscrepancyEntry) -> None:
+        """新規エントリを追加する。
+
+        `discrepancy_id` はエピソード・個体・ホライズン・フレーム番号から決定的に
+        導出されるため、同一エピソードに対して `gtwm ground run` を再実行すると
+        同じ ID が再生成される。台帳ファイルはエピソード単位で永続化される設計
+        （poc_plan.md 5.4：台帳は継続的な記録）なので、同一 ID の再検知は「新しい
+        乖離」ではなく「既に記録済みの乖離を再度検知した」ことを意味する。よって
+        既存 ID は例外にせず黙って冪等にスキップする（内容の食い違いは検知ロジック
+        が決定的である限り発生しない前提）。
+        """
         if entry.discrepancy_type not in DISCREPANCY_TYPES:
             raise ValueError(f"未知の discrepancy_type: {entry.discrepancy_type}")
         if entry.severity not in SEVERITIES:
             raise ValueError(f"未知の severity: {entry.severity}")
         if entry.status != "open":
             raise ValueError("新規エントリは status='open' でなければならない（検知直後の状態）")
-        self._conn.execute(
-            """INSERT INTO discrepancies (
+        cur = self._conn.execute(
+            """INSERT OR IGNORE INTO discrepancies (
                 discrepancy_id, object_id, physical_value, physical_confidence,
                 physical_source, physical_valid_time, record_value, record_source_system,
                 record_registration_time, discrepancy_type, severity, detected_at,
@@ -113,6 +124,7 @@ class DiscrepancyLedger:
             ),
         )
         self._conn.commit()
+        self.last_create_was_duplicate = cur.rowcount == 0
 
     def _get_status(self, discrepancy_id: str) -> str:
         row = self._conn.execute(

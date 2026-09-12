@@ -203,7 +203,8 @@ def run_ground(
                         epsilon_at_detection=float(d) * float(epsilon_cfg.d_weights.position),
                     )
                     ledger.create(entry)
-                    n_ledger_entries += 1
+                    if not ledger.last_create_was_duplicate:
+                        n_ledger_entries += 1
 
     store.add_beliefs(beliefs_all)
 
