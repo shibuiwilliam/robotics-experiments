@@ -85,6 +85,7 @@ class ProbeTrainResult:
     n_eval_samples: int
     zone_f1_macro: float
     zone_accuracy: float
+    type_accuracy: float
     ece_before: float
     ece_after: float
     temperature: float
@@ -255,14 +256,18 @@ def train_probes(
     duration_s = time.time() - start
 
     # --- 評価。温度は train セットで当てはめ、ECE は held-out の eval セットで計算する。
-    def _collect(samples: list[AnchorSample]) -> tuple[Tensor, Tensor, list[int]]:
+    def _collect(
+        samples: list[AnchorSample],
+    ) -> tuple[Tensor, Tensor, list[int], list[int], list[int]]:
         eval_batch = 16
         logits_chunks = []
+        type_preds: list[int] = []
         labels_list = [s.zone_idx for s in samples]
+        type_labels_list = [s.type_idx for s in samples]
         with torch.no_grad():
             for i in range(0, len(samples), eval_batch):
                 chunk = samples[i : i + eval_batch]
-                slots, _ = _encode_batch_slots(
+                slots, type_logits = _encode_batch_slots(
                     modules, chunk, cam_names, cam_params, device, frame_cache
                 )
                 floor_pred = probe.floor_head(slots)  # [n,K,2]
@@ -271,13 +276,20 @@ def train_probes(
                 rng = torch.arange(len(chunk), device=device)
                 idx_t = torch.tensor(idx, device=device)
                 logits_chunks.append(zone_logit[rng, idx_t])
+                type_preds.extend(type_logits[rng, idx_t].argmax(dim=-1).tolist())
         stacked_logits = torch.cat(logits_chunks, dim=0)
         labels_tensor = torch.tensor(labels_list, device=stacked_logits.device)
         preds_list = stacked_logits.argmax(dim=-1).tolist()
-        return stacked_logits, labels_tensor, preds_list
+        return stacked_logits, labels_tensor, preds_list, type_preds, type_labels_list
 
-    train_logits, train_labels, _ = _collect(train_samples)
-    eval_logits, eval_labels, eval_preds = _collect(eval_samples)
+    train_logits, train_labels, _, _, _ = _collect(train_samples)
+    eval_logits, eval_labels, eval_preds, eval_type_preds, eval_type_labels = _collect(eval_samples)
+    type_accuracy = (
+        sum(1 for p, y in zip(eval_type_preds, eval_type_labels, strict=True) if p == y)
+        / len(eval_type_labels)
+        if eval_type_labels
+        else 0.0
+    )
 
     temperature = calibrate_temperature(train_logits, train_labels)
     probe.log_temperature.data.fill_(torch.log(torch.tensor(temperature)))
@@ -300,6 +312,7 @@ def train_probes(
         n_eval_samples=len(eval_samples),
         zone_f1_macro=macro_f1,
         zone_accuracy=accuracy,
+        type_accuracy=type_accuracy,
         ece_before=ece_before,
         ece_after=ece_after,
         temperature=temperature,
