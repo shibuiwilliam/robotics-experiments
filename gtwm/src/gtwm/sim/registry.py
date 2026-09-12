@@ -26,3 +26,22 @@ def ontology_id(sim_name: str) -> str | None:
         if sim_name in category:
             return category[sim_name]
     return None
+
+
+def category_of(gt_id: str) -> str | None:
+    """オントロジー個体 ID（例: "gt:Equipment_Conveyor_0001"）からカテゴリ名
+    （registry.yaml のトップレベルキー、例: "equipment"）を逆引きする。
+
+    `kg/whatif/compiler.py` が個体解決の成否・種別判定に使う。
+    """
+    registry = load_registry()
+    for category, mapping in registry.items():
+        if gt_id in mapping.values():
+            return category
+    return None
+
+
+def known_gt_ids() -> set[str]:
+    """registry.yaml が知っている全オントロジー個体 ID の集合。"""
+    registry = load_registry()
+    return {gt_id for mapping in registry.values() for gt_id in mapping.values()}

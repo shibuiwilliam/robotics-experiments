@@ -1,0 +1,9 @@
+# KPI: 指定ゾーンに現在滞在している個体数（待ち行列長の代理指標）。
+# `?zone` は KGStore.query(sparql, bindings={"zone": ...}) で束縛する。
+# WHAT-IF エンジン（kg/whatif/engine.py）が、ロールアウト結果を α で記号化した
+# 使い捨ての KGStore に対してこのクエリを実行し、queue_len を集計する。
+PREFIX gt: <https://example.org/gtwm/gt#>
+
+SELECT (COUNT(DISTINCT ?subject) AS ?count) WHERE {
+  ?subject gt:currentZone ?zone .
+}

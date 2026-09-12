@@ -1,0 +1,60 @@
+// WHAT-IF クエリ文法（poc_plan.md 付録C の BNF と一致させる）。
+//
+// <query>     ::= "PREDICT" <vars> "AT" <horizons> ["WHERE" <filter>] ["GIVEN" <interventions>] [<options>]
+// <vars>      ::= <var> {"," <var>}
+// <horizons>  ::= <offset> {"," <offset>}          ; 例: +10min, +30min, +2h
+// <filter>    ::= <triple-pattern> {"AND" <triple-pattern>}
+// <interventions> ::= <do> {"," <do>}
+// <do>        ::= "do(" <entity> "." <property> ":=" <expr> ")"
+//              | "do(" <entity> "." <property> ":=" "absent" ")"
+// <options>   ::= ["SAMPLES" <int>] ["INTERVAL" <prob>] ["MODEL" <model-version>]
+// <expr>      ::= <number> | <number> "*" "current" | "current" ("+"|"-") <number>
+//
+// 注：付録Cの原文は <filter> の要素を「triple-pattern」と呼ぶが、その内部構造の
+// 生成規則は与えられていない。例文 "WHERE station = gt:Station_S3" を正とし、
+// <triple-pattern> ::= IDENT "=" <entity-or-literal> として解釈する
+// （docs/status.md に解釈の根拠を明記）。
+
+start: query
+
+query: "PREDICT" vars "AT" horizons where_clause? given_clause? options
+
+vars: VAR ("," VAR)*
+horizons: offset ("," offset)*
+offset: OFFSET
+
+where_clause: "WHERE" filter
+filter: triple ("AND" triple)*
+triple: IDENT "=" value
+
+given_clause: "GIVEN" interventions
+interventions: do_stmt ("," do_stmt)*
+do_stmt: "do" "(" entity "." property ":=" (expr | ABSENT) ")"
+
+options: samples_opt? interval_opt? model_opt?
+samples_opt: "SAMPLES" INT
+interval_opt: "INTERVAL" PROB
+model_opt: "MODEL" IDENT
+
+?value: entity | NUMBER | IDENT
+
+expr: NUMBER "*" "current" -> mul_current
+    | "current" "+" NUMBER -> add_current
+    | "current" "-" NUMBER -> sub_current
+    | NUMBER               -> literal_number
+
+entity: CURIE
+property: IDENT
+
+ABSENT: "absent"
+VAR: "?" IDENT_BASE
+CURIE: IDENT_BASE ":" IDENT_BASE
+IDENT: IDENT_BASE
+IDENT_BASE: /[A-Za-z_][A-Za-z0-9_]*/
+OFFSET: /[+-]\d+(\.\d+)?(min|h|s)/
+INT: /[0-9]+/
+PROB: /(0(\.[0-9]+)?|1(\.0+)?)/
+NUMBER: /[+-]?\d+(\.\d+)?/
+
+%import common.WS
+%ignore WS
