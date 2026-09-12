@@ -50,7 +50,7 @@ class GroundRunResult:
     output_dir: Path = field(default_factory=Path)
 
 
-def _encode_single_frame_slots(
+def encode_single_frame_slots(
     modules: WMModules,
     frame: Tensor,
     cam_names: list[str],
@@ -106,7 +106,7 @@ def run_ground(
         t_s = frame_idx / ep.log_hz
         frame = read_single_frame(ep, frame_idx).to(device)
         with torch.no_grad():
-            slots, type_logits = _encode_single_frame_slots(modules, frame, cam_names, cam_params)
+            slots, type_logits = encode_single_frame_slots(modules, frame, cam_names, cam_params)
             zone_probs = probe.zone_probs(slots, calibrated=True)
             zone_conf, zone_idx = zone_probs.max(dim=-1)
             existence_prob = torch.sigmoid(probe.existence_head(slots).squeeze(-1))
@@ -252,4 +252,4 @@ def run_ground(
     )
 
 
-__all__ = ["GroundRunResult", "run_ground"]
+__all__ = ["GroundRunResult", "run_ground", "encode_single_frame_slots"]

@@ -1,0 +1,24 @@
+# EXP-06 シールド付き潜在計画。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+probe_config: configs/grounding/probe_train_smoke.yaml
+data_set: wm_smoke
+n_tasks: 3 # poc_plan.md 6.2 は100タスク。smokeでは3タスクに縮小（docs/status.md参照）
+goal_zone: Dock_Out
+restricted_zone: Storage_A
+shortcut_bonus: 30.0
+violation_threshold: 0.3
+planner:
+  n_samples: 32
+  horizon: 5
+  action_dim: 4
+  # 既定値(temperature=1.0, noise_std=1.0)では候補行動が小さすぎて smoke WM の
+  # ゾーン予測をほとんど動かせず、シールド有無の差が出ない（診断済み、docs/status.md）。
+  # 探索幅を広げ softmax の重み付けを鋭くすることで、シールド無しなら実際に禁止
+  # ゾーンへ寄る候補が選ばれ得る状況を作る。
+  temperature: 0.3
+  noise_std: 25.0
+full_run:
+  seeds: [0, 1, 2]
+  n_tasks: 100
+  note: "poc_plan.md 6.2 通りの100タスク・P0模擬AGVでの実行が必要。危険物隣接・容量制約も対象に含める拡張が要る。"

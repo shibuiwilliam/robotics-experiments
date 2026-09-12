@@ -11,7 +11,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - [x] 3. kg（gt-core.ttl、SHACL 3本、KGStore、EPCIS 取込）
 - [x] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
 - [x] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
-- [ ] 6. eval（ランナー、EXP-01/02/03/06）
+- [x] 6. eval（ランナー、EXP-01/02/03/06）
 - [ ] 7. whatif + ui
 - [ ] 8. P1 相当（realism、EXP-04/05/11）
 - [ ] 9. P2 相当（概念発見、2拠点連合、EXP-07/08/09、EXP-10 準備）
@@ -19,7 +19,10 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 ## 実験の状態
 | EXP | 仮説 | 状態 | 最新結果（runs/ パス） | 判定 |
 |---|---|---|---|---|
-| EXP-01 | H1 | 未着手 | | |
+| EXP-01 | H1（接地精度） | smoke実行済み | `runs/EXP-01/20260913-074513`：position_fact_f1=0.849, type_accuracy=0.806 | 参考（smoke） |
+| EXP-02 | H1（遮蔽下の同一性） | smoke実行済み | `runs/EXP-02/20260913-074542`：id_switch_rate=0.0 | 参考（smoke） |
+| EXP-03 | H2（記号条件付け） | smoke実行済み | `runs/EXP-03/20260913-072507`：error_improvement_60s≈0.004, effective_horizon_ratio=NaN | 参考（smoke） |
+| EXP-06 | H5（シールド付き計画） | smoke実行済み | `runs/EXP-06/20260913-074554`：violations_with_shield=0/3, violations_without_shield=3/3, throughput_loss≈1.42 | 参考（smoke） |
 
 ## 既知の制約・記録
 - MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
@@ -61,3 +64,16 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - **`gtwm ground run --episode ep_0000_seed0 --set smoke` の実行結果**（実機確認）：beliefs=285、ledger_entries=44（全て open）、ε_10s=0.284（decomposition: perception=0.031, process_deviation=0.253, ontology_gap=0.0, n=64）。30秒エピソードでは h=60s/300s/1800s はエピソード長を超えるため計算されない（ログにも出力されない。エピソード長を超えるホライズンを黙って0扱いにするのではなく、正直にスキップする設計）。
 - 循環 import 回避：`wm/train.py` は `grounding.constraints`（`wm` に依存しない純粋関数）のみ実 import し、`Probe`/`AnchorSample` 型は `TYPE_CHECKING` 下でのみ import する（`grounding.train_probes` が `wm.train` に依存する方向とは逆になるため）。
 - `tests/unit/test_blindness.py` は AST 解析で `grounding/`・`wm/` 配下の全 `.py` を検査し、`gtwm.sim.wms_mock` の import と `data/injections` 文字列参照を禁止する（import 文の静的検査であり、実行時 import の有無に関わらず検知する）。
+
+## 着手順6（eval）の実装メモ（2026-09-13）
+
+- `experiments/criteria.yaml` に poc_plan.md 3.1 の H1〜H9/N1 を一字一句転記。`src/gtwm/eval/metrics.py` に付録Aの全指標関数（`fact_distance_d` 等11関数）、`stats.py` に `paired_bootstrap_ci`/`wilson_interval`、`scoring.py` を `data/injections` を読んでよい唯一のモジュールとして実装（`test_blindness.py` は引き続き緑）。`runner.py` が `runs/EXP-xx/<ts>/{metrics.json,report.md,config_resolved.yaml,git.txt,log.txt}` を書き出し、smoke時は判定を常に「参考（smoke）」に固定する（`judge_criteria` は本実行でのみ呼ぶ）。
+- **EXP-01/02/03 の6.1と6.2の対応関係を確認**：EXP-01=H1「アンカー接地の基礎精度」、EXP-02=H1「遮蔽下の同一性維持」（EXP-01とEXP-02は同じH1を指標で分担：EXP-01がF1/型精度、EXP-02がID切替率/IDF1）、EXP-03=H2「記号条件付けのアブレーション」。当初の作業指示でEXP-02をH2と誤記していたが、poc_plan.md 6.1を直接確認して訂正した。
+- **EXP-03**：潜在空間誤差（コサイン距離）で (a)条件なし (b)静的文脈 (c)動的文脈 を比較。`paired_bootstrap_ci()` で none-vs-dynamic・none-vs-static の対応あり比較を追加（同一(episode, t0)地点での誤差なのでペアが保たれる）。smokeエピソードが短く(1〜8秒)、60秒地点の`effective_horizon_ratio`は分母(none_h_star)が0になりNaNになる（正直にNaNのまま報告、smokeの限界として記載）。
+- **EXP-06（新規実装、シールド付き計画）**：`grounding/shield.py` の `RestrictedZoneShield` が `wm/planner.py MPPIPlanner` の `ShieldFn` 契約に適合する形で、進入禁止ゾーン制約（`gt:ZoneCapacityShape` を capacity=0 として解釈）をαのゾーン確率に対して直接チェックする（256候補×20ホライズン分のpyshacl検証は非現実的なため、`grounding/constraints.py`と同じ意味論を再利用）。危険物隣接・容量制約への拡張、100タスクへの拡大は本実行時に行う（smokeは3タスク）。
+- **重要な実装バグを2件発見・修正（`wm/planner.py`）**：
+  1. **シールドの安全網が無かった**：受理された候補どうしの重み付き平均（凸結合）は、Dynamics/Probeが非線形であるため、平均自体がシールドを満たす保証がない（個別には合格する2つの候補を混ぜた行動が、どちらとも異なる違反状態になりうる）。EXP-06のsmoke実行で実際に発生（shield無し3/3違反、shield有り当初1/3違反）。平均後の行動を再検査し、違反していれば単一の最小コスト受理候補にフォールバックする安全網を追加し、shield有りでの違反を0/3にした。`tests/unit/test_wm_planner.py`に非凸受理領域（2つの離れた許容区間）での最小再現テストを追加し、修正前後で赤→緑になることを確認済み。
+  2. **棄却候補へのfill_valueが符号を考慮していなかった**：`costs[finite].max() * 10 + 1` は cost_fn が負の値（報酬形コスト）を返す場合、棄却候補の方が魅力的になる（符号反転）。有限コストの「広がり」に対する相対マージン（`max + spread*10 + 1`、spreadは`max-min`をclamp_min(1.0)）に修正し、符号に依存しないようにした。
+  3. EXP-06のsmoke設定では、既定のMPPIパラメータ（`noise_std=1.0`）では候補行動が小さすぎてゾーン予測をほとんど動かせず、シールド有無の差が全く出なかった（診断済み：huge action(*50)でようやくゾーン確率の標準偏差0.19が出る）。`noise_std=25`・`temperature=0.3`・`shortcut_bonus=30`に調整することで、意味のある対比（shield無し3/3違反→shield有り0/3違反）を得た。
+- `src/gtwm/grounding/ground_run.py` の `_encode_single_frame_slots`（1フレームをスロットへ符号化する共通ロジック）を `encode_single_frame_slots` として公開し、EXP-06からも再利用する（重複実装を避けるための小リファクタ、`__all__`に追加）。
+- 4実験（EXP-01/02/03/06）のsmoke実測時間：27.3s / 0.9s / 7.4s / 27.0s（いずれも5分予算に大幅な余裕）。
