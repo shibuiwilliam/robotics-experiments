@@ -9,7 +9,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
 - [x] 2. sim（MJCF 倉庫、センサ、アンカー、WMS モック、`make sim-smoke`）
 - [x] 3. kg（gt-core.ttl、SHACL 3本、KGStore、EPCIS 取込）
-- [ ] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
+- [x] 4. wm（エンコーダ、スロット、動態、`make train-smoke`）
 - [ ] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
 - [ ] 6. eval（ランナー、EXP-01/02/03/06）
 - [ ] 7. whatif + ui
@@ -22,7 +22,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 | EXP-01 | H1 | 未着手 | | |
 
 ## 既知の制約・記録
-- MPS fallback が発生した op：（未計測、着手順4で計測）
+- MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
 - `platform: linux/amd64` を使ったサービス：なし
 - 計画書からの差分：全フェーズをシミュレーションで実施（CLAUDE.md 参照）
 - `make setup` の `pre-commit install` がこの開発機では失敗する：親リポジトリ（`robotics-experiments`）の `core.hooksPath` が明示的に `.git/hooks`（既定値と同じ）に設定されており、pre-commit がこれを検出すると安全のためインストールを拒否する。git config の変更は方針上行わないため、`uv run pre-commit install` を手動で通すか `core.hooksPath` を外すかはユーザー側の判断に委ねる。`doctor` / `lint` / `test` は `pre-commit install` に依存せず単独で緑になることを確認済み。
@@ -43,3 +43,11 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - **docker-compose**：`profile core` に Oxigraph のみ追加（timescaledb/minio/grafana は消費するコンポーネントが無いため見送り、infra.md「まず『なくても回るか』を検討する」に従う）。Oxigraph の公式イメージ（`ghcr.io/oxigraph/oxigraph`、arm64 実物確認済み）は distroless 相当で shell/wget/curl を一切含まない（`docker run --entrypoint sh ...` が `exec: "sh": executable file not found` で失敗することを確認済み）ため、infra.md が求める **コンテナ側 CMD healthcheck を実装できない**。代わりに `make up` から `scripts/wait_for_oxigraph.py` を呼び、SPARQL クエリエンドポイントへの HTTP ポーリングで起動待ちする。`make up`/`make test-int` は実機で確認済み（3件の integration テストが green）。
 - `.pre-commit-config.yaml` の TODO（session 01 で保留）を解消：`ontology/` `src/gtwm/kg/queries/` 変更時に `gtwm kg validate` を local hook として実行する。
 - `gtwm kg validate` は ttl構文・SHACL自己整合（shapes を空データグラフに対して pyshacl 実行できるか）・queries/*.rq の SPARQL構文を検査する実用的な定義とした。
+
+## 着手順4（wm）の実装メモ（2026-09-12）
+- 契約通りに実装：`Encoder.encode`（凍結 `facebook/dinov2-small` + 学習可能アダプタ1層、HFキャッシュ経由・torch.hub不使用）、`SlotModule`（Slot Attention, カメラ単位で呼ぶ設計）、`Dynamics.rollout`（Transformer 4層/d=256、アンサンブル3、出力 [E,B,h,K,D]）。`Fusion`（カメラ毎スロット→床面座標→統合）は契約外のため自由設計：各スロットから正規化ピクセル位置を回帰し、MJCF由来のカメラ外部パラメータ（`sim/assets/warehouse.xml` を `mujoco` で読む）でレイキャストして床面座標を得て、K個の学習可能クエリでクロスアテンションプーリングして統合する。
+- `Conditioner`（γ、KGSubgraph→cond）と `Probe`/`Consistency` は着手順5（grounding）の責務のため未実装。`Dynamics.rollout` は `cond: Tensor|None` を受け取れる契約のまま、None のときゼロ条件で動く（session 05 が実装した Conditioner をそのまま差し込める）。
+- 学習データ：`wm_smoke`（30秒×2エピソード、`gtwm sim gen` で生成、`make train-smoke` が無ければ自動生成）。学習/評価split は時系列順（1本目=train、2本目=eval）。損失は予測損失のみ（重み1.0）、順列不変（scipy `linear_sum_assignment` によるハンガリアン割当、勾配は流さない）。アンカー接地・制約・同一性損失は重み0のまま session05 以降で有効化する。
+- **MPS 固有の不具合を発見・修正**：`nn.TransformerEncoderLayer` の既定 dropout(0.1) が `torch.no_grad()` 推論経路でのみ `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` を起こす（学習時の勾配ありパスでは再現しない＝SDPA バックエンド選択の違い）。`DynamicsHead` で `dropout=0.0` を明示して回避（詳細は上の「既知の制約」）。
+- **`make train-smoke` の受入結果**：所要時間 **4.1〜4.4秒**（目標3分以内に大幅な余裕）、`mlflow`（ローカル `mlruns/`、ファイルストア。新しめの mlflow はファイルストアを既定拒否するため `MLFLOW_ALLOW_FILE_STORE=true` を `train()` 内で明示設定）に real な減少損失曲線を記録済み（5.65→3.29、6ステップ）。ピークメモリは `/usr/bin/time -l` 実測で **maximum resident set size ≈ 838MB**（12GB予算に対し大幅な余裕）。合成系列（等速直線運動・静止+遮蔽）の10ステップ先コサイン距離はどちらも `configs/wm/base.yaml` の `synthetic_eval.max_latent_cosine_distance=0.2` を十分下回る（実測 ~0.005〜0.02、テストで検証）。
+- チェックポイントは「損失改善時に保存、maxステップ到達時にも直近状態を必ず保存」に修正（当初 max_steps で早期終了すると保存されないバグがあったため、`_save_checkpoint` をステップ単位の判定に統一）。

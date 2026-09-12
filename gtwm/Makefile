@@ -46,7 +46,8 @@ sim-smoke:
 	uv run gtwm sim gen --set smoke --episodes 1 --duration 30 --seed 0
 
 train-smoke:
-	@echo "未実装: train-smoke は着手順4で実装する"; exit 1
+	@test -d data/sim/wm_smoke/ep_0001_seed1 || uv run gtwm sim gen --set wm_smoke --episodes 2 --duration 30 --seed 0
+	uv run gtwm wm train --config configs/wm/smoke.yaml
 
 exp:
 	@echo "未実装: exp は着手順6で実装する"; exit 1
