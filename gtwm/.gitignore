@@ -1,0 +1,15 @@
+.env
+CLAUDE.local.md
+.claude/settings.local.json
+.venv/
+__pycache__/
+*.pyc
+data/
+runs/
+mlruns/
+.data/
+*.mp4
+*.npz
+*.parquet
+!tests/fixtures/**
+.DS_Store
