@@ -14,6 +14,7 @@ import mujoco
 import numpy as np
 import pandas as pd
 
+from gtwm.sim.drift import DriftConfig, apply_drift
 from gtwm.sim.env import PHYSICS_DT, RawTrajectory, WarehouseEnv
 from gtwm.sim.realism import RealismConfig, apply_observation_realism
 from gtwm.sim.registry import ontology_id
@@ -58,6 +59,7 @@ class GenConfig:
     duration_s: float
     seed: int
     realism: RealismConfig | None = None  # None＝P0/smoke（realism 無効、既定）
+    drift: DriftConfig | None = None  # None＝ドリフト無し（既定）
 
 
 def _unify_anchor_events(anchor_df: pd.DataFrame, zones: dict[str, list[str]]) -> pd.DataFrame:
@@ -144,6 +146,7 @@ def generate_episode(
     seed: int,
     output_root: Path | None = None,
     realism: RealismConfig | None = None,
+    drift: DriftConfig | None = None,
 ) -> Path:
     """1エピソードを生成し、出力ディレクトリを返す。"""
     seed_everything(seed)
@@ -217,6 +220,9 @@ def generate_episode(
     events_df = pd.concat([anchor_events, gate_scale_records, scan_records], ignore_index=True)
     events_df = events_df.sort_values("t_true").reset_index(drop=True)
 
+    if drift is not None:
+        events_df = apply_drift(events_df, drift)
+
     # 一般ノイズ（ジッタ・欠落・遅延・誤登録）は realism=None（P0/smoke）では no-op。
     # 実験 seed をそのまま使う（センサ雑さは狙った異常ではなく無差別ノイズのため、
     # injection_seed のような盲検分離は不要）。
@@ -283,6 +289,7 @@ def generate_set(cfg: GenConfig, output_root: Path | None = None) -> list[Path]:
                 cfg.seed + i,
                 output_root=output_root,
                 realism=cfg.realism,
+                drift=cfg.drift,
             )
         )
     return dirs
