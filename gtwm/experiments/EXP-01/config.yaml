@@ -1,0 +1,8 @@
+# EXP-01 アンカー接地の基礎精度。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+probe_config: configs/grounding/probe_train_smoke.yaml
+full_run:
+  seeds: [0, 1, 2]
+  probe_config: configs/grounding/probe_train_full.yaml # 本実行時に作成する
+  estimated_data: "p0_train(5分x50本) + p0_eval(5分x10本)"

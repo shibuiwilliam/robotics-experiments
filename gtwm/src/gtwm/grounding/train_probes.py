@@ -152,14 +152,18 @@ def _macro_f1(
 
 
 def train_probes(
-    config_path: str = "configs/grounding/probe_train_smoke.yaml",
+    config_path: str | DictConfig = "configs/grounding/probe_train_smoke.yaml",
 ) -> tuple[Probe, WMModules, list[str], dict[str, CameraParams], ProbeTrainResult]:
     """戻り値：`(probe, modules, cam_names, cam_params, result)`。
 
     `modules` は `gtwm ground run`（session 05 CLI）が同じ重み（アンカー学習で微調整済みの
     slot_module/fusion を含む）でそのままロールアウトに使えるように、ここで返す。
+
+    `config_path` はファイルパス（既定）に加え、既に読み込み済みの `DictConfig` も
+    受け付ける（`eval/experiments/exp01.py` が実験の seed ごとに `cfg.seed` を
+    上書きしてから渡すため）。
     """
-    cfg: DictConfig = load_config(config_path)
+    cfg: DictConfig = load_config(config_path) if isinstance(config_path, str) else config_path
     seed_everything(cfg.seed)
     device = get_device()
 

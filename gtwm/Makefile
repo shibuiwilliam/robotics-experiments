@@ -50,7 +50,9 @@ train-smoke:
 	uv run gtwm wm train --config configs/wm/smoke.yaml
 
 exp:
-	@echo "未実装: exp は着手順6で実装する"; exit 1
+	@test -n "$(EXP)" || { echo "使い方: make exp EXP=EXP-01 [SMOKE=1]"; exit 1; }
+	@test -f experiments/$(EXP)/run.py || { echo "未実装: experiments/$(EXP)/run.py が無い"; exit 1; }
+	uv run python experiments/$(EXP)/run.py
 
 dashboard:
 	@echo "未実装: dashboard は着手順7で実装する"; exit 1
