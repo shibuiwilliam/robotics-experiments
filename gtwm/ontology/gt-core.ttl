@@ -1,0 +1,273 @@
+@prefix gt: <https://example.org/gtwm/gt#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/gtwm/gt> a owl:Ontology ;
+  rdfs:label "gtwm PoC 拡張オントロジー"@ja , "gtwm PoC extension ontology"@en ;
+  rdfs:comment "世界モデル×オントロジー知的データ空間 PoC の gt: 名前空間拡張。poc_plan.md 5.3 の表と1対1対応する。標準語彙（EPCIS 2.0, CBV, SOSA/SSN, PROV-O, BFO）は ontology/vendor/ を参照するが、ここでは owl:imports しない（PoC ではスタンドアロンで読み込めることを優先する）。"@ja .
+
+#################################################################
+# 継続体（Continuants） — オントロジーが定義する
+#################################################################
+
+gt:Pallet a owl:Class ;
+  rdfs:label "パレット"@ja , "Pallet"@en ;
+  rdfs:comment "倉庫内を移動する荷役単位（パレット）。"@ja .
+
+gt:Case a owl:Class ;
+  rdfs:label "ケース"@ja , "Case"@en ;
+  rdfs:comment "パレットに積載される、またはケース単独で扱われる荷役単位。"@ja .
+
+gt:Vehicle a owl:Class ;
+  rdfs:label "車両"@ja , "Vehicle"@en ;
+  rdfs:comment "AGV 等、倉庫内を自律的または遠隔操作で移動する車両。"@ja .
+
+gt:Worker a owl:Class ;
+  rdfs:label "作業者"@ja , "Worker"@en ;
+  rdfs:comment "倉庫内で作業する人物。個人を特定せず匿名の存在として扱う。"@ja .
+
+gt:Zone a owl:Class ;
+  rdfs:label "ゾーン"@ja , "Zone"@en ;
+  rdfs:comment "区画内の機能的な区域（入荷、検品、保管、ピッキング、出荷等）。"@ja .
+
+gt:Slot a owl:Class ;
+  rdfs:label "スロット"@ja , "Slot"@en ;
+  rdfs:comment "ラック内の個別の棚位置。"@ja .
+
+gt:Equipment a owl:Class ;
+  rdfs:label "設備"@ja , "Equipment"@en ;
+  rdfs:comment "コンベア等、倉庫内の固定設備。"@ja .
+
+#################################################################
+# PoC 拡張クラス（poc_plan.md 5.3）
+#################################################################
+
+gt:Belief a owl:Class ;
+  rdfs:label "信念"@ja , "Belief"@en ;
+  rdfs:comment "接地層（α）により得られた、主語-述語-目的語からなる主張。confidence・source・validFrom/validTo・transactionTime を伴う。RDF-star の埋め込み三つ組として格納される（<< s p o >> にこれらのプロパティが付く）。"@ja .
+
+gt:Anchor a owl:Class ;
+  rdfs:label "アンカー"@ja , "Anchor"@en ;
+  rdfs:comment "真値として扱う離散イベント（RFIDゲート通過、スキャン、秤の計量確定、扉開閉、PLC信号）。"@ja .
+
+gt:Discrepancy a owl:Class ;
+  rdfs:label "乖離"@ja , "Discrepancy"@en ;
+  rdfs:comment "物理ツインの信念（WM由来）と記録ツインの主張（WMS由来）の不一致。乖離台帳の1エントリに対応する。"@ja .
+
+gt:LatentRef a owl:Class ;
+  rdfs:label "潜在参照"@ja , "LatentRef"@en ;
+  rdfs:comment "信念に対応する世界モデルの潜在スロットへの参照（モデル版・スロットID・時刻のみを保持し、潜在ベクトル自体は格納しない）。"@ja .
+
+gt:Intervention a owl:Class ;
+  rdfs:label "介入"@ja , "Intervention"@en ;
+  rdfs:comment "WHAT-IFクエリにおける do(...) 介入。対象個体・プロパティ・値・ホライズンを持つ。"@ja .
+
+gt:ConceptCandidate a owl:Class ;
+  rdfs:label "概念候補"@ja , "ConceptCandidate"@en ;
+  rdfs:comment "概念発見ループが予測残差クラスタから生成した、未知概念の候補。人の承認を経て gt-core.ttl に手動追加される。"@ja .
+
+#################################################################
+# プロパティ — gt:Belief
+#################################################################
+
+gt:confidence a owl:DatatypeProperty ;
+  rdfs:label "確信度"@ja , "confidence"@en ;
+  rdfs:comment "信念または違反の確信度。0以上1以下の実数。"@ja ;
+  rdfs:domain gt:Belief ;
+  rdfs:range xsd:double .
+
+gt:source a owl:ObjectProperty ;
+  rdfs:label "出所"@ja , "source"@en ;
+  rdfs:comment "信念の出所。gt:WM／gt:Anchor／gt:Human／gt:Record のいずれか。"@ja ;
+  rdfs:domain gt:Belief .
+
+gt:WM a gt:BeliefSource ;
+  rdfs:label "世界モデル由来"@ja , "world model"@en .
+
+gt:AnchorSource a gt:BeliefSource ;
+  rdfs:label "アンカー由来"@ja , "anchor"@en .
+
+gt:Human a gt:BeliefSource ;
+  rdfs:label "人手由来"@ja , "human"@en .
+
+gt:Record a gt:BeliefSource ;
+  rdfs:label "記録由来"@ja , "record"@en .
+
+gt:BeliefSource a owl:Class ;
+  rdfs:label "信念の出所種別"@ja , "Belief source kind"@en ;
+  rdfs:comment "gt:source の値域となる列挙的クラス（WM/anchor/human/record）。"@ja .
+
+gt:validFrom a owl:DatatypeProperty ;
+  rdfs:label "有効開始時刻"@ja , "validFrom"@en ;
+  rdfs:comment "信念が世界において成り立ち始めた時刻（有効時間の開始）。"@ja ;
+  rdfs:domain gt:Belief ;
+  rdfs:range xsd:dateTime .
+
+gt:validTo a owl:DatatypeProperty ;
+  rdfs:label "有効終了時刻"@ja , "validTo"@en ;
+  rdfs:comment "信念が世界において成り立たなくなった時刻（有効時間の終了）。未指定は「現在も有効」を意味する。"@ja ;
+  rdfs:domain gt:Belief ;
+  rdfs:range xsd:dateTime .
+
+gt:transactionTime a owl:DatatypeProperty ;
+  rdfs:label "処理時刻"@ja , "transactionTime"@en ;
+  rdfs:comment "システムがこの信念を知った（記録した）時刻。有効時刻との差が「遅延登録」型の乖離を定義する。"@ja ;
+  rdfs:domain gt:Belief ;
+  rdfs:range xsd:dateTime .
+
+gt:latentRef a owl:ObjectProperty ;
+  rdfs:label "潜在参照"@ja , "latentRef"@en ;
+  rdfs:comment "信念を gt:LatentRef に関連付ける。"@ja ;
+  rdfs:domain gt:Belief ;
+  rdfs:range gt:LatentRef .
+
+#################################################################
+# プロパティ — gt:Anchor
+#################################################################
+
+gt:anchorType a owl:DatatypeProperty ;
+  rdfs:label "アンカー種別"@ja , "anchorType"@en ;
+  rdfs:comment "アンカーの種別。rfid / scan / scale / door / plc のいずれか。"@ja ;
+  rdfs:domain gt:Anchor ;
+  rdfs:range xsd:string .
+
+#################################################################
+# プロパティ — gt:Discrepancy
+#################################################################
+
+gt:discrepancyType a owl:DatatypeProperty ;
+  rdfs:label "乖離種別"@ja , "discrepancyType"@en ;
+  rdfs:comment "乖離の型（unscanned_move / wrong_slot / wrong_scan / late_registration / ghost_stock 等）。"@ja ;
+  rdfs:domain gt:Discrepancy ;
+  rdfs:range xsd:string .
+
+gt:severity a owl:DatatypeProperty ;
+  rdfs:label "重大度"@ja , "severity"@en ;
+  rdfs:comment "乖離または制約違反の重大度。"@ja ;
+  rdfs:domain gt:Discrepancy ;
+  rdfs:range xsd:string .
+
+gt:status a owl:DatatypeProperty ;
+  rdfs:label "状態"@ja , "status"@en ;
+  rdfs:comment "乖離台帳エントリの状態遷移：open → confirmed/dismissed → resolved。"@ja ;
+  rdfs:domain gt:Discrepancy ;
+  rdfs:range xsd:string .
+
+gt:resolution a owl:DatatypeProperty ;
+  rdfs:label "解決内容"@ja , "resolution"@en ;
+  rdfs:comment "乖離の解決に際して人が記録した内容。"@ja ;
+  rdfs:domain gt:Discrepancy ;
+  rdfs:range xsd:string .
+
+#################################################################
+# プロパティ — gt:Zone / gt:Slot
+#################################################################
+
+gt:capacity a owl:DatatypeProperty ;
+  rdfs:label "容量"@ja , "capacity"@en ;
+  rdfs:comment "ゾーンまたはスロットが同時に保持できる個体数の上限。"@ja ;
+  rdfs:domain [ owl:unionOf (gt:Zone gt:Slot) ] ;
+  rdfs:range xsd:integer .
+
+gt:allowedClass a owl:ObjectProperty ;
+  rdfs:label "許可クラス"@ja , "allowedClass"@en ;
+  rdfs:comment "ゾーンまたはスロットに置くことが許可される個体のクラス。"@ja ;
+  rdfs:domain [ owl:unionOf (gt:Zone gt:Slot) ] .
+
+gt:forbiddenAdjacentClass a owl:ObjectProperty ;
+  rdfs:label "隣接禁止クラス"@ja , "forbiddenAdjacentClass"@en ;
+  rdfs:comment "このスロットに隣接して配置してはならない危険物クラス。"@ja ;
+  rdfs:domain gt:Slot .
+
+gt:currentZone a owl:ObjectProperty ;
+  rdfs:label "現在のゾーン"@ja , "currentZone"@en ;
+  rdfs:comment "個体（パレット等）が現在存在するゾーン。gt:PalletSingleLocationShape により、同一有効時刻に単一の値のみ許される。"@ja ;
+  rdfs:range gt:Zone .
+
+gt:holds a owl:ObjectProperty ;
+  rdfs:label "保持する"@ja , "holds"@en ;
+  rdfs:comment "スロットが保持している個体。"@ja ;
+  rdfs:domain gt:Slot .
+
+gt:adjacentTo a owl:ObjectProperty ;
+  rdfs:label "隣接する"@ja , "adjacentTo"@en ;
+  rdfs:comment "スロット間の物理的な隣接関係（対称）。"@ja ;
+  rdfs:domain gt:Slot ;
+  rdfs:range gt:Slot .
+
+gt:hazClass a owl:DatatypeProperty ;
+  rdfs:label "危険物クラス"@ja , "hazClass"@en ;
+  rdfs:comment "個体が属する危険物分類。"@ja .
+
+gt:incompatibleWith a owl:ObjectProperty, owl:SymmetricProperty ;
+  rdfs:label "非互換"@ja , "incompatibleWith"@en ;
+  rdfs:comment "隣接配置できない危険物クラスの組。"@ja .
+
+#################################################################
+# プロパティ — gt:LatentRef
+#################################################################
+
+gt:modelVersion a owl:DatatypeProperty ;
+  rdfs:label "モデル版"@ja , "modelVersion"@en ;
+  rdfs:comment "潜在参照が指す世界モデルのバージョン識別子。"@ja ;
+  rdfs:domain gt:LatentRef ;
+  rdfs:range xsd:string .
+
+gt:slotId a owl:DatatypeProperty ;
+  rdfs:label "スロットID"@ja , "slotId"@en ;
+  rdfs:comment "潜在参照が指すスロットattentionのスロット番号。"@ja ;
+  rdfs:domain gt:LatentRef ;
+  rdfs:range xsd:integer .
+
+gt:atTime a owl:DatatypeProperty ;
+  rdfs:label "時刻"@ja , "atTime"@en ;
+  rdfs:comment "潜在参照が対応する時刻。"@ja ;
+  rdfs:domain gt:LatentRef ;
+  rdfs:range xsd:dateTime .
+
+#################################################################
+# プロパティ — gt:Intervention
+#################################################################
+
+gt:target a owl:ObjectProperty ;
+  rdfs:label "介入対象"@ja , "target"@en ;
+  rdfs:comment "介入の対象個体。"@ja ;
+  rdfs:domain gt:Intervention .
+
+gt:property a owl:ObjectProperty ;
+  rdfs:label "介入プロパティ"@ja , "property"@en ;
+  rdfs:comment "介入対象個体のうち上書きするプロパティ。"@ja ;
+  rdfs:domain gt:Intervention .
+
+gt:value a owl:DatatypeProperty ;
+  rdfs:label "介入値"@ja , "value"@en ;
+  rdfs:comment "介入で設定する値または式（例：1.2 * current）。"@ja ;
+  rdfs:domain gt:Intervention .
+
+gt:horizon a owl:DatatypeProperty ;
+  rdfs:label "ホライズン"@ja , "horizon"@en ;
+  rdfs:comment "介入結果を予測する将来時間幅。"@ja ;
+  rdfs:domain gt:Intervention .
+
+#################################################################
+# プロパティ — gt:ConceptCandidate
+#################################################################
+
+gt:evidenceCluster a owl:DatatypeProperty ;
+  rdfs:label "根拠クラスタ"@ja , "evidenceCluster"@en ;
+  rdfs:comment "概念候補の根拠となった予測残差クラスタの識別子・要約。"@ja ;
+  rdfs:domain gt:ConceptCandidate .
+
+gt:proposedLabel a owl:DatatypeProperty ;
+  rdfs:label "提案ラベル"@ja , "proposedLabel"@en ;
+  rdfs:comment "LLMが生成した概念候補の名称案（ja/en）。"@ja ;
+  rdfs:domain gt:ConceptCandidate ;
+  rdfs:range xsd:string .
+
+gt:reviewStatus a owl:DatatypeProperty ;
+  rdfs:label "レビュー状態"@ja , "reviewStatus"@en ;
+  rdfs:comment "概念候補の人によるレビュー状態（pending/approved/rejected）。"@ja ;
+  rdfs:domain gt:ConceptCandidate ;
+  rdfs:range xsd:string .

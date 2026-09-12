@@ -1,0 +1,21 @@
+@prefix gt: <https://example.org/gtwm/gt#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+# 危険物クラスの隣接禁止（poc_plan.md 5.3）。pyshacl advanced=True の SPARQL 制約として実行する。
+gt:HazmatAdjacencyShape a sh:NodeShape ;
+  sh:targetClass gt:Slot ;
+  sh:severity sh:Warning ;
+  sh:sparql [
+    sh:message "危険物クラスの隣接禁止に違反"@ja , "Violates hazardous-material adjacency prohibition"@en ;
+    sh:select """
+      PREFIX gt: <https://example.org/gtwm/gt#>
+      SELECT $this WHERE {
+        $this gt:holds ?a .
+        $this gt:adjacentTo ?s .
+        ?s gt:holds ?b .
+        ?a gt:hazClass ?ca .
+        ?b gt:hazClass ?cb .
+        ?ca gt:incompatibleWith ?cb .
+      }
+    """ ;
+  ] .
