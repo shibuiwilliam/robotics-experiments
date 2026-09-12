@@ -1,0 +1,43 @@
+# P1相当の現実らしさ設定（CLAUDE.md「絶対条件」、.claude/rules/sim.md、docs/prompts.md セッション08）。
+# 数値はここに置き、コードにハードコードしない（CLAUDE.md「コーディング規約」）。
+#
+# 2つの独立した軸：
+#   1. 一般ノイズ（anchor_*, record_*, occlusion_extra_miss_boost）：全アンカー・全記録に
+#      無差別にかかるセンサ・業務プロセスの雑さ。検知側はこれを知っていてよい
+#      （盲検の対象ではない、単なる現実的なノイズ）。
+#   2. 注入（injections）：検知側の性能を測るための狙った異常。`data/injections/` に
+#      台帳として書き出され、`eval/scoring.py` だけが読む（盲検、test_blindness.py）。
+
+# アンカー時刻ジッタ：±100〜300ms（sim.md「時間とアンカー」）。
+anchor_jitter_s_min: 0.1
+anchor_jitter_s_max: 0.3
+# アンカー欠落率（遮蔽・センサ不調によるアンカー未検出）。
+anchor_miss_rate: 0.05
+
+# 業務記録（EPCIS記録相当）の登録遅延・欠落・誤登録（sim.md「WMS モックと EPCIS」）。
+record_delay_s_min: 0.0
+record_delay_s_max: 3.0
+record_loss_rate: 0.03
+record_misregistration_rate: 0.02
+
+# 遮蔽の追加（棚裏通過・積み重ね・作業者による隠蔽の頻度）の近似実装。
+# session08時点ではシーン形状（MJCFのスタッキング比率・作業者経路）を作り直す
+# フルスコープの実装は見送り、「遮蔽が増える状況ではアンカーも見えにくくなる」を
+# anchor_miss_rate への追加寄与として近似する（docs/status.md に明記）。
+occlusion_extra_miss_boost: 0.03
+
+# 乖離注入：5型 × エピソードあたりの件数。p1_eval（10エピソード）で合計
+# 5型 × 10 = 50件以上（目標80件以上）を狙い、1エピソードあたり各型3件とする
+# （実際の候補数が足りない場合は生成側が候補数までに切り詰める）。
+injections:
+  unscanned_move: 3
+  wrong_slot: 3
+  wrong_scan: 3
+  late_registration: 3
+  ghost_stock: 3
+
+# late_registration 注入は一般ノイズの record_delay_s よりずっと大きい遅延にして
+# 区別できるようにする（実験seedとは別系統の injection_seed で決定される）。
+injection_late_registration_delay_s:
+  min: 60.0
+  max: 300.0

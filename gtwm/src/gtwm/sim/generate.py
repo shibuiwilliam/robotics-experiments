@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from gtwm.sim.env import PHYSICS_DT, RawTrajectory, WarehouseEnv
+from gtwm.sim.realism import RealismConfig, apply_observation_realism
 from gtwm.sim.registry import ontology_id
 from gtwm.sim.render import (
     camera_rotation_matrix,
@@ -56,6 +57,7 @@ class GenConfig:
     episodes: int
     duration_s: float
     seed: int
+    realism: RealismConfig | None = None  # None＝P0/smoke（realism 無効、既定）
 
 
 def _unify_anchor_events(anchor_df: pd.DataFrame, zones: dict[str, list[str]]) -> pd.DataFrame:
@@ -136,7 +138,12 @@ def _scan_records(anchor_df: pd.DataFrame, zones: dict[str, list[str]]) -> pd.Da
 
 
 def generate_episode(
-    set_name: str, episode_idx: int, duration_s: float, seed: int, output_root: Path | None = None
+    set_name: str,
+    episode_idx: int,
+    duration_s: float,
+    seed: int,
+    output_root: Path | None = None,
+    realism: RealismConfig | None = None,
 ) -> Path:
     """1エピソードを生成し、出力ディレクトリを返す。"""
     seed_everything(seed)
@@ -210,11 +217,18 @@ def generate_episode(
     events_df = pd.concat([anchor_events, gate_scale_records, scan_records], ignore_index=True)
     events_df = events_df.sort_values("t_true").reset_index(drop=True)
 
-    injection_cfg = InjectionConfig()
+    # 一般ノイズ（ジッタ・欠落・遅延・誤登録）は realism=None（P0/smoke）では no-op。
+    # 実験 seed をそのまま使う（センサ雑さは狙った異常ではなく無差別ノイズのため、
+    # injection_seed のような盲検分離は不要）。
+    if realism is not None:
+        events_df = apply_observation_realism(events_df, realism, seed=seed)
+
+    injection_cfg = realism.injections if realism is not None else InjectionConfig()
     events_df, injection_ledger = apply_injections(
         events_df, injection_cfg, injection_seed=seed + 1_000_000
     )
     if not injection_ledger.empty:
+        injection_ledger = injection_ledger.assign(episode_id=episode_id)
         ledger_dir = repo_root() / "data" / "injections"
         ledger_dir.mkdir(parents=True, exist_ok=True)
         injection_ledger.to_parquet(ledger_dir / f"{episode_id}.parquet", index=False)
@@ -262,6 +276,13 @@ def generate_set(cfg: GenConfig, output_root: Path | None = None) -> list[Path]:
     dirs = []
     for i in range(cfg.episodes):
         dirs.append(
-            generate_episode(cfg.set_name, i, cfg.duration_s, cfg.seed + i, output_root=output_root)
+            generate_episode(
+                cfg.set_name,
+                i,
+                cfg.duration_s,
+                cfg.seed + i,
+                output_root=output_root,
+                realism=cfg.realism,
+            )
         )
     return dirs
