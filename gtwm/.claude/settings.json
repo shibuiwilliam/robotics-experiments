@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make *)",
+      "Bash(uv *)",
+      "Bash(pytest *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Bash(docker compose *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(tail *)",
+      "Bash(ls *)"
+    ],
+    "deny": [
+      "Bash(rm -rf data*)",
+      "Bash(rm -rf runs*)",
+      "Bash(rm -rf mlruns*)",
+      "Bash(rm -rf .data*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Read(./.env)",
+      "Read(./.data/llm_cache.sqlite)"
+    ]
+  }
+}
