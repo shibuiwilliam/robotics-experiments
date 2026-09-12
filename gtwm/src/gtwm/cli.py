@@ -199,9 +199,49 @@ def exp_main(ctx: typer.Context) -> None:
 
 
 @whatif_app.callback(invoke_without_command=True)
-def whatif_main(ctx: typer.Context) -> None:
-    if ctx.invoked_subcommand is None:
-        _not_implemented("whatif")
+def whatif_main(
+    ctx: typer.Context,
+    query: str = typer.Argument(None, help="WHAT-IF クエリ文字列（付録Cの文法）"),
+    episode: str = typer.Option(
+        "ep_0000_seed0", "--episode", help="ロールアウトの初期状態に使うエピソードID"
+    ),
+    set_name: str = typer.Option("wm_smoke", "--set", help="data/sim/<set>/ のセット名"),
+    probe_config: str = typer.Option(
+        "configs/grounding/probe_train_smoke.yaml", "--probe-config", help="接地層設定"
+    ),
+) -> None:
+    """WHAT-IF クエリを解析・コンパイル・ロールアウトし、KPIの予測を表示する。"""
+    if ctx.invoked_subcommand is not None:
+        return
+    if query is None:
+        _not_implemented("whatif（クエリ文字列を引数で渡してください）")
+        return
+
+    from gtwm.kg.whatif.compiler import WhatIfCompileError
+    from gtwm.kg.whatif.engine import WhatIfUnsupportedVarError, run_whatif
+    from gtwm.kg.whatif.parser import WhatIfSyntaxError
+
+    try:
+        result = run_whatif(query, episode, set_name, probe_config)
+    except (WhatIfSyntaxError, WhatIfCompileError, WhatIfUnsupportedVarError) as exc:
+        console.print(f"[red]NG[/red]: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    table = Table(title=f"WHAT-IF 結果（model={result.model_version}）")
+    table.add_column("var")
+    table.add_column("horizon(s)")
+    table.add_column("point")
+    table.add_column(f"interval({result.interval_prob:.0%})")
+    table.add_column("n_rollouts")
+    for p in result.predictions:
+        table.add_row(
+            p.var,
+            f"{p.horizon_s:.0f}",
+            f"{p.point_estimate:.3f}",
+            f"[{p.interval_low:.3f}, {p.interval_high:.3f}]",
+            str(p.n_rollouts),
+        )
+    console.print(table)
 
 
 @llm_app.callback(invoke_without_command=True)
