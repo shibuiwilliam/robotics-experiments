@@ -1,0 +1,6 @@
+<mujocoinclude>
+  <body name="equipment:conveyor_1" pos="3.0 0 0.4">
+    <geom type="box" size="0.4 3.0 0.05" rgba="0.2 0.2 0.2 1"/>
+    <site name="equipment:conveyor_1" type="box" size="0.4 3.0 0.05" pos="0 0 0.06" rgba="0.2 0.2 0.2 0.0" group="2"/>
+  </body>
+</mujocoinclude>

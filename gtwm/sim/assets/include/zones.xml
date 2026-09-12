@@ -1,0 +1,11 @@
+<mujocoinclude>
+  <site name="zone:Dock_In" type="box" size="1.0 4.0 0.001" pos="-5.0 0 0.001" rgba="0.85 0.55 0.55 0.25" group="1"/>
+  <site name="zone:Inspect" type="box" size="1.0 4.0 0.001" pos="-3.0 0 0.001" rgba="0.85 0.75 0.45 0.25" group="1"/>
+  <site name="zone:Storage_A" type="box" size="1.0 4.0 0.001" pos="-1.0 0 0.001" rgba="0.55 0.75 0.85 0.25" group="1"/>
+  <site name="zone:Storage_B" type="box" size="1.0 4.0 0.001" pos="1.0 0 0.001" rgba="0.55 0.85 0.65 0.25" group="1"/>
+  <site name="zone:Pick" type="box" size="1.0 4.0 0.001" pos="3.0 0 0.001" rgba="0.75 0.55 0.85 0.25" group="1"/>
+  <site name="zone:Dock_Out" type="box" size="1.0 4.0 0.001" pos="5.0 0 0.001" rgba="0.85 0.55 0.75 0.25" group="1"/>
+  <site name="gate:1" type="box" size="0.02 4.0 0.3" pos="-4.0 0 0.3" rgba="0.9 0.1 0.1 0.4" group="2"/>
+  <site name="gate:2" type="box" size="0.02 4.0 0.3" pos="4.0 0 0.3" rgba="0.9 0.1 0.1 0.4" group="2"/>
+  <site name="scale:1" type="box" size="0.35 0.35 0.02" pos="-3.0 -3.0 0.02" rgba="0.2 0.2 0.9 0.4" group="2"/>
+</mujocoinclude>

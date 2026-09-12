@@ -1,0 +1,6 @@
+<mujocoinclude>
+  <camera name="cam:1" pos="-5.7 -3.7 4.5" quat="0.767538 0.427926 -0.232400 -0.416839" fovy="55"/>
+  <camera name="cam:2" pos="5.7 -3.7 4.5" quat="0.767538 0.427926 0.232400 0.416839" fovy="55"/>
+  <camera name="cam:3" pos="-5.7 3.7 4.5" quat="-0.416839 -0.232400 0.427926 0.767538" fovy="55"/>
+  <camera name="cam:4" pos="5.7 3.7 4.5" quat="0.416839 0.232400 0.427926 0.767538" fovy="55"/>
+</mujocoinclude>

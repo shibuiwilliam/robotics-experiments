@@ -1,0 +1,242 @@
+<mujocoinclude>
+  <body name="pallet:1" pos="-1.75 0.8 0.075">
+    <freejoint/>
+    <geom name="pallet:1" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:1" pos="-1.75 0.8 0.25">
+    <freejoint/>
+    <geom name="case:1" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:2" pos="-1.75 0.8 0.45">
+    <freejoint/>
+    <geom name="case:2" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:2" pos="1.55 3.55 0.075">
+    <freejoint/>
+    <geom name="pallet:2" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:3" pos="1.55 3.55 0.25">
+    <freejoint/>
+    <geom name="case:3" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:4" pos="1.55 3.55 0.45">
+    <freejoint/>
+    <geom name="case:4" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:3" pos="2.1 -0.85 0.075">
+    <freejoint/>
+    <geom name="pallet:3" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:5" pos="2.1 -0.85 0.25">
+    <freejoint/>
+    <geom name="case:5" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:6" pos="2.1 -0.85 0.45">
+    <freejoint/>
+    <geom name="case:6" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:4" pos="5.4 2.45 0.075">
+    <freejoint/>
+    <geom name="pallet:4" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:7" pos="5.4 2.45 0.25">
+    <freejoint/>
+    <geom name="case:7" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:8" pos="5.4 2.45 0.45">
+    <freejoint/>
+    <geom name="case:8" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:5" pos="-0.65 -3.6 0.075">
+    <freejoint/>
+    <geom name="pallet:5" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:9" pos="-0.65 -3.6 0.25">
+    <freejoint/>
+    <geom name="case:9" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:10" pos="-0.65 -3.6 0.45">
+    <freejoint/>
+    <geom name="case:10" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:6" pos="-1.2 -3.05 0.075">
+    <freejoint/>
+    <geom name="pallet:6" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:11" pos="-1.2 -3.05 0.25">
+    <freejoint/>
+    <geom name="case:11" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:12" pos="-1.2 -3.05 0.45">
+    <freejoint/>
+    <geom name="case:12" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:7" pos="4.3 -2.5 0.075">
+    <freejoint/>
+    <geom name="pallet:7" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:13" pos="4.3 -2.5 0.25">
+    <freejoint/>
+    <geom name="case:13" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:14" pos="4.3 -2.5 0.45">
+    <freejoint/>
+    <geom name="case:14" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:8" pos="3.75 3.55 0.075">
+    <freejoint/>
+    <geom name="pallet:8" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:15" pos="3.75 3.55 0.25">
+    <freejoint/>
+    <geom name="case:15" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:16" pos="3.75 3.55 0.45">
+    <freejoint/>
+    <geom name="case:16" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:9" pos="-4.5 3.55 0.075">
+    <freejoint/>
+    <geom name="pallet:9" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:17" pos="-4.5 3.55 0.25">
+    <freejoint/>
+    <geom name="case:17" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:18" pos="-4.5 3.55 0.45">
+    <freejoint/>
+    <geom name="case:18" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:10" pos="5.4 -3.6 0.075">
+    <freejoint/>
+    <geom name="pallet:10" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:19" pos="5.4 -3.6 0.25">
+    <freejoint/>
+    <geom name="case:19" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:20" pos="5.4 -3.6 0.45">
+    <freejoint/>
+    <geom name="case:20" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="pallet:11" pos="-5.6 -3.6 0.075">
+    <freejoint/>
+    <geom name="pallet:11" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:12" pos="-2.85 -1.95 0.075">
+    <freejoint/>
+    <geom name="pallet:12" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:13" pos="-2.85 -2.5 0.075">
+    <freejoint/>
+    <geom name="pallet:13" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:14" pos="-2.3 -0.3 0.075">
+    <freejoint/>
+    <geom name="pallet:14" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:15" pos="-4.5 2.45 0.075">
+    <freejoint/>
+    <geom name="pallet:15" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:16" pos="3.75 0.25 0.075">
+    <freejoint/>
+    <geom name="pallet:16" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:17" pos="0.45 -0.3 0.075">
+    <freejoint/>
+    <geom name="pallet:17" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:18" pos="-5.6 -0.3 0.075">
+    <freejoint/>
+    <geom name="pallet:18" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:19" pos="4.3 -0.85 0.075">
+    <freejoint/>
+    <geom name="pallet:19" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="pallet:20" pos="-5.05 -1.95 0.075">
+    <freejoint/>
+    <geom name="pallet:20" type="box" size="0.3 0.2 0.075" rgba="0.65 0.5 0.3 1" mass="15"/>
+  </body>
+  <body name="case:21" pos="4.85 -3.05 0.1">
+    <freejoint/>
+    <geom name="case:21" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:22" pos="0.45 -3.6 0.1">
+    <freejoint/>
+    <geom name="case:22" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:23" pos="-1.2 2.45 0.1">
+    <freejoint/>
+    <geom name="case:23" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:24" pos="-1.2 3.0 0.1">
+    <freejoint/>
+    <geom name="case:24" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:25" pos="-2.3 -3.6 0.1">
+    <freejoint/>
+    <geom name="case:25" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:26" pos="5.4 -1.4 0.1">
+    <freejoint/>
+    <geom name="case:26" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:27" pos="3.75 -0.85 0.1">
+    <freejoint/>
+    <geom name="case:27" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:28" pos="-0.65 -1.4 0.1">
+    <freejoint/>
+    <geom name="case:28" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:29" pos="-5.05 2.45 0.1">
+    <freejoint/>
+    <geom name="case:29" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:30" pos="-1.75 1.35 0.1">
+    <freejoint/>
+    <geom name="case:30" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:31" pos="-3.95 3.0 0.1">
+    <freejoint/>
+    <geom name="case:31" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:32" pos="-4.5 0.8 0.1">
+    <freejoint/>
+    <geom name="case:32" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:33" pos="-3.4 3.0 0.1">
+    <freejoint/>
+    <geom name="case:33" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:34" pos="-2.85 -0.85 0.1">
+    <freejoint/>
+    <geom name="case:34" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:35" pos="-0.65 -1.95 0.1">
+    <freejoint/>
+    <geom name="case:35" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:36" pos="-1.2 3.55 0.1">
+    <freejoint/>
+    <geom name="case:36" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:37" pos="-5.6 -0.85 0.1">
+    <freejoint/>
+    <geom name="case:37" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:38" pos="-3.4 1.35 0.1">
+    <freejoint/>
+    <geom name="case:38" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:39" pos="4.85 -1.95 0.1">
+    <freejoint/>
+    <geom name="case:39" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+  <body name="case:40" pos="0.45 2.45 0.1">
+    <freejoint/>
+    <geom name="case:40" type="box" size="0.1 0.1 0.1" rgba="0.8 0.7 0.4 1" mass="3"/>
+  </body>
+</mujocoinclude>
