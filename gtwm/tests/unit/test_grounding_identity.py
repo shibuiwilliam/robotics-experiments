@@ -52,6 +52,20 @@ def test_update_occluded_entities_holds_predicted_position() -> None:
     assert np.allclose(updated[0].predicted_xy, [1.5, 1.5])
 
 
+def test_update_occluded_entities_refreshes_matched_position() -> None:
+    # マッチした個体の predicted_xy は、次フレーム以降の追跡・遮蔽時の外挿の基準に
+    # なるため、観測された新しい位置に更新されなければならない（更新されないと、
+    # 「最後に見えた位置」が初期化時のまま固定され続けるバグになる。EXP-02 で発見）。
+    entities = [_entity("gt:Pallet_0001", (1.0, 1.0))]
+    from gtwm.grounding.identity import AssignmentResult
+
+    result = AssignmentResult(slot_to_entity={0: "gt:Pallet_0001"})
+    slot_positions = np.array([[3.0, 4.0]])
+    updated = update_occluded_entities(entities, result, {}, step=1, slot_positions=slot_positions)
+    assert updated[0].occluded is False
+    assert np.allclose(updated[0].predicted_xy, [3.0, 4.0])
+
+
 def test_force_reidentify_overrides_position() -> None:
     entities = [_entity("gt:Pallet_0001", (1.0, 1.0))]
     entities[0].occluded = True
