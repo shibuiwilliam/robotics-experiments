@@ -62,11 +62,18 @@ def sim_gen(
     episodes: int = typer.Option(1, "--episodes", help="生成するエピソード数"),
     duration: float = typer.Option(30.0, "--duration", help="1エピソードの長さ（秒）"),
     seed: int = typer.Option(0, "--seed", help="開始シード（エピソードごとに +1 される）"),
+    realism: str = typer.Option(
+        None, "--realism", help="configs/realism/*.yaml のパス（未指定なら P0/smoke＝無効）"
+    ),
 ) -> None:
     """MuJoCo 倉庫シミュレーションでエピソードを生成する。"""
     from gtwm.sim.generate import GenConfig, generate_set
+    from gtwm.sim.realism import load_realism_config
 
-    cfg = GenConfig(set_name=set_name, episodes=episodes, duration_s=duration, seed=seed)
+    realism_cfg = load_realism_config(realism) if realism else None
+    cfg = GenConfig(
+        set_name=set_name, episodes=episodes, duration_s=duration, seed=seed, realism=realism_cfg
+    )
     dirs = generate_set(cfg)
     for d in dirs:
         console.print(f"[green]生成完了[/green]: {d}")
