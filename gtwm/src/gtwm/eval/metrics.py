@@ -292,6 +292,44 @@ def reid_top1(preds: Sequence[int], labels: Sequence[int]) -> float:
     return sum(1 for p, y in zip(preds, labels, strict=True) if p == y) / len(preds)
 
 
+def roc_auc(scores: Sequence[float], labels: Sequence[int]) -> float:
+    """AUROC（poc_plan.md 3.1 H3「ドリフト検知のAUROC」）。
+
+    Mann-Whitney U 統計量からノンパラメトリックに計算する（scikit-learn 非依存）：
+    AUC = (陽性クラスの順位和 − n_pos(n_pos+1)/2) / (n_pos・n_neg)。
+    同点は平均順位で扱う。`labels` は0/1（1=陽性、例：ドリフト後のエピソード）。
+
+    例：roc_auc([0.1, 0.4, 0.9], [0, 0, 1]) == 1.0（陽性が常に陰性よりスコアが高い）
+        roc_auc([0.5, 0.5], [0, 1]) == 0.5（完全な同点＝チャンスレベル）
+    """
+    if len(scores) != len(labels):
+        raise ValueError("scores と labels は同じ長さである必要があります")
+    scores_arr = np.asarray(scores, dtype=float)
+    labels_arr = np.asarray(labels, dtype=int)
+    n_pos = int((labels_arr == 1).sum())
+    n_neg = int((labels_arr == 0).sum())
+    if n_pos == 0 or n_neg == 0:
+        raise ValueError("labels には陽性・陰性の両方が必要です")
+
+    order = np.argsort(scores_arr, kind="mergesort")
+    sorted_scores = scores_arr[order]
+    ranks = np.empty(len(scores_arr))
+    i = 0
+    rank = 1
+    while i < len(sorted_scores):
+        j = i
+        while j + 1 < len(sorted_scores) and sorted_scores[j + 1] == sorted_scores[i]:
+            j += 1
+        avg_rank = (rank + rank + (j - i)) / 2.0
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg_rank
+        rank += j - i + 1
+        i = j + 1
+
+    sum_ranks_pos = float(ranks[labels_arr == 1].sum())
+    return (sum_ranks_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
+
+
 __all__ = [
     "position_mismatch",
     "fact_distance_d",
@@ -308,4 +346,5 @@ __all__ = [
     "ece",
     "reconstruction_ssim",
     "reid_top1",
+    "roc_auc",
 ]

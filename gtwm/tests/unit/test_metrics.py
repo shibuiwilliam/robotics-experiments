@@ -120,3 +120,21 @@ def test_reconstruction_ssim_shape_mismatch() -> None:
 def test_reid_top1() -> None:
     assert metrics.reid_top1([1, 2, 3], [1, 2, 4]) == pytest.approx(2 / 3)
     assert metrics.reid_top1([], []) == 0.0
+
+
+def test_roc_auc_perfect_separation() -> None:
+    assert metrics.roc_auc([0.1, 0.4, 0.9], [0, 0, 1]) == pytest.approx(1.0)
+
+
+def test_roc_auc_chance_level_on_tie() -> None:
+    assert metrics.roc_auc([0.5, 0.5], [0, 1]) == pytest.approx(0.5)
+
+
+def test_roc_auc_worse_than_chance() -> None:
+    # 陽性(label=1)が常に陰性より低スコア -> AUC は0（完全な逆順）。
+    assert metrics.roc_auc([0.9, 0.1], [0, 1]) == pytest.approx(0.0)
+
+
+def test_roc_auc_requires_both_classes() -> None:
+    with pytest.raises(ValueError):
+        metrics.roc_auc([0.1, 0.2], [0, 0])
