@@ -1,0 +1,139 @@
+# 全実験の合格基準の唯一の置き場（.claude/rules/experiments.md）。
+# 数値は docs/poc_plan.md 3.1「仮説一覧」から一字一句変えずに転記する。
+# コード内に閾値を書かない。基準の変更は docs/adr/ に ADR を書いてから行う。
+
+H1:
+  hypothesis: 潜在状態から業務事実を高精度に復号できる
+  stage: P0/P1
+  metrics:
+    position_fact_f1:
+      target: 0.90
+      op: ">="
+    type_accuracy:
+      target: 0.95
+      op: ">="
+    id_switch_rate:
+      target: 0.05
+      unit: 回/物体・時間
+      op: "<="
+
+H2:
+  hypothesis: 記号条件付けはWMの予測を改善する
+  stage: P0/P1
+  metrics:
+    error_improvement_60s:
+      target: 0.20
+      unit: 割合（無条件比）
+      op: ">="
+    effective_horizon_ratio:
+      target: 1.5
+      unit: 倍（無条件比）
+      op: ">="
+
+H3:
+  hypothesis: 整合性ギャップ ε はプロセス逸脱の検知指標として機能する
+  stage: P1
+  metrics:
+    drift_detection_auroc:
+      target: 0.85
+      op: ">="
+    epsilon_daily_cv:
+      target: 0.2
+      unit: 変動係数
+      op: "<="
+
+H4:
+  hypothesis: 物理と記録の乖離を自動検知できる
+  stage: P1
+  metrics:
+    detection_rate:
+      target: 0.90
+      op: ">="
+    false_alarms_per_day:
+      target: 2
+      unit: 件/日
+      op: "<="
+    detection_latency_median_s:
+      target: 60
+      unit: 秒
+      op: "<="
+
+H5:
+  hypothesis: オントロジー制約を計画のハード制約として保証できる
+  stage: P1
+  metrics:
+    violations_with_shield:
+      target: 0
+      op: "=="
+    throughput_loss:
+      target: 0.05
+      unit: 割合
+      op: "<="
+
+H6:
+  hypothesis: WHAT-IFの反実仮想予測は実測と整合する
+  stage: P2
+  metrics:
+    kpi_relative_error:
+      target: 0.15
+      unit: 割合
+      op: "<="
+    interval_coverage_90:
+      target: 0.80
+      op: ">="
+
+H7:
+  hypothesis: 未知の概念を残差から発見できる
+  stage: P2
+  metrics:
+    injected_concept_top5_hit:
+      target: 2
+      unit: 種（3種中）
+      op: ">="
+
+H8:
+  hypothesis: 拠点間で予測を安全に交換できる
+  stage: P2
+  metrics:
+    ece:
+      target: 0.05
+      op: "<="
+    reconstruction_ssim:
+      target: 0.30
+      op: "<="
+    reid_top1_vs_chance:
+      target: 1.2
+      unit: 倍（チャンス率比）
+      op: "<="
+
+H9:
+  hypothesis: オペレータの例外処理が改善する
+  stage: P2
+  metrics:
+    resolution_time_reduction:
+      target: 0.30
+      unit: 割合短縮
+      op: ">="
+    correction_reflection_rate:
+      target: 0.95
+      op: ">="
+    sus_score:
+      target: 70
+      op: ">="
+
+N1:
+  hypothesis: 非機能要件を満たす
+  stage: P1/P2
+  metrics:
+    e2e_latency_s:
+      target: 1.0
+      unit: 秒（観測→信念KG更新）
+      op: "<="
+    availability:
+      target: 0.99
+      unit: 稼働率（営業時間）
+      op: ">="
+    monthly_cost_per_zone:
+      target: null
+      unit: 試算提示のみ（閾値なし）
+      op: report_only
