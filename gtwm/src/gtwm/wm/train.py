@@ -1,18 +1,29 @@
 """世界モデルの学習ループ（Hydra 設定、MLflow 記録、チェックポイント、早期終了）。
 
-損失は予測損失（潜在）のみを既定重み1.0で使う（アンカー接地損失・制約損失・同一性
-損失は接地層の実装が揃う session 05 以降で `loss_weights` を通じて有効化する）。
+損失は既定では予測損失（潜在）のみ（重み1.0）。アンカー接地損失・制約損失は
+session 05（接地層）で `loss_weights.anchor_grounding` / `loss_weights.constraint` を
+通じて有効化できる。ただし `probe` / `anchor_samples` を明示的に渡した場合のみ計算する
+（既定は None のため、既存の `configs/wm/*.yaml` の挙動は変わらない）。同一性損失は
+接地層の識別（`grounding/identity.py`）がバッチ単位のトラック情報を持つ形になっていない
+ため、このセッションでは未接続のまま残す（`docs/status.md` に記載）。
+
+循環 import を避けるため、ここでは `gtwm.grounding.constraints`（`wm` に依存しない
+純粋関数）だけを読み込む。`gtwm.grounding.probes.Probe` 型と `AnchorSample` はダック
+タイピングで受け取り、型チェックのみ `TYPE_CHECKING` の下で行う
+（`gtwm.grounding.train_probes` が `gtwm.wm.train` に依存するため、逆方向の実 import は
+循環になる）。
 """
 
 from __future__ import annotations
 
 import os
+import random
 import re
 import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mlflow
 import numpy as np
@@ -22,15 +33,26 @@ from scipy.optimize import linear_sum_assignment
 from torch import Tensor
 from torch.utils.data import DataLoader
 
+from gtwm.grounding.constraints import constraint_loss
 from gtwm.utils.config import to_container
 from gtwm.utils.device import get_device
 from gtwm.utils.paths import repo_root
 from gtwm.utils.seed import seed_everything
-from gtwm.wm.dataset import WMSequenceDataset, camera_names, chronological_split, list_episodes
+from gtwm.wm.dataset import (
+    WMSequenceDataset,
+    camera_names,
+    chronological_split,
+    list_episodes,
+    read_single_frame,
+)
 from gtwm.wm.dynamics import Dynamics
 from gtwm.wm.encoder import Encoder, build_encoder
 from gtwm.wm.fusion import FusionModule, load_camera_params
 from gtwm.wm.slots import SlotModule
+
+if TYPE_CHECKING:
+    from gtwm.grounding.anchors_labels import AnchorSample
+    from gtwm.grounding.probes import Probe
 
 
 @dataclass
@@ -161,10 +183,59 @@ def _save_checkpoint(modules: WMModules, checkpoint_dir: Path) -> None:
     )
 
 
-def train(cfg: DictConfig) -> dict[str, Any]:
-    """`gtwm wm train` の実体。返り値は最終メトリクス（テストからも呼べるように）。"""
+def _anchor_grounding_loss(
+    modules: WMModules,
+    probe: Probe,
+    anchor_samples: list[AnchorSample],
+    cam_names: list[str],
+    device: str,
+    batch_size: int = 4,
+) -> Tensor:
+    """アンカー時刻の真値ゾーンに対する交差エントロピー（`grounding/train_probes.py` の
+    学習ループと同じ割当規則：現在の床面座標予測に最も近いスロットへ教師信号を当てる）。
+    """
+    batch = random.sample(anchor_samples, k=min(batch_size, len(anchor_samples)))
+    frames = torch.cat([read_single_frame(s.episode, s.frame_idx) for s in batch], dim=0).to(
+        device
+    )  # [N,1,C,3,H,W]
+    fused = encode_sequence(modules, frames, cam_names)  # [N,1,K,D]
+    slots = fused[:, 0]  # [N,K,D]
+    floor_pred = probe.floor_head(slots)  # [N,K,2]
+    zone_logit = probe.zone_head(slots)  # [N,K,n_zones]
+
+    targets_xy = torch.tensor([s.xy for s in batch], dtype=floor_pred.dtype, device=device)
+    with torch.no_grad():
+        dists = (floor_pred - targets_xy.unsqueeze(1)).norm(dim=-1)  # [N,K]
+        assign_idx = dists.argmin(dim=-1)  # [N]
+    idx_range = torch.arange(len(batch), device=device)
+    zone_sel = zone_logit[idx_range, assign_idx]
+    zone_targets = torch.tensor([s.zone_idx for s in batch], device=device)
+    return torch.nn.functional.cross_entropy(zone_sel, zone_targets)
+
+
+def train(
+    cfg: DictConfig,
+    probe: Probe | None = None,
+    anchor_samples: list[AnchorSample] | None = None,
+) -> dict[str, Any]:
+    """`gtwm wm train` の実体。返り値は最終メトリクス（テストからも呼べるように）。
+
+    `probe` と `anchor_samples` を渡すと、`cfg.train.loss_weights.anchor_grounding` /
+    `.constraint` が0より大きい場合に、それぞれアンカー接地損失・制約損失を予測損失に
+    加算する（接地層 session 05 の統合）。どちらも省略すれば従来通り予測損失のみ
+    （`configs/wm/*.yaml` の既存 smoke/base 設定は変更なしで動く）。
+    """
     device = get_device()
     seed_everything(cfg.train.seed)
+
+    use_anchor_grounding = (
+        probe is not None
+        and anchor_samples
+        and float(cfg.train.loss_weights.get("anchor_grounding", 0.0)) > 0.0
+    )
+    use_constraint = (
+        probe is not None and float(cfg.train.loss_weights.get("constraint", 0.0)) > 0.0
+    )
 
     episodes = list_episodes(cfg.train.data_set)
     if not episodes:
@@ -227,6 +298,23 @@ def train(cfg: DictConfig) -> dict[str, Any]:
                     )  # アンサンブル平均で学習（不確実性は評価時に分散から）
 
                     loss = cfg.train.loss_weights.prediction * matched_prediction_loss(pred, target)
+
+                    if use_constraint:
+                        assert probe is not None
+                        zone_probs = probe.zone_probs(context, calibrated=False)  # [B,K,n_zones]
+                        loss = loss + cfg.train.loss_weights.constraint * constraint_loss(
+                            zone_probs.reshape(-1, zone_probs.shape[-1])
+                        )
+
+                    if use_anchor_grounding:
+                        assert probe is not None and anchor_samples
+                        loss = (
+                            loss
+                            + cfg.train.loss_weights.anchor_grounding
+                            * _anchor_grounding_loss(
+                                modules, probe, anchor_samples, cam_names, device
+                            )
+                        )
                 fallback_ops.update(_extract_mps_fallback_ops(caught))
 
                 optimizer.zero_grad()

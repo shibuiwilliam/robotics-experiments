@@ -1,0 +1,29 @@
+# 整合性ギャップ ε の重みと閾値（poc_plan.md 付録A）。
+# コードに数値を書かず、必ずこのファイルから読む（world_model.md「接地層の実装規則」）。
+
+d_weights:
+  position: 0.4
+  state: 0.3
+  relations: 0.2
+  type: 0.1
+  # 位置事実の不一致：ゾーン一致=0、隣接ゾーン=zone_adjacent_penalty、それ以外=1（付録A）。
+  zone_adjacent_penalty: 0.5
+
+horizons_s:
+  h10s: 10
+  h60s: 60
+  h5min: 300
+  h30min: 1800
+
+# 有効ホライズン H*（付録A）：記号空間誤差がこれを超えない最大の h。
+effective_horizon_tau: 0.2
+
+# SHACL 検証対象とする信念の確信度下限（ontology.md）。
+confidence_threshold: 0.7
+
+calibration:
+  # 温度スケーリングの探索範囲（グリッドサーチ、ontology.md「確信度は温度スケーリングで較正」）。
+  temperature_grid_min: 0.1
+  temperature_grid_max: 5.0
+  temperature_grid_steps: 50
+  target_ece: 0.05

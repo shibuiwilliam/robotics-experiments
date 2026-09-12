@@ -169,6 +169,29 @@ def ground_main(ctx: typer.Context) -> None:
         _not_implemented("ground")
 
 
+@ground_app.command("run")
+def ground_run_cmd(
+    episode: str = typer.Option(..., "--episode", help="エピソードID（ディレクトリ名）"),
+    set_name: str = typer.Option("smoke", "--set", help="data/sim/<set>/ のセット名"),
+    probe_config: str = typer.Option(
+        "configs/grounding/probe_train_smoke.yaml", "--probe-config", help="接地層設定"
+    ),
+) -> None:
+    """接地層パイプラインを1エピソードに対して実行し、信念・ε・乖離台帳を生成する。"""
+    from gtwm.grounding.ground_run import run_ground
+
+    result = run_ground(episode, set_name, probe_config)
+    console.print(
+        f"[green]完了[/green]: beliefs={result.n_beliefs} "
+        f"ledger_entries={result.n_ledger_entries} -> {result.output_dir}"
+    )
+    for record in result.epsilon_records:
+        console.print(
+            f"  epsilon_{record.horizon_s:.0f}s = {record.epsilon:.4f} "
+            f"(n={record.n_samples}, decomposition={record.decomposition})"
+        )
+
+
 @exp_app.callback(invoke_without_command=True)
 def exp_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:

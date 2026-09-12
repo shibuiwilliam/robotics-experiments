@@ -1,0 +1,13 @@
+# 意味プローブ α のアンカー自己教師あり学習（smoke）。3分以内で終わること。
+wm_config: configs/wm/smoke.yaml
+data_set: wm_smoke
+eval_fraction: 0.3
+seed: 0
+lr: 1.0e-3
+n_steps: 6000
+batch_size: 8
+existence_threshold: 0.5
+loss_weights:
+  zone: 1.0
+  floor: 0.05
+  type: 0.5
