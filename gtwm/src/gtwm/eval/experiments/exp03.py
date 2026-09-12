@@ -25,6 +25,7 @@ import torch
 from omegaconf import DictConfig
 from torch.nn import functional as F
 
+from gtwm.eval.stats import paired_bootstrap_ci
 from gtwm.grounding.conditioning import Conditioner, KGSubgraph
 from gtwm.sim.env import ZONE_NAMES
 from gtwm.utils.config import load_config
@@ -144,6 +145,31 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         result["error_improvement_60s"] = (none_err - dynamic_err) / none_err
     else:
         result["error_improvement_60s"] = float("nan")
+
+    # 対応あり比較（同一時刻・同一文脈に対する none/static/dynamic の誤差なので
+    # ペアが保たれている）。`.claude/rules/experiments.md`「比較実験は...対応ありの
+    # 比較にし、paired_bootstrap_ci() を使う」に従う。
+    none_samples = errors["none"][closest_h]
+    static_samples = errors["static"][closest_h]
+    dynamic_samples = errors["dynamic"][closest_h]
+    if len(none_samples) >= 2:
+        ci_dynamic = paired_bootstrap_ci(none_samples, dynamic_samples)
+        ci_static = paired_bootstrap_ci(none_samples, static_samples)
+        result["error_reduction_dynamic_vs_none_point"] = ci_dynamic["point_estimate"]
+        result["error_reduction_dynamic_vs_none_ci_low"] = ci_dynamic["ci_low"]
+        result["error_reduction_dynamic_vs_none_ci_high"] = ci_dynamic["ci_high"]
+        result["error_reduction_static_vs_none_point"] = ci_static["point_estimate"]
+        result["error_reduction_static_vs_none_ci_low"] = ci_static["ci_low"]
+        result["error_reduction_static_vs_none_ci_high"] = ci_static["ci_high"]
+    else:
+        # smoke データが短すぎてペア数<2の場合はブートストラップ不能。本実行では
+        # ペア数が十分になる（config.yaml の full_run 節参照）。
+        result["error_reduction_dynamic_vs_none_point"] = float("nan")
+        result["error_reduction_dynamic_vs_none_ci_low"] = float("nan")
+        result["error_reduction_dynamic_vs_none_ci_high"] = float("nan")
+        result["error_reduction_static_vs_none_point"] = float("nan")
+        result["error_reduction_static_vs_none_ci_low"] = float("nan")
+        result["error_reduction_static_vs_none_ci_high"] = float("nan")
 
     tau = float(config.effective_horizon_tau)
     none_h_star = max(
