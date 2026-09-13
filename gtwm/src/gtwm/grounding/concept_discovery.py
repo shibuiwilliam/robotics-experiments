@@ -68,6 +68,9 @@ class ConceptCandidateRecord:
     n_members: int
     mean_residual_norm: float
     naming: ConceptNamingOutput
+    # メンバーの (episode_id, frame_idx) 一覧。`eval/scoring.py`（盲検境界の唯一の例外）が
+    # 注入台帳との時間的な対応付けに使う。残差ベクトル自体は含めない（不要な肥大化を避ける）。
+    member_episode_frames: list[tuple[str, int]]
 
 
 def _encode_episode_slots(
@@ -161,16 +164,38 @@ def cluster_residuals(
 
 def filter_unexplained_clusters(
     clusters: dict[int, list[ResidualSample]],
+    residual_norm_percentile: float = 50.0,
     type_confidence_threshold: float = _TYPE_CONFIDENCE_EXPLAINED,
 ) -> dict[int, list[ResidualSample]]:
-    """既存の型ヘッドで高確信度に説明できるクラスタ（平均 type_confidence が閾値以上）を除外する。
+    """既存記号で説明できるクラスタを除外し、「うまく説明できない」クラスタだけを残す。
 
-    残るのは「既存記号でうまく説明できない」＝概念発見の対象クラスタ。
+    2つの信号を使う：
+    (1) 平均予測残差ノルムが低い（＝WMが1ステップ先をよく予測できている）クラスタは、
+        既存の動態モデルで十分説明できるとみなし除外する。閾値は「全クラスタの中央値
+        以上の残差ノルムを持つクラスタだけを残す」という相対基準（`residual_norm_percentile`）
+        で決め、固定の絶対値をコードに書かない。
+    (2) 型ヘッドの平均確信度が極端に低いクラスタ（型そのものが不明）も対象に残す
+        （(1)を満たさなくても、型不明という別の意味で「既存記号で説明できない」ため）。
+
+    NOTE：型ヘッド（pallet/case/agv/worker/equipment/none の6分類）の確信度だけでは
+    「概念的な新規性」を判定できない（例：積み重ねケースの上段は依然として高確信度で
+    "case" に分類されるが、荷姿としては未登録の変種である）。そのため (1) を主信号、
+    (2) を補助信号として扱う。
     """
+    if not clusters:
+        return {}
+    mean_norms = {
+        label: float(np.mean([np.linalg.norm(m.residual_vec) for m in members]))
+        for label, members in clusters.items()
+    }
+    norm_cutoff = float(np.percentile(list(mean_norms.values()), residual_norm_percentile))
+
     unexplained = {}
     for label, members in clusters.items():
         mean_conf = float(np.mean([m.type_confidence for m in members]))
-        if mean_conf < type_confidence_threshold:
+        high_residual = mean_norms[label] >= norm_cutoff
+        low_type_confidence = mean_conf < type_confidence_threshold
+        if high_residual or low_type_confidence:
             unexplained[label] = members
     return unexplained
 
@@ -208,6 +233,7 @@ def name_candidates(
                     n_members=len(members),
                     mean_residual_norm=mean_norm,
                     naming=naming,
+                    member_episode_frames=[(m.episode_id, m.frame_idx) for m in members],
                 )
             )
     finally:

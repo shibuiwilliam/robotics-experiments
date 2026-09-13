@@ -3,7 +3,9 @@
 最終更新: 2026-09-13
 
 ## 現在のフェーズ
-P1 相当（realism・EXP-04/05/11）完了。CLAUDE.md「現在のフェーズと着手順」の 9（P2 相当）が次。
+P2 相当の一部（概念発見・LLM クライアント・EXP-08）完了。CLAUDE.md「現在のフェーズと
+着手順」の 9 のうち残り（2拠点連合＝EXP-09、反実仮想の忠実性＝EXP-07、EXP-10 準備）が次
+（docs/prompts.md ではセッション10・11として分離されている）。
 
 ## 着手順チェックリスト
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
@@ -14,7 +16,8 @@ P1 相当（realism・EXP-04/05/11）完了。CLAUDE.md「現在のフェーズ�
 - [x] 6. eval（ランナー、EXP-01/02/03/06）
 - [x] 7. whatif + ui
 - [x] 8. P1 相当（realism、EXP-04/05/11）
-- [ ] 9. P2 相当（概念発見、2拠点連合、EXP-07/08/09、EXP-10 準備）
+- [~] 9. P2 相当：概念発見・LLM クライアント・EXP-08 は完了。2拠点連合（EXP-09）、
+      反実仮想の忠実性（EXP-07）、EXP-10 準備は未着手
 
 ## 実験の状態
 | EXP | 仮説 | 状態 | 最新結果（runs/ パス） | 判定 |
@@ -26,6 +29,7 @@ P1 相当（realism・EXP-04/05/11）完了。CLAUDE.md「現在のフェーズ�
 | EXP-05 | H4（乖離注入と検知） | smoke実行済み | `runs/EXP-05/20260913-085936`：detection_rate=0.567(17/30), false_alarms_per_day≈149760（smoke分母が極小なための人為的な跳ね上がり）, detection_latency_median_s=0.0 | 参考（smoke） |
 | EXP-06 | H5（シールド付き計画） | smoke実行済み | `runs/EXP-06/20260913-074554`：violations_with_shield=0/3, violations_without_shield=3/3, throughput_loss≈1.42 | 参考（smoke） |
 | EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
+| EXP-08 | H7（概念発見） | smoke実行済み | `runs/EXP-08/20260913-100119`：n_candidates=5, injected_concept_top5_hit=3/3種（目標2種以上） | 参考（smoke） |
 
 ## 既知の制約・記録
 - MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
@@ -108,3 +112,61 @@ P1 相当（realism・EXP-04/05/11）完了。CLAUDE.md「現在のフェーズ�
 - **realism有無でのε_60s比較（重要な発見）**：90秒エピソード・同一seed=5001・smoke probe設定で実測した結果、realism ON/OFF で ε_60s は**完全に同一の値**（0.3515151515151509、n=99）になった。誤差の範囲内の「有意差なし」ではなく、ビット単位で同一の浮動小数点値であり、原因を追跡したところ構造的な理由が判明した：`consistency.compute_epsilon`のF^h（業務プロセスの遷移）は`expected_future_zone_idx = s.perceived_zone_idx`という恒等写像（＝WM自身の知覚ゾーンをそのままh秒後の期待値とする）で実装されており、`events.parquet`（realismが唯一変更する対象）を一切参照しない。そのためrealism設定（アンカージッタ・記録遅延・注入等、すべて`events.parquet`側の変換）はε計算に数学的に影響し得ない。これはEXP-05で発見・修正した欠落（`ground_run.py`の乖離検知ロジックも当初`events.parquet`を見ていなかった）と同じ根本原因の別箇所での再発であり、session05の申し送り「将来`wms_mock.generate_orders`の割当を使った真のF^hに置き換える」がまさにこの箇所を指す。今回はEXP-05のdetection_rate=0（ゼロ）ほど致命的ではなく（ε自体は依然WM内部の一貫性指標として機能しており、EXP-04のドリフト検知はF^hを介さず「知覚ゾーンの時間変化」を直接見ているため実際に機能している）、かつconsistency.pyの中核セマンティクス変更はEXP-04の再検証も必要になる大きめの変更のため、本セッションでは修正せず、次セッションへの申し送り事項として記録するに留める：**F^hを`events.parquet`の直近の記録ゾーンを参照するよう改修すれば、ε はrealism/注入に反応するようになるはずである**。
 - **EXP-04/05/11 の smoke 所要時間**：181s（EXP-04）、90〜99s（EXP-05）、139s（EXP-11）、いずれも5分予算に十分な余裕。EXP-04は当初n_baseline=n_drift=3で290.8sと5分予算に対し危険なマージンだったため、n=2+2に縮小して181sに短縮した。
 - **EXP-11の簡略化**：E2E遅延はバッチ実装（全フレーム処理後に1回だけ`store.add_beliefs`）の「フレーム読込開始→コミット完了」の経過時間なので、ストリーミング実装より悲観的な上限になる（smoke実測 p50≈7.16s, p95≈11.89s、目標1.0秒に対しては未達だが、バッチ設計に起因する誠実な数値であり水増ししていない）。稼働率はデプロイされたサービスが無いと本来測れない（全フェーズシミュレーションのPoCでは対象外）ため、パイプラインの完走率を代理指標として報告（smoke: 3/3=1.0）。月額コストは実測生成速度からのナラティブな概算（$180/区画/月、閾値なしの`report_only`）。
+
+## 着手順9（概念発見・LLMクライアント、一部）の実装メモ（2026-09-13）
+
+- **LLM クライアント（`gtwm.llm`）**：`LLMClient` が anthropic/openai/gemini/mock の4プロバイダを
+  `configs/llm.yaml`（タスク→provider/model の唯一の置き場、モデル名はプレースホルダーで
+  実在未確認）で切替。SQLite キャッシュ（(provider,model,prompt hash,schema hash)キー）、
+  `runs/llm_usage.jsonl` への使用量記録（コスト不明時はnull、推定しない）、
+  `LLM_MONTHLY_BUDGET_USD` 超過時の呼出拒否、失敗時の自動フォールバック無し、を実装。
+  `gtwm llm ping`：`.env` が無い開発機では anthropic/openai/gemini=NG（未設定）、mock=OK を
+  クラッシュせず報告することを確認済み。テストは `configs/llm_mock.yaml`（全タスクmock固定）
+  のみ使用し実課金は一切発生しない。
+- **概念発見（`grounding/concept_discovery.py`）**：予測残差収集（1ステップ先の
+  `Dynamics.rollout` と実際の次フレームエンコード結果の差、LLM不使用）→ HDBSCAN
+  クラスタリング（`allow_single_cluster=True`。既定では「データ全体が単一クラスタ」を
+  許さないHDBSCANの仕様により、支配的な残差パターンが1つしか無い場合に全件ノイズ扱いに
+  なることを実データで確認したため必須）→ 説明可能クラスタの除外 → 上位クラスタのみ
+  `gtwm.llm` の concept_naming タスクで命名 → `gt:ConceptCandidate`（reviewStatus=pending）
+  としてKGに保存（オントロジーへの自動追加はしない）。
+- **重要な実装バグを発見・修正**：当初 `filter_unexplained_clusters` は型ヘッド
+  （pallet/case/agv/worker/equipment/noneの6分類）の平均確信度だけで「既存記号で
+  説明済みか」を判定していたが、実データ（p2_concept、後述）で検証したところ
+  27クラスタ全てが型確信度0.6以上となり **候補が0件** になった。原因：積み重ねケースの
+  上段（oversized_cargo_proxy）は型としては依然「case」に高確信度で分類されるため、
+  型確信度だけでは「荷姿として未登録」という概念的新規性を捉えられない。修正：
+  クラスタの平均予測残差ノルムが全クラスタの中央値以上（相対基準、固定値をコードに
+  書かない）のクラスタも対象に加える（型不明という信号と、動態予測が苦手という信号の
+  OR）。修正後、実データで5候補が生成され、EXP-08 で3種中3種が命中した。
+- **EXP-08 向け概念注入（`sim/concept_injection.py`、新規）**：poc_plan.md 6.2 の
+  「新しい荷姿・工程・置き場運用」3種を実装：
+  1. `oversized_cargo_proxy`：新形状を作る代わりに、既存倉庫に元からある3段積み
+     ケースの上段（`generate_mjcf.py`の`gen_objects()`が生成する case_id 1〜20 の
+     偶数番）を「未登録の荷姿」の代理として使う（捏造ではなく実在する物理的差異）。
+  2. `reinspecting_step`：新規CBV bizStep（未登録）を確率的に追加発行。当初
+     "inspecting" の後段として設計したが、**これまで生成した48エピソード全てで
+     "inspecting" bizStepが一度も発生していない**ことを実データ確認で発見
+     （`sim/sensors/anchors.py`の`SCALE_POS`固定座標が現在の物体配置ロジックでは
+     実質到達不能という、session02由来の既存の制約）。"storing"記録の後段に変更して解決。
+  3. `staging_overflow`：物理配置を強制変更せず、本来滞留を想定しないゾーンに
+     既に自然発生的に長時間留まっている個体を事後タグ付け。
+  いずれも `data/injections/<episode>.parquet` に session08 の乖離注入と**同じ
+  スキーマ**で書き込み、`eval/scoring.py`しか読まない（盲検境界、`test_blindness.py`で
+  検証）。`sim/generate.py`の`GenConfig`にオプトインの`concept_injections`フィールドとして
+  追加（既定None、既存呼出箇所の挙動は不変）。
+- **EXP-08の出現率スコアリング（`eval/scoring.score_concept_discovery`）**：候補クラスタは
+  フレーム単位のスロットインデックスのみを持ち、個体永続IDを経ていない（同一性解決前の
+  生残差）ため、注入との厳密な個体対応付けはできない。代わりに候補メンバーの観測時刻
+  （episode_id, frame_idx）と注入イベント時刻`t_true`が時間的に近接するか
+  （既定5秒以内）で「命中」とする代理指標を採用（本実行に向けたフォローアップ：
+  同一性解決を経た上でentity_gt_idベースの厳密照合に置き換えられると望ましい）。
+- **EXP-08 smoke実測**：`p2_concept`（30秒×2エピソード、seed=5000、3種注入全て有効）で
+  n_candidates=5、injected_concept_top5_hit=3/3種（目標2種以上、ただしsmokeなので
+  判定は「参考」に留める）。所要時間103〜113秒、5分予算に十分な余裕。
+- **「候補の説明の妥当性（評価者3名の一致率）」は本セッションでは測定しない**：
+  poc_plan.md 6.2が要求する盲検の人手評価3名分は、EXP-10と同様Claude Codeでは代替できない
+  ため、`experiments/EXP-08/README.md`に人手評価が必要な旨を明記した（手順書は本実行時に
+  `docs/results/EXP-08_protocol.md`として別途用意する）。
+- **未着手（次セッションへの申し送り）**：2拠点連合（EXP-09、docs/prompts.mdセッション10）、
+  反実仮想の忠実性（EXP-07）とEXP-10準備（同セッション11）。
