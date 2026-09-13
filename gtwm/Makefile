@@ -61,7 +61,7 @@ train-smoke:
 exp:
 	@test -n "$(EXP)" || { echo "使い方: make exp EXP=EXP-01 [SMOKE=1]"; exit 1; }
 	@test -f experiments/$(EXP)/run.py || { echo "未実装: experiments/$(EXP)/run.py が無い"; exit 1; }
-	uv run python experiments/$(EXP)/run.py
+	SMOKE="$(SMOKE)" uv run python experiments/$(EXP)/run.py
 
 dashboard:
 	uv run streamlit run src/gtwm/ui/app.py
