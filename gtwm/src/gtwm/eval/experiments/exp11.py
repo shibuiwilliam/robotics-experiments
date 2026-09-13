@@ -30,6 +30,7 @@ import numpy as np
 from omegaconf import DictConfig
 
 from gtwm.grounding.ground_run import run_ground
+from gtwm.grounding.train_probes import train_probes
 from gtwm.sim.generate import generate_episode
 
 # 実測値（このセッションで計測、docs/status.md 参照）：
@@ -49,6 +50,12 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
     probe_config = str(config.get("probe_config", "configs/grounding/probe_train_smoke.yaml"))
     set_name = f"exp11_seed{seed}"
 
+    # `run_ground` は省略時 `probe_config` を毎回フル学習する（EXP-08 の概念発見ループで
+    # 先に見つかったのと同じ種類の無駄な再計算）。ここでは `n_trials` 回のループ全体で
+    # 一度だけ学習し、`pretrained` として使い回す（学習失敗はこの `measure()` 全体の
+    # 失敗として扱い、個々のトライアルの「稼働率」には含めない）。
+    pretrained = train_probes(probe_config)[:4]
+
     all_latencies: list[float] = []
     n_success = 0
     for i in range(n_trials):
@@ -56,7 +63,9 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         try:
             generate_episode(set_name, i, duration_s, ep_seed)
             episode_id = f"ep_{i:04d}_seed{ep_seed}"
-            result = run_ground(episode_id, set_name, probe_config=probe_config)
+            result = run_ground(
+                episode_id, set_name, probe_config=probe_config, pretrained=pretrained
+            )
             all_latencies.extend(result.frame_latencies_s)
             n_success += 1
         except Exception:  # noqa: BLE001 - 稼働率の代理指標として「例外なく完走したか」を見る
