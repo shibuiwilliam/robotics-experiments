@@ -1,0 +1,32 @@
+# configs/llm.yaml と同じタスク一覧だが、全タスクを mock プロバイダに固定した設定。
+# テスト・smoke実験（例：EXP-08）専用。実課金を一切発生させない
+# （.claude/rules/llm.md「テストは常に mock」）。
+
+tasks:
+  ontology_label_draft:
+    provider: mock
+    model: mock-model
+  sparql_candidate:
+    provider: mock
+    model: mock-model
+  concept_naming:
+    provider: mock
+    model: mock-model
+  nl_to_whatif:
+    provider: mock
+    model: mock-model
+  report_draft:
+    provider: mock
+    model: mock-model
+  episode_qa:
+    provider: mock
+    model: mock-model
+
+pricing:
+  mock-model:
+    input_per_1m: 0.0
+    output_per_1m: 0.0
+
+retry:
+  max_retries: 2
+  temperature_for_json_tasks: 0.0

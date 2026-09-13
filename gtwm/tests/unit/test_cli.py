@@ -25,3 +25,15 @@ def test_cli_doctor_runs() -> None:
 def test_cli_unimplemented_subcommand_exits_nonzero() -> None:
     result = runner.invoke(app, ["sim"])
     assert result.exit_code == 1
+
+
+def test_cli_llm_ping_runs_and_reports_mock_ok() -> None:
+    result = runner.invoke(app, ["llm", "ping"])
+    assert result.exit_code == 0
+    assert "mock" in result.stdout
+    assert "OK" in result.stdout
+
+
+def test_cli_llm_usage_runs() -> None:
+    result = runner.invoke(app, ["llm", "usage"])
+    assert result.exit_code == 0

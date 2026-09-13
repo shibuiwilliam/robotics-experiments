@@ -17,7 +17,7 @@ wm_app = typer.Typer(help="世界モデル（未実装）")
 ground_app = typer.Typer(help="接地層（未実装）")
 exp_app = typer.Typer(help="実験ランナー（未実装）")
 whatif_app = typer.Typer(help="WHAT-IF クエリ（未実装）")
-llm_app = typer.Typer(help="LLM クライアント（未実装）")
+llm_app = typer.Typer(help="LLM クライアント")
 
 app.add_typer(sim_app, name="sim")
 app.add_typer(kg_app, name="kg")
@@ -254,7 +254,42 @@ def whatif_main(
 @llm_app.callback(invoke_without_command=True)
 def llm_main(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
-        _not_implemented("llm")
+        console.print(ctx.get_help())
+
+
+@llm_app.command("ping")
+def llm_ping() -> None:
+    """全4プロバイダ（anthropic/openai/gemini/mock）への疎通を確認する。"""
+    from gtwm.llm.client import LLMClient
+
+    client = LLMClient()
+    table = Table(title="gtwm llm ping")
+    table.add_column("provider")
+    table.add_column("ok")
+    table.add_column("detail")
+    any_fail = False
+    for provider in ("anthropic", "openai", "gemini", "mock"):
+        result = client.ping(provider)  # type: ignore[arg-type]
+        if not result.ok:
+            any_fail = True
+        table.add_row(result.provider, "OK" if result.ok else "NG", result.detail)
+    console.print(table)
+    client.close()
+    if any_fail:
+        console.print(
+            "[yellow]注[/yellow]: 未設定のプロバイダは .env に該当する API キーを設定してください。"
+        )
+
+
+@llm_app.command("usage")
+def llm_usage() -> None:
+    """当月のLLM使用額（runs/llm_usage.jsonl から集計）を表示する。"""
+    from gtwm.llm.client import LLMClient
+
+    client = LLMClient()
+    total = client.monthly_usage_usd()
+    console.print(f"当月使用額（記録ベース、コストnullの呼出は0円扱い）: ${total:.4f}")
+    client.close()
 
 
 if __name__ == "__main__":
