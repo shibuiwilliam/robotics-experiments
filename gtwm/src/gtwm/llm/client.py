@@ -29,7 +29,7 @@ Provider = Literal["anthropic", "openai", "gemini", "mock"]
 _API_KEY_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "gemini": "GOOGLE_API_KEY",
+    "gemini": "GEMINI_API_KEY",
 }
 
 

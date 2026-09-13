@@ -25,5 +25,5 @@ paths:
 - LLM-as-judge を使う指標は、少なくとも 30 件を人が再採点して一致率（Cohen の κ）を `docs/results/` に書く。κ < 0.6 なら判定に使わない。
 
 ## 秘密情報
-- API キーは環境変数（`ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GOOGLE_API_KEY`）からのみ読む。ログ・例外メッセージ・キャッシュにキーを含めない。
+- API キーは環境変数（`ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GEMINI_API_KEY`）からのみ読む。ログ・例外メッセージ・キャッシュにキーを含めない。
 - 生成データに含まれる映像は自前のシミュレーション出力に限る。外部から得た映像・個人情報を LLM に送らない。
