@@ -13,9 +13,16 @@ time_tolerance_s: 5.0
 full_run:
   seeds: [0, 1, 2]
   data_set: p2_concept_full
-  n_episodes: 1 # poc_plan.md 6.2 は「2週間運用」相当のデータ量が必要
+  n_episodes: 10 # p1_eval と同規模に拡大（Phase B Stage 1。poc_plan.md 6.2 の「2週間運用」
+  # 相当の実データ量には遠く及ばないが、smoke(2本)より大幅に多様な残差サンプルが得られる
+  probe_config: configs/grounding/probe_train_full.yaml # Phase B Stage 1 で学習
   llm_config_path: configs/llm.yaml
   note: >
     poc_plan.md 6.2 通りには、新しい荷姿・工程・置き場運用を導入してから2週間相当の
     運用データが必要。また「盲検の評価者3名の一致率」は本関数では測定できず、
     docs/results/EXP-08_protocol.md（人手評価の手順書）に基づき人が行う。
+    重要な既知のブロッカー（Phase B Stage 1 発見）：llm_config_path が configs/llm.yaml
+    （実プロバイダ）を指すが、.env に ANTHROPIC_API_KEY 等が未設定（`gtwm llm ping` で
+    確認可能）。本実行前にユーザーが .env にAPIキーを設定する必要がある。設定されない
+    場合、Stage 2はこの点を明示した上で configs/llm_mock.yaml にフォールバックして
+    実行し、結果に「概念命名はmock、プロダクション品質の命名ではない」と明記すること。

@@ -1,0 +1,16 @@
+# 意味プローブ α のアンカー自己教師あり学習（本実行）。Phase B Stage 1 で作成。
+# p0_train(5分x50本)を使い、eval_fraction で時系列後方をホールドアウトする
+# （train_probes は単一 data_set + 時系列分割のみ対応。p0_eval は EXP-03/06/09 等の
+# 「一度も学習に使っていない」完全ホールドアウトとして別用途で使う）。
+wm_config: configs/wm/full.yaml
+data_set: p0_train
+eval_fraction: 0.2
+seed: 0
+lr: 1.0e-3
+n_steps: 6000
+batch_size: 8
+existence_threshold: 0.5
+loss_weights:
+  zone: 1.0
+  floor: 0.05
+  type: 0.5
