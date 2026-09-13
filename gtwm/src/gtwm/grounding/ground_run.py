@@ -11,6 +11,7 @@ consistency（ε）で整合性ギャップを計算し、process_deviation が�
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +50,13 @@ class GroundRunResult:
     n_ledger_entries: int
     epsilon_records: list[EpsilonRecord] = field(default_factory=list)
     output_dir: Path = field(default_factory=Path)
+    # 観測(フレーム読込開始)から信念KG更新(store.add_beliefs完了)までの経過時間（秒）。
+    # フレームごとに1つ、EXP-11（N1、E2E遅延）が p50/p95 を計算するのに使う。現在の
+    # 実装はバッチ処理（全フレーム処理後に1回だけ store.add_beliefs する）なので、
+    # 早いフレームほど「バッチの残り処理＋最終コミット」を待つ分だけ大きい値になる
+    # （ストリーミング処理に作り替えれば個々のフレームはもっと速く確定できる。
+    # docs/status.md に明記）。
+    frame_latencies_s: list[float] = field(default_factory=list)
 
 
 def encode_single_frame_slots(
@@ -101,9 +109,11 @@ def run_ground(
 
     beliefs_all = []
     n_ledger_entries = 0
+    frame_start_times: list[float] = []
 
     frame_indices = list(range(0, ep.n_frames, SAMPLE_STRIDE_FRAMES))
     for frame_idx in frame_indices:
+        frame_start_times.append(time.perf_counter())
         t_s = frame_idx / ep.log_hz
         frame = read_single_frame(ep, frame_idx).to(device)
         with torch.no_grad():
@@ -242,6 +252,8 @@ def run_ground(
             n_ledger_entries += 1
 
     store.add_beliefs(beliefs_all)
+    commit_time = time.perf_counter()
+    frame_latencies_s = [commit_time - t0 for t0 in frame_start_times]
 
     epsilon_records = []
     for h_name, h_s in horizons.items():
@@ -284,6 +296,7 @@ def run_ground(
         n_ledger_entries=n_ledger_entries,
         epsilon_records=epsilon_records,
         output_dir=out_dir,
+        frame_latencies_s=frame_latencies_s,
     )
 
 
