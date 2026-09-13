@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
+from gtwm.grounding import concept_discovery
 from gtwm.grounding.concept_discovery import (
     ResidualSample,
     cluster_residuals,
@@ -81,6 +84,37 @@ def test_name_candidates_uses_mock_and_ranks_by_size() -> None:
     assert records[0].cluster_id == 1
     assert records[0].n_members == 5
     assert records[0].naming.proposed_label_ja
+
+
+def test_run_concept_discovery_trains_probes_only_once_across_episodes() -> None:
+    """回帰テスト：`run_concept_discovery` が複数エピソードを処理する際、重い
+    `train_probes()`（本実行設定では6000ステップの学習を含む）をエピソードごとに
+    再実行してはならない（EXP-08 本実行が p2_concept_full 10話×3seed=30回も
+    再学習していたために非現実的な時間がかかっていた実バグの回帰）。"""
+    fake_bundle = (object(), object(), ["cam_1"], {})
+    with (
+        patch.object(
+            concept_discovery,
+            "train_probes",
+            return_value=(*fake_bundle, None),
+        ) as mock_train,
+        patch.object(concept_discovery, "collect_residuals", return_value=[]) as mock_collect,
+        patch.object(concept_discovery, "cluster_residuals", return_value={}),
+        patch.object(concept_discovery, "filter_unexplained_clusters", return_value={}),
+        patch.object(concept_discovery, "name_candidates", return_value=[]),
+        patch.object(concept_discovery, "save_candidates_to_kg"),
+    ):
+        concept_discovery.run_concept_discovery(
+            episode_ids=["ep0", "ep1", "ep2", "ep3", "ep4"],
+            set_name="p2_concept_full",
+            llm_config_path="configs/llm_mock.yaml",
+        )
+    assert mock_train.call_count == 1
+    assert mock_collect.call_count == 5
+    # 各 collect_residuals 呼出には train_probes で得た同じバンドルが渡される
+    # （episode_id, set_name, probe_config, loaded=...）。
+    for call in mock_collect.call_args_list:
+        assert call.kwargs["loaded"][:2] == fake_bundle[:2]
 
 
 def test_save_candidates_to_kg_writes_pending_review_status() -> None:
