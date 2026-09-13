@@ -100,7 +100,7 @@ def apply_injections(
             {
                 "episode_id": "",
                 "injection_type": "unscanned_move",
-                "entity": row["entity"],
+                "entity": row["entity_gt_id"],
                 "t_true": row["t_true"],
                 "detail": f'{{"dropped_biz_step": "{row["biz_step"]}"}}',
             }
@@ -119,7 +119,7 @@ def apply_injections(
             {
                 "episode_id": "",
                 "injection_type": "wrong_slot",
-                "entity": df.at[i, "entity"],
+                "entity": df.at[i, "entity_gt_id"],
                 "t_true": df.at[i, "t_true"],
                 "detail": f'{{"true_zone": "{true_zone}", "recorded_zone": "{wrong_zone}"}}',
             }
@@ -132,6 +132,7 @@ def apply_injections(
     known_entities = df[["entity", "entity_gt_id"]].dropna().drop_duplicates()
     for i in sample(scan_candidates, cfg.wrong_scan):
         true_entity = df.at[i, "entity"]
+        true_entity_gt_id = df.at[i, "entity_gt_id"]
         others = known_entities[known_entities["entity"] != true_entity]
         if others.empty:
             continue
@@ -141,7 +142,7 @@ def apply_injections(
             {
                 "episode_id": "",
                 "injection_type": "wrong_scan",
-                "entity": true_entity,
+                "entity": true_entity_gt_id,
                 "t_true": df.at[i, "t_true"],
                 "detail": (
                     f'{{"true_entity": "{true_entity}", "recorded_entity": "{recorded_entity}"}}'
@@ -163,7 +164,7 @@ def apply_injections(
             {
                 "episode_id": "",
                 "injection_type": "late_registration",
-                "entity": df.at[i, "entity"],
+                "entity": df.at[i, "entity_gt_id"],
                 "t_true": df.at[i, "t_true"],
                 "detail": f'{{"delay_s": {delay:.3f}}}',
             }
@@ -196,7 +197,7 @@ def apply_injections(
             {
                 "episode_id": "",
                 "injection_type": "ghost_stock",
-                "entity": pick["entity"],
+                "entity": pick["entity_gt_id"],
                 "t_true": t_ghost,
                 "detail": f'{{"fabricated_zone": "{zone}"}}',
             }

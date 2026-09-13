@@ -102,6 +102,19 @@ def test_injection_seed_is_deterministic() -> None:
     pd.testing.assert_frame_equal(ledger_a.reset_index(drop=True), ledger_b.reset_index(drop=True))
 
 
+def test_ledger_entity_column_uses_gt_id_not_sim_name() -> None:
+    """`eval.scoring.score_detection` は台帳の `object_id`（gt: 形式）と注入台帳の
+    `entity` を突き合わせる（`DiscrepancyEntry.object_id=entity_gt_id` が既定）。
+    ここで sim 名（例：`pallet:5`）を入れると検知が原理的に一切一致しなくなる。"""
+    df = _events_df()
+    cfg = InjectionConfig(
+        unscanned_move=2, wrong_slot=2, wrong_scan=2, late_registration=2, ghost_stock=2
+    )
+    _, ledger = apply_injections(df, cfg, injection_seed=7)
+    assert not ledger.empty
+    assert ledger["entity"].str.startswith("gt:").all()
+
+
 def test_candidate_scarcity_caps_gracefully() -> None:
     """候補が足りなくてもクラッシュせず、可能な数だけ注入する。"""
     df = _events_df(n=2)
