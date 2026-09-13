@@ -276,16 +276,41 @@ CLAUDE.md「現在のフェーズと着手順」の1〜9が全てsmoke規模で�
 要するため「準備完了・未実施」）。本実行（seed×3、poc_plan.md 6.2通りの規模）に進む前に
 解消すべき既知のギャップ：
 
-1. **ε の F^h が業務記録を読まない（最重要、着手順8で発見）**：
-   `grounding/consistency.py` の `compute_epsilon` は F^h（業務プロセスの遷移）を
-   `expected_future_zone_idx = perceived_zone_idx` という恒等写像で実装しており、
-   `events.parquet`（業務記録）を一切参照しない。そのため ε は realism/注入設定に
-   構造的に無反応（session 08 で ε_60s が realism 有無で完全に同一値になることを
-   確認済み）。EXP-04のドリフト検知はこの経路を介さず「知覚ゾーンの時間変化」を
-   直接見ているため実際に機能しているが、H3/H4が本来意図する「記録と物理の乖離を
-   ε で測る」という仕組みそのものはまだ実装されていない。本実行前に
-   `wms_mock.generate_orders()`（または `events.parquet` の直近記録）を参照する
-   真の F^h への置き換えが必要。
+1. **[解消済み 2026-09-13] ε の F^h が業務記録を読まない**（最重要、着手順8で発見、
+   `fix(gtwm): make epsilon's F^h read business records instead of echoing
+   perception`、commit `10a8458`）：`grounding/consistency.py` の `compute_epsilon`
+   は F^h（業務プロセスの遷移）を `expected_future_zone_idx = perceived_zone_idx`
+   という恒等写像で実装しており、`events.parquet`（業務記録）を一切参照していなかった。
+   `lookup_expected_future_zone_idx()` を新設し、時刻 t・個体・ホライズン h に対して
+   `events.parquet` の `record` イベント（`t_obs` 基準）から (t, t+h] 内の直近の将来
+   記録、無ければ直近の過去記録のゾーンを F^h として使うよう修正。記録が一件も無い
+   個体はサンプルごと除外する（`FactSample.expected_future_zone_idx: int | None`）。
+   `ground_run.py` は `events.parquet` を関数冒頭で一度だけ読み、`FactSample` 構築時に
+   このルックアップ結果を渡すよう変更（旧: 関数末尾でのみ読み込み、F^hには未使用）。
+   **検証**：(a) 新規ユニットテスト（`lookup_expected_future_zone_idx` の3ケース、
+   除外ケース含む）が緑。(b) 実データでの直接検証：`data/sim/realism_cmp_off` /
+   `realism_cmp_on`（seed=5001、同一物理・異なる業務記録）の実際の `events.parquet`
+   に対して `lookup_expected_future_zone_idx` を全個体×時刻で走査すると、
+   1950通り中33通りで F^h の値が実際に異なった（修正前は原理的に0通り）。
+   (c) **重要な追加の発見**：この smoke エピソードで `gtwm ground run` を実際に
+   通すと、identity解決・存在確信度フィルタを生き残る個体集合（20個体、確率化
+   ヘッドが未成熟なための smoke 規模の検出カバレッジの限界）が、たまたま上記33通りの
+   差分が生じた個体（Case_0006 等）と重ならなかったため、`ground_run` 経由の
+   ε_60s 自体は on/off で同一値のままだった（これは F^h 修正の欠陥ではなく、
+   別問題である smoke規模のprobe検出カバレッジの限界に起因する）。これを切り分ける
+   ため、WM側の知覚・予測を固定した上で実データの F^h だけを on/off で入れ替える
+   直接検証を行い、`compute_epsilon` レベルでは ε_60s が 0.0 → 0.00815（n=2430）と
+   明確に変化することを確認した（第三者が再現できるよう手順を本コミットのコミット
+   メッセージに残す）。EXP-04/EXP-05 の smoke を再実行し、両方とも5分以内に完走・
+   criteria.yaml の全指標を含むことを確認済み（EXP-04: drift_detection_auroc は
+   1.0→0.75 に変化——F^h修正でε計算が変わったことによる正直な変化、EXP-05は
+   record_consistency.py 経由の別検知経路のため無変化=0.567のまま、想定通り）。
+   `test_blindness.py` は引き続き緑（`events.parquet` は業務記録であり注入答え合わせ
+   台帳とは別物、読んでよい）。
+   **申し送り**：smoke規模のprobe検出カバレッジ限界（20/65個体程度）自体は本項目の
+   スコープ外の既知の制約として残る。本実行（実データ規模・学習ステップ数）では
+   検出カバレッジが改善し、F^h修正の効果が `gtwm ground run` の集計値にも直接
+   現れると期待される。
 2. **EXP-07 の predicted_point が smoke で常に0.0になる（診断済み、未解消）**：
    下記ガップ3の修正（行動チャネルの意味付け）を適用した後も再現することを
    確認した（`runs/EXP-07/20260913-114126`：3介入とも predicted_point=0.0 のまま、
