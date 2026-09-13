@@ -21,6 +21,7 @@ import rdflib
 import torch
 
 from gtwm.grounding.ground_run import encode_single_frame_slots
+from gtwm.grounding.probes import Probe
 from gtwm.grounding.train_probes import train_probes
 from gtwm.kg.schema import GT
 from gtwm.kg.store import RdflibKGStore
@@ -98,13 +99,25 @@ def collect_residuals(
     episode_id: str,
     set_name: str,
     probe_config: str = "configs/grounding/probe_train_smoke.yaml",
+    loaded: tuple[Probe, WMModules, list[str], dict[str, CameraParams]] | None = None,
 ) -> list[ResidualSample]:
     """予測残差を収集する（LLM不使用）。1ステップ先の Dynamics ロールアウトと、
-    実際に次フレームをエンコードして得たスロットとの差を残差とする。"""
+    実際に次フレームをエンコードして得たスロットとの差を残差とする。
+
+    `loaded` は `(probe, modules, cam_names, cam_params)` の事前学習済みバンドル。
+    複数エピソードを処理する `run_concept_discovery` は、エピソードごとに
+    `train_probes()`（本実行設定では6000ステップの学習を含む、決して軽くない処理）を
+    再実行しないよう、これを一度だけロードして使い回す（発見：EXP-08 の本実行
+    （p2_concept_full 10話 × 3 seed = 30回）が `train_probes` を毎回呼んでいたために
+    非現実的な時間がかかっていた）。`loaded` 省略時は従来通りこの関数単体でロードする
+    （後方互換）。"""
     from gtwm.grounding.anchors_labels import episode_meta_from_dir
 
     device = get_device()
-    probe, modules, cam_names, cam_params, _train_result = train_probes(probe_config)
+    if loaded is not None:
+        probe, modules, cam_names, cam_params = loaded
+    else:
+        probe, modules, cam_names, cam_params, _train_result = train_probes(probe_config)
     probe.eval()
     modules.slot_module.eval()
     modules.fusion.eval()
@@ -281,9 +294,14 @@ def run_concept_discovery(
     top_n: int = 5,
 ) -> tuple[RdflibKGStore, list[ConceptCandidateRecord]]:
     """複数エピソードにわたって残差収集→クラスタリング→フィルタ→命名→KG保存を行う。"""
+    # `train_probes()` はエピソード数に関わらず一度だけ実行する（上記 `collect_residuals`
+    # の NOTE 参照）。
+    probe, modules, cam_names, cam_params, _train_result = train_probes(probe_config)
+    loaded = (probe, modules, cam_names, cam_params)
+
     all_samples: list[ResidualSample] = []
     for episode_id in episode_ids:
-        all_samples.extend(collect_residuals(episode_id, set_name, probe_config))
+        all_samples.extend(collect_residuals(episode_id, set_name, probe_config, loaded=loaded))
     clusters = cluster_residuals(all_samples, min_cluster_size=min_cluster_size)
     unexplained = filter_unexplained_clusters(clusters)
     records = name_candidates(unexplained, llm_config_path=llm_config_path, top_n=top_n)
