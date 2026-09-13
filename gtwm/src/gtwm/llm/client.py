@@ -315,9 +315,13 @@ class LLMClient:
             import openai
 
             oclient = openai.OpenAI(api_key=api_key)
+            # NOTE: 新しい OpenAI モデル群は `max_tokens` を廃止し
+            # `max_completion_tokens` を要求する（2026-09-13 に実際の API 呼出で
+            # gpt-5.6-luna が `max_tokens` を invalid_request_error で拒否することを
+            # 確認済み）。
             oresp = oclient.chat.completions.create(
                 model=model,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=effective_temperature,
             )
