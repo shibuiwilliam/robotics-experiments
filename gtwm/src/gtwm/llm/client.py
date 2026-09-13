@@ -318,13 +318,27 @@ class LLMClient:
             # NOTE: 新しい OpenAI モデル群は `max_tokens` を廃止し
             # `max_completion_tokens` を要求する（2026-09-13 に実際の API 呼出で
             # gpt-5.6-luna が `max_tokens` を invalid_request_error で拒否することを
-            # 確認済み）。
-            oresp = oclient.chat.completions.create(
-                model=model,
-                max_completion_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=effective_temperature,
-            )
+            # 確認済み）。同モデルは temperature の変更も受け付けず（既定値1のみ）、
+            # 0 を渡すと `Unsupported value: 'temperature' does not support 0.0`
+            # で拒否される（同日、実際の EXP-08 本実行で確認）。推論系モデルは
+            # temperature 固定という前提に倒し、まず temperature 指定で試し、この
+            # 特定のエラーだけを検知したら temperature 無指定（モデル既定値）で
+            # 1回だけ再試行する。他のエラーはそのまま呼出元の再試行ロジックに委ねる。
+            try:
+                oresp = oclient.chat.completions.create(
+                    model=model,
+                    max_completion_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=effective_temperature,
+                )
+            except openai.BadRequestError as exc:
+                if "temperature" not in str(exc):
+                    raise
+                oresp = oclient.chat.completions.create(
+                    model=model,
+                    max_completion_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}],
+                )
             text = oresp.choices[0].message.content or ""
             usage = oresp.usage
             in_tok = usage.prompt_tokens if usage else 0
