@@ -116,4 +116,66 @@ def score_detection(
     )
 
 
-__all__ = ["INJECTIONS_DIR", "load_injection_ledger", "DetectionScoring", "score_detection"]
+CONCEPT_INJECTION_TYPES = ("oversized_cargo_proxy", "reinspecting_step", "staging_overflow")
+_LOG_HZ = 10  # sim/generate.py の LOG_HZ と一致させる（フレーム番号→秒への変換用）。
+
+
+@dataclass
+class ConceptDiscoveryScoring:
+    """`score_concept_discovery()` の結果（H7、poc_plan.md 3.1「注入概念の候補上位5への
+    出現率」）。"""
+
+    injected_types: list[str]
+    hit_types: list[str]
+    n_candidates_considered: int
+
+
+def score_concept_discovery(
+    candidates: list[object],
+    episode_ids: list[str],
+    time_tolerance_s: float = 5.0,
+) -> ConceptDiscoveryScoring:
+    """概念発見の候補（上位5件、`grounding.concept_discovery.ConceptCandidateRecord`）が
+    EXP-08 で注入した3種の未登録概念のうち何種に「命中」したかを数える。
+
+    候補クラスタの各メンバーはスロットインデックスのみを持ち、フレーム間で永続する個体
+    ID を持たない（同一性解決を経ていない生の残差）ため、個体単位の厳密な突き合わせは
+    できない。代わりに、候補クラスタのメンバーが観測された時刻（episode_id, frame_idx）
+    が、注入台帳に記録された概念注入イベントの時刻 `t_true` と `time_tolerance_s` 秒
+    以内で重なるかどうかで「命中」を判定する（時間的近接性による代理指標）。
+    """
+    injection_events: list[tuple[str, str, float]] = []  # (episode_id, injection_type, t_true)
+    for episode_id in episode_ids:
+        ledger = load_injection_ledger(episode_id)
+        for _, row in ledger.iterrows():
+            inj_type = str(row["injection_type"])
+            if inj_type in CONCEPT_INJECTION_TYPES:
+                injection_events.append((episode_id, inj_type, float(row["t_true"])))
+
+    hit_types: set[str] = set()
+    for candidate in candidates:
+        member_episode_frames = getattr(candidate, "member_episode_frames", [])
+        for episode_id, frame_idx in member_episode_frames:
+            t_candidate = frame_idx / _LOG_HZ
+            for inj_episode_id, inj_type, t_true in injection_events:
+                if inj_episode_id != episode_id:
+                    continue
+                if abs(t_candidate - t_true) <= time_tolerance_s:
+                    hit_types.add(inj_type)
+
+    return ConceptDiscoveryScoring(
+        injected_types=sorted(set(CONCEPT_INJECTION_TYPES)),
+        hit_types=sorted(hit_types),
+        n_candidates_considered=len(candidates),
+    )
+
+
+__all__ = [
+    "INJECTIONS_DIR",
+    "load_injection_ledger",
+    "DetectionScoring",
+    "score_detection",
+    "CONCEPT_INJECTION_TYPES",
+    "ConceptDiscoveryScoring",
+    "score_concept_discovery",
+]

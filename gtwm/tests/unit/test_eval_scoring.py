@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from gtwm.eval.scoring import load_injection_ledger, score_detection
+from gtwm.eval.scoring import load_injection_ledger, score_concept_discovery, score_detection
 from gtwm.grounding.probes import utc
 
 pytestmark = pytest.mark.unit
@@ -121,3 +121,56 @@ def test_score_detection_no_injections_all_false_alarms() -> None:
     assert result.n_injected == 0
     assert result.n_detected == 0
     assert result.n_false_alarms == 1
+
+
+class _FakeCandidate:
+    def __init__(self, member_episode_frames: list[tuple[str, int]]) -> None:
+        self.member_episode_frames = member_episode_frames
+
+
+def test_score_concept_discovery_hits_type_within_time_tolerance(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("gtwm.eval.scoring.repo_root", lambda: tmp_path)
+    ledger_dir = tmp_path / "data" / "injections"
+    ledger_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "episode_id": "ep0",
+                "injection_type": "oversized_cargo_proxy",
+                "entity": "gt:Case_0002",
+                "t_true": 10.0,
+                "detail": "{}",
+            }
+        ]
+    ).to_parquet(ledger_dir / "ep0.parquet", index=False)
+
+    # frame_idx=100, LOG_HZ=10 -> t=10.0s、注入時刻とちょうど一致。
+    candidate = _FakeCandidate(member_episode_frames=[("ep0", 100)])
+    result = score_concept_discovery([candidate], episode_ids=["ep0"], time_tolerance_s=1.0)
+    assert result.hit_types == ["oversized_cargo_proxy"]
+    assert result.injected_types == [
+        "oversized_cargo_proxy",
+        "reinspecting_step",
+        "staging_overflow",
+    ]
+
+
+def test_score_concept_discovery_no_hit_outside_time_tolerance(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("gtwm.eval.scoring.repo_root", lambda: tmp_path)
+    ledger_dir = tmp_path / "data" / "injections"
+    ledger_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "episode_id": "ep0",
+                "injection_type": "staging_overflow",
+                "entity": "gt:Pallet_0001",
+                "t_true": 100.0,
+                "detail": "{}",
+            }
+        ]
+    ).to_parquet(ledger_dir / "ep0.parquet", index=False)
+
+    candidate = _FakeCandidate(member_episode_frames=[("ep0", 0)])  # t=0.0s、100sから遠い
+    result = score_concept_discovery([candidate], episode_ids=["ep0"], time_tolerance_s=1.0)
+    assert result.hit_types == []

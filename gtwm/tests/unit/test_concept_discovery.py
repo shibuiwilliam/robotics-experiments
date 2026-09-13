@@ -52,8 +52,19 @@ def test_cluster_residuals_returns_empty_below_min_size() -> None:
 
 def test_filter_unexplained_clusters_drops_high_confidence_clusters() -> None:
     clusters = {
-        0: [_sample([0.0], 0.95), _sample([0.0], 0.9)],  # 既存記号で説明できる（高確信度）
-        1: [_sample([1.0], 0.2), _sample([1.0], 0.1)],  # 説明できない（低確信度）
+        0: [_sample([0.0], 0.95), _sample([0.0], 0.9)],  # 既存記号で説明できる（低残差・高確信度）
+        1: [_sample([1.0], 0.2), _sample([1.0], 0.1)],  # 説明できない（高残差・低確信度）
+    }
+    unexplained = filter_unexplained_clusters(clusters, type_confidence_threshold=0.6)
+    assert list(unexplained.keys()) == [1]
+
+
+def test_filter_unexplained_clusters_keeps_high_residual_even_with_high_type_confidence() -> None:
+    """型ヘッドが高確信度でも、予測残差が大きいクラスタは「概念的に未知」として残す
+    （積み重ねケースの上段が依然 "case" に高確信度分類される、という実際に踏んだ罠の回帰）。"""
+    clusters = {
+        0: [_sample([0.0, 0.0], 0.95)] * 3,  # 低残差・高確信度 → 除外
+        1: [_sample([10.0, 10.0], 0.95)] * 3,  # 高残差・高確信度 → 残す
     }
     unexplained = filter_unexplained_clusters(clusters, type_confidence_threshold=0.6)
     assert list(unexplained.keys()) == [1]

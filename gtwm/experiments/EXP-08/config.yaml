@@ -1,0 +1,21 @@
+# EXP-08 概念発見。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+data_set: p2_concept
+n_episodes: 2
+duration_s: 30.0
+seed: 5000 # p2_concept 生成用のデータseed（実験seedとは別系統、盲検注入と同じ考え方）
+probe_config: configs/grounding/probe_train_smoke.yaml
+llm_config_path: configs/llm_mock.yaml # smoke/テストは常にmock（無課金）。本実行は configs/llm.yaml に切替。
+min_cluster_size: 3
+top_n: 5
+time_tolerance_s: 5.0
+full_run:
+  seeds: [0, 1, 2]
+  data_set: p2_concept_full
+  n_episodes: 1 # poc_plan.md 6.2 は「2週間運用」相当のデータ量が必要
+  llm_config_path: configs/llm.yaml
+  note: >
+    poc_plan.md 6.2 通りには、新しい荷姿・工程・置き場運用を導入してから2週間相当の
+    運用データが必要。また「盲検の評価者3名の一致率」は本関数では測定できず、
+    docs/results/EXP-08_protocol.md（人手評価の手順書）に基づき人が行う。
