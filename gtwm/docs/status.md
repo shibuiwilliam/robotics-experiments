@@ -23,7 +23,7 @@ CLAUDE.md「現在のフェーズと着手順」の 1〜9 が全て完了（smok
 ## 実験の状態
 | EXP | 仮説 | 状態 | 最新結果（runs/ パス） | 判定 |
 |---|---|---|---|---|
-| EXP-01 | H1（接地精度） | smoke実行済み | `runs/EXP-01/20260913-074513`：position_fact_f1=0.849, type_accuracy=0.806 | 参考（smoke） |
+| EXP-01 | H1（接地精度） | 本実行済み（seed×3） | `runs/EXP-01/20260913-145330`：position_fact_f1=0.898（目標0.90にわずかに未達）, type_accuracy=0.714（目標0.95に未達）。詳細は `docs/results/EXP-01.md` | **不合格** |
 | EXP-02 | H1（遮蔽下の同一性） | smoke実行済み | `runs/EXP-02/20260913-074542`：id_switch_rate=0.0 | 参考（smoke） |
 | EXP-03 | H2（記号条件付け） | smoke実行済み | `runs/EXP-03/20260913-072507`：error_improvement_60s≈0.004, effective_horizon_ratio=NaN | 参考（smoke） |
 | EXP-04 | H3（ε とドリフト検知） | smoke実行済み | `runs/EXP-04/20260913-084456`：drift_detection_auroc=1.0（n=2+2の極小サンプル）, epsilon_daily_cv≈0.003 | 参考（smoke） |
