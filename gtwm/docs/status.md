@@ -1,9 +1,9 @@
 # 進捗（Claude Code が作業ごとに更新する）
 
-最終更新: 2026-09-12
+最終更新: 2026-09-13
 
 ## 現在のフェーズ
-P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェーズと着手順」の 1 から開始。
+P1 相当（realism・EXP-04/05/11）完了。CLAUDE.md「現在のフェーズと着手順」の 9（P2 相当）が次。
 
 ## 着手順チェックリスト
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
@@ -13,7 +13,7 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 - [x] 5. grounding（α / γ / ε / 同一性 / 乖離台帳）
 - [x] 6. eval（ランナー、EXP-01/02/03/06）
 - [x] 7. whatif + ui
-- [ ] 8. P1 相当（realism、EXP-04/05/11）
+- [x] 8. P1 相当（realism、EXP-04/05/11）
 - [ ] 9. P2 相当（概念発見、2拠点連合、EXP-07/08/09、EXP-10 準備）
 
 ## 実験の状態
@@ -22,7 +22,10 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 | EXP-01 | H1（接地精度） | smoke実行済み | `runs/EXP-01/20260913-074513`：position_fact_f1=0.849, type_accuracy=0.806 | 参考（smoke） |
 | EXP-02 | H1（遮蔽下の同一性） | smoke実行済み | `runs/EXP-02/20260913-074542`：id_switch_rate=0.0 | 参考（smoke） |
 | EXP-03 | H2（記号条件付け） | smoke実行済み | `runs/EXP-03/20260913-072507`：error_improvement_60s≈0.004, effective_horizon_ratio=NaN | 参考（smoke） |
+| EXP-04 | H3（ε とドリフト検知） | smoke実行済み | `runs/EXP-04/20260913-084456`：drift_detection_auroc=1.0（n=2+2の極小サンプル）, epsilon_daily_cv≈0.003 | 参考（smoke） |
+| EXP-05 | H4（乖離注入と検知） | smoke実行済み | `runs/EXP-05/20260913-085936`：detection_rate=0.567(17/30), false_alarms_per_day≈149760（smoke分母が極小なための人為的な跳ね上がり）, detection_latency_median_s=0.0 | 参考（smoke） |
 | EXP-06 | H5（シールド付き計画） | smoke実行済み | `runs/EXP-06/20260913-074554`：violations_with_shield=0/3, violations_without_shield=3/3, throughput_loss≈1.42 | 参考（smoke） |
+| EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
 
 ## 既知の制約・記録
 - MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
@@ -91,3 +94,17 @@ P0 相当（シミュレーション基盤）。CLAUDE.md「現在のフェー�
 
 ## 既知の制約・記録（追加、着手順7）
 - 行動空間のエンティティ×プロパティへの意味付けが無い（上記参照）。ADR候補として次セッションで判断する。
+
+## 着手順8（P1相当：realism、EXP-04/05/11）の実装メモ（2026-09-13）
+
+- **一般ノイズと注入の分離**：`sim/realism.py`（`RealismConfig`：アンカー時刻ジッタ±100〜300ms・欠落率・記録の遅延/欠落/誤登録率、`t_true`は変更せず`t_obs`のみ乱す）と`sim/wms_mock.py`の`InjectionConfig`（5型の狙った異常）を独立した軸として実装。`configs/realism/p1.yaml`（学習・評価共通の一般ノイズ＋注入あり、p1_eval用）と`configs/realism/p1_train.yaml`（同じ一般ノイズだが注入0件、p1_train用＝学習データに意図的な異常を混ぜない）の2ファイルを用意。`gtwm sim gen --realism <path>`で有効化、未指定なら従来通りP0/smoke挙動は不変。
+- **ドリフト注入**：`sim/drift.py`。物理経路（作業者/AGVは固定スプライン・ウェイポイント巡回）は`wms_mock.generate_orders()`の割当と無関係（`generate.py`から一度も呼ばれていないことを確認済み）なため、真の物理ディスパッチ変更ではなく「業務記録（EPCIS記録相当）の期待プロセス定義が変わった」という記録レベルの変換として実装（検品位置変更＝inspecting記録のzoneを書き換え、ピッキング順序変更＝picking記録の個体対応を時刻順で反転）。スコープの限定を`drift.py`冒頭に明記。
+- **p1_train/p1_eval 生成実績**：p1_train（5分×20本、realism有・注入無、seed 1000始まり）とp1_eval（5分×10本、realism+注入、seed 2000始まり）を実機生成。バックグラウンド実行（`nohup`、`runs/p1_data_gen/log.txt`）、合計約32分（見積もり36分と近い）。p1_eval全体で注入180件（5型×36件、目標50件以上・目標80件以上を達成）。
+- **実バグを3件発見・修正**（いずれもEXP-05を実データで検証して発覚。smokeの数値を鵜呑みにせず実際に動かして確認した結果）：
+  1. `eval/scoring.score_detection`が`detected_at`（`ledger.py`が`entry.detected_at.isoformat()`で保存するISO日時文字列）を`float(str(...))`でパースしようとして常に例外→`dt=0.0`にフォールバックし、時刻許容判定`time_tolerance_s`が実質無効化されていた（既存テストが`detected_at`にベタのfloatを与えていたため発見されていなかった）。`datetime.fromisoformat(...).timestamp()`で修正し、実際のISO文字列を使う回帰テストと、時刻超過で誤報扱いになる新規テストケースを追加。
+  2. `sim/wms_mock.apply_injections`が注入台帳の`entity`列にsim名（例：`pallet:5`）を入れていたが、`score_detection`は台帳の`object_id`（常に`gt:`形式）と突き合わせる設計だったため、原理的に一致しえなかった（`test_eval_scoring.py`の既存フィクスチャは全て`gt:`形式を使っており、これが正しい規約だったと確認）。5型すべてで`entity_gt_id`を使うよう修正。
+  3. **最も本質的な欠落**：`ground_run.py`の唯一の乖離検知ロジックはWMロールアウトが予測する未来ゾーンの不安定性という物理内部の一貫性チェックのみで、`events.parquet`（業務記録）を一切参照していなかった。そのため注入5型（いずれも記録側の改変）を原理的に検知できなかった（修正1・2適用後もdetection_rate=0.0のままだったことで発覚）。新規`grounding/record_consistency.py`で記録(`events.parquet`)と物理真値(`poses.parquet`)を直接突き合わせる検知を追加（late_registration・wrong_slot・ghost_stockの3/5型を検知可能。wrong_scanは個体再識別が必要、unscanned_moveは「スキャンされない正常な物理移動」との区別ができず平常時誤報が多発することを試作で確認したため見送り、両方とも既知の限界として明記）。修正後、EXP-05 smokeのdetection_rateは0.0→0.567（17/30、検知可能な3/5型の上限に近い）に改善。`detected_at`は記録の`t_true`ではなく`t_obs`（記録が実際に登録された時刻）を使う（`t_true`だと検知遅延が定義上ゼロになってしまうため）。
+  4. なお`events.parquet`/`poses.parquet`は注入後の（改変済みの）業務記録・物理真値そのものであり、`gtwm ground run`が最初からアクセスできる正規のデータである。盲検境界の対象は「どの行が注入か」を記録した`data/injections/<episode>.parquet`という答え合わせ用の台帳だけであり、これは`eval/scoring.py`しか読まない（`tests/unit/test_blindness.py`で検証、`record_consistency.py`追加後も緑）。
+- **realism有無でのε_60s比較（重要な発見）**：90秒エピソード・同一seed=5001・smoke probe設定で実測した結果、realism ON/OFF で ε_60s は**完全に同一の値**（0.3515151515151509、n=99）になった。誤差の範囲内の「有意差なし」ではなく、ビット単位で同一の浮動小数点値であり、原因を追跡したところ構造的な理由が判明した：`consistency.compute_epsilon`のF^h（業務プロセスの遷移）は`expected_future_zone_idx = s.perceived_zone_idx`という恒等写像（＝WM自身の知覚ゾーンをそのままh秒後の期待値とする）で実装されており、`events.parquet`（realismが唯一変更する対象）を一切参照しない。そのためrealism設定（アンカージッタ・記録遅延・注入等、すべて`events.parquet`側の変換）はε計算に数学的に影響し得ない。これはEXP-05で発見・修正した欠落（`ground_run.py`の乖離検知ロジックも当初`events.parquet`を見ていなかった）と同じ根本原因の別箇所での再発であり、session05の申し送り「将来`wms_mock.generate_orders`の割当を使った真のF^hに置き換える」がまさにこの箇所を指す。今回はEXP-05のdetection_rate=0（ゼロ）ほど致命的ではなく（ε自体は依然WM内部の一貫性指標として機能しており、EXP-04のドリフト検知はF^hを介さず「知覚ゾーンの時間変化」を直接見ているため実際に機能している）、かつconsistency.pyの中核セマンティクス変更はEXP-04の再検証も必要になる大きめの変更のため、本セッションでは修正せず、次セッションへの申し送り事項として記録するに留める：**F^hを`events.parquet`の直近の記録ゾーンを参照するよう改修すれば、ε はrealism/注入に反応するようになるはずである**。
+- **EXP-04/05/11 の smoke 所要時間**：181s（EXP-04）、90〜99s（EXP-05）、139s（EXP-11）、いずれも5分予算に十分な余裕。EXP-04は当初n_baseline=n_drift=3で290.8sと5分予算に対し危険なマージンだったため、n=2+2に縮小して181sに短縮した。
+- **EXP-11の簡略化**：E2E遅延はバッチ実装（全フレーム処理後に1回だけ`store.add_beliefs`）の「フレーム読込開始→コミット完了」の経過時間なので、ストリーミング実装より悲観的な上限になる（smoke実測 p50≈7.16s, p95≈11.89s、目標1.0秒に対しては未達だが、バッチ設計に起因する誠実な数値であり水増ししていない）。稼働率はデプロイされたサービスが無いと本来測れない（全フェーズシミュレーションのPoCでは対象外）ため、パイプラインの完走率を代理指標として報告（smoke: 3/3=1.0）。月額コストは実測生成速度からのナラティブな概算（$180/区画/月、閾値なしの`report_only`）。
