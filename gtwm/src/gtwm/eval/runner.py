@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Callable
@@ -90,7 +91,16 @@ def run(
     `run_timestamp` は呼び出し側（CLI）が生成して渡す（テストで固定できるように
     引数化し、このモジュール自身は時刻を生成しない）。
     """
-    smoke = bool(config.get("smoke", False))
+    # `make exp EXP=EXP-01 SMOKE=0` は `$(SMOKE)` を子プロセス環境へ export するだけで、
+    # これまで config.yaml の `smoke:` 値を一切上書きしていなかった（`make exp` は
+    # `uv run python experiments/$(EXP)/run.py` を呼ぶだけで SMOKE を消費していない
+    # バグ）。環境変数 `SMOKE` が明示的に与えられた場合のみ config の値を上書きする
+    # （空文字列＝未指定は config の既定値を優先し、既存の呼び出し規約を壊さない）。
+    smoke_env = os.environ.get("SMOKE", "").strip()
+    if smoke_env:
+        smoke = smoke_env not in ("0", "false", "False", "no", "NO")
+    else:
+        smoke = bool(config.get("smoke", False))
     if not smoke and config.get("full_run") is not None:
         # `full_run:` はこれまで各 experiments/EXP-xx/config.yaml に転記されているだけの
         # ドキュメントで、smoke=false でも自動適用されなかった（本実行が smoke と同じ
