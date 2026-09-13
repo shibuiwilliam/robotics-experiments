@@ -59,7 +59,11 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         open_entries = ledger_db.list_by_status("open")
         ledger_db.close()
 
-        scoring = score_detection(open_entries, injection_ledger, time_tolerance_s=5.0)
+        # time_tolerance_s は injection_late_registration_delay_s（既定最大300秒、
+        # configs/realism/p1.yaml）を包含できる余裕を持たせる。ledger.py 側の
+        # detected_at は record の t_obs 基準（record_consistency.py 参照）なので、
+        # late_registration 注入自体の遅延時間そのものが検知時刻との差になり得るため。
+        scoring = score_detection(open_entries, injection_ledger, time_tolerance_s=400.0)
         n_injected_total += scoring.n_injected
         n_detected_total += scoring.n_detected
         n_false_alarms_total += scoring.n_false_alarms

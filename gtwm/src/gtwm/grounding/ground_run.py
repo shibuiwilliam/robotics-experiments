@@ -29,6 +29,7 @@ from gtwm.grounding.consistency import (
 from gtwm.grounding.identity import TrackedEntity, resolve_identities
 from gtwm.grounding.ledger import DiscrepancyEntry, DiscrepancyLedger
 from gtwm.grounding.probes import SlotFacts, slot_facts_to_beliefs, utc
+from gtwm.grounding.record_consistency import detect_record_discrepancies
 from gtwm.grounding.train_probes import train_probes
 from gtwm.kg.store import RdflibKGStore
 from gtwm.sim.env import ZONE_NAMES
@@ -205,6 +206,40 @@ def run_ground(
                     ledger.create(entry)
                     if not ledger.last_create_was_duplicate:
                         n_ledger_entries += 1
+
+    # 記録 vs 物理の突き合わせ（poc_plan.md 2.2「(2)プロセス不遵守」）。上のループは
+    # WMロールアウトの内部一貫性しか見ておらず、`sim/wms_mock.apply_injections` が
+    # 注入する5型の異常（record 側の改変）を検知できないため、`events.parquet` を
+    # 直接読んで突き合わせる（`record_consistency.py` 参照。EXP-05 の初回実行で
+    # detection_rate=0.0 として発覚した欠落）。
+    events_df = pd.read_parquet(ep.episode_dir / "events.parquet")
+    for candidate in detect_record_discrepancies(events_df, poses):
+        # 検知は記録が実際に登録された時刻（t_obs）より前には起こり得ない
+        # （detection_latency_median_s を意味のある値にするための最小の遅延モデル。
+        # t_true を detected_at に使うと定義上ゼロ遅延になってしまう）。
+        physical_dt = utc(candidate.t_true)
+        detected_dt = utc(candidate.t_obs)
+        entry = DiscrepancyEntry(
+            discrepancy_id=(
+                f"{ep.episode_id}_{candidate.entity_gt_id}_"
+                f"{candidate.discrepancy_type}_{candidate.t_true}"
+            ),
+            object_id=candidate.entity_gt_id,
+            physical_value=candidate.physical_value,
+            physical_confidence=1.0,
+            physical_source="physical_gt",
+            physical_valid_time=physical_dt,
+            record_value=candidate.record_value,
+            record_source_system="wms_mock",
+            record_registration_time=detected_dt,
+            discrepancy_type=candidate.discrepancy_type,
+            severity="medium",
+            detected_at=detected_dt,
+            epsilon_at_detection=float(epsilon_cfg.d_weights.position),
+        )
+        ledger.create(entry)
+        if not ledger.last_create_was_duplicate:
+            n_ledger_entries += 1
 
     store.add_beliefs(beliefs_all)
 
