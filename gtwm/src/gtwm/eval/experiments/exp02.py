@@ -161,24 +161,68 @@ def _run_condition(frames: list[_Frame], use_forward_prediction: bool, seed: int
 
     total_switches = sum(count_id_switches(seq) for seq in track_sequences.values())
     duration_hours = (frames[-1].t - frames[0].t) / 3600.0
-    rate = id_switch_rate(total_switches, len(all_ids), max(duration_hours, 1e-6))
-
     idtp, idfp, idfn = id_counts_from_matches(
         matched_pairs_per_frame, n_unmatched_preds_per_frame, n_unmatched_gts_per_frame
     )
     return {
         "n_switches": total_switches,
+        "n_entities": len(all_ids),
+        "duration_hours": duration_hours,
+        "id_switch_rate": id_switch_rate(total_switches, len(all_ids), max(duration_hours, 1e-6)),
+        "idf1": idf1(idtp, idfp, idfn),
+        "idtp": idtp,
+        "idfp": idfp,
+        "idfn": idfn,
+    }
+
+
+def _measure_single_episode(episode_dir: str, seed: int) -> dict[str, Any]:
+    frames = _load_frames(episode_dir)
+    baseline = _run_condition(frames, use_forward_prediction=False, seed=seed)
+    with_prediction = _run_condition(frames, use_forward_prediction=True, seed=seed)
+    return {
+        "baseline": baseline,
+        "with_prediction": with_prediction,
+        "n_entities": len(frames[0].xy_by_entity),
+        "n_frames": len(frames),
+    }
+
+
+def _pool(per_episode: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    switches = sum(e[key]["n_switches"] for e in per_episode)
+    object_hours = sum(e[key]["n_entities"] * e[key]["duration_hours"] for e in per_episode)
+    idtp = sum(e[key]["idtp"] for e in per_episode)
+    idfp = sum(e[key]["idfp"] for e in per_episode)
+    idfn = sum(e[key]["idfn"] for e in per_episode)
+    # id_switch_rate() は「1個体・1時間あたりの切替回数」なので、複数エピソードを
+    # プールする際は総切替数を総「個体×時間」で割る（各エピソードの rate を単純平均
+    # すると短いエピソードと長いエピソードが等しい重みになってしまい、
+    # poc_plan.md 6.2「200回相当」規模で見たい実質的な切替率と乖離する）。
+    rate = switches / max(object_hours, 1e-6)
+    return {
+        "n_switches": switches,
         "id_switch_rate": rate,
         "idf1": idf1(idtp, idfp, idfn),
     }
 
 
 def measure(config: DictConfig, seed: int) -> dict[str, Any]:
-    episode_dir = str(data_dir() / "sim" / config.set_name / config.episode_id)
-    frames = _load_frames(episode_dir)
+    """`config.episode_ids`（複数）が指定されていればそれら全エピソードで集計し
+    （poc_plan.md 6.2「200回相当」の PoC 縮小版、本実行向け）、`with_prediction`/
+    `baseline` それぞれの総切替数・object-hours・IDF1 の混同行列カウントをプールした
+    上で切替率・IDF1 を算出する。従来通り `config.episode_id`（単数）のみが
+    指定されている場合は単一エピソードで測定する（smoke 互換）。"""
+    episode_ids = list(config.get("episode_ids") or [])
+    if not episode_ids:
+        episode_ids = [config.episode_id]
 
-    baseline = _run_condition(frames, use_forward_prediction=False, seed=seed)
-    with_prediction = _run_condition(frames, use_forward_prediction=True, seed=seed)
+    per_episode = [
+        _measure_single_episode(str(data_dir() / "sim" / config.set_name / episode_id), seed=seed)
+        for episode_id in episode_ids
+    ]
+
+    baseline = _pool(per_episode, "baseline")
+    with_prediction = _pool(per_episode, "with_prediction")
 
     return {
         "id_switch_rate": with_prediction["id_switch_rate"],
@@ -187,8 +231,9 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         "idf1_baseline": baseline["idf1"],
         "n_switches_with_prediction": with_prediction["n_switches"],
         "n_switches_baseline": baseline["n_switches"],
-        "n_entities": len(frames[0].xy_by_entity),
-        "n_frames": len(frames),
+        "n_entities": per_episode[0]["n_entities"],
+        "n_frames": sum(e["n_frames"] for e in per_episode),
+        "n_episodes": len(episode_ids),
     }
 
 

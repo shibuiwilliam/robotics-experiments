@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from gtwm.eval.experiments.exp02 import _Frame, _run_condition
+from gtwm.eval.experiments.exp02 import _Frame, _pool, _run_condition
 
 pytestmark = pytest.mark.unit
 
@@ -47,5 +47,51 @@ def test_moving_entity_recovers_better_with_forward_prediction() -> None:
         )
     result_wm = _run_condition(frames, use_forward_prediction=True, seed=0)
     result_baseline = _run_condition(frames, use_forward_prediction=False, seed=0)
-    # 両方とも例外なく完走し、辞書のキーが揃っていることを確認する。
-    assert set(result_wm) == set(result_baseline) == {"n_switches", "id_switch_rate", "idf1"}
+    # 両方とも例外なく完走し、プールに必要なキー（n_switches/n_entities/duration_hours/
+    # idtp/idfp/idfn に加え、単一エピソード用の id_switch_rate/idf1）が揃っていることを
+    # 確認する。
+    expected_keys = {
+        "n_switches",
+        "n_entities",
+        "duration_hours",
+        "id_switch_rate",
+        "idf1",
+        "idtp",
+        "idfp",
+        "idfn",
+    }
+    assert set(result_wm) == set(result_baseline) == expected_keys
+
+
+def test_pool_combines_multiple_episodes_by_object_hours_not_naive_average() -> None:
+    """複数エピソードをプールする際、切替率は各エピソードの rate を単純平均するの
+    ではなく、総切替数÷総 object-hours で計算する（短いエピソードと長いエピソードに
+    等しい重みを与えないため）。"""
+    # エピソード1：短い（0.5時間相当）、2個体、切替0回 -> rate=0
+    ep1 = {
+        "cond": {
+            "n_switches": 0,
+            "n_entities": 2,
+            "duration_hours": 0.5,
+            "idtp": 10,
+            "idfp": 0,
+            "idfn": 0,
+        }
+    }
+    # エピソード2：長い（2時間相当）、2個体、切替4回 -> rate=1.0 (4 / (2*2))
+    ep2 = {
+        "cond": {
+            "n_switches": 4,
+            "n_entities": 2,
+            "duration_hours": 2.0,
+            "idtp": 10,
+            "idfp": 0,
+            "idfn": 0,
+        }
+    }
+    pooled = _pool([ep1, ep2], "cond")
+    # 単純平均なら (0 + 1.0) / 2 = 0.5 になるはずだが、正しいプールは
+    # 総切替(4) / 総object-hours(2*0.5 + 2*2.0 = 5.0) = 0.8 になる。
+    assert pooled["n_switches"] == 4
+    assert pooled["id_switch_rate"] == pytest.approx(4 / 5.0)
+    assert pooled["idf1"] == pytest.approx(1.0)  # idfp=idfn=0 の合算なので1.0
