@@ -15,6 +15,45 @@ services:
     # コンテナ側の healthcheck は省略し、`make up` 側で SPARQL エンドポイントへの
     # HTTP ポーリングによる起動待ちを実装する（Makefile 参照）。docs/status.md に記録。
 
+  # 2拠点連合（H8/EXP-09、ADR-0002：EDC ではなく最小 HTTP コネクタ）。
+  # site_a / site_b は別 Docker ネットワークに配置し、互いの内部データには到達できない
+  # （交換 API 経由でしか信念・予測をやり取りできない、という隔離を表現する）。
+  site-a-connector:
+    build:
+      context: .
+      dockerfile: docker/dataspace/Dockerfile
+    profiles: ["p2"]
+    platform: linux/arm64
+    networks: [site_a]
+    ports:
+      - "9101:8000"
+    environment:
+      - SITE_ID=site_a
+      - PORT=8000
+    volumes:
+      - ./.data/dataspace/site_a:/data
+
+  site-b-connector:
+    build:
+      context: .
+      dockerfile: docker/dataspace/Dockerfile
+    profiles: ["p2"]
+    platform: linux/arm64
+    networks: [site_b]
+    ports:
+      - "9102:8000"
+    environment:
+      - SITE_ID=site_b
+      - PORT=8000
+    volumes:
+      - ./.data/dataspace/site_b:/data
+
+networks:
+  site_a:
+    driver: bridge
+  site_b:
+    driver: bridge
+
 # 他の core サービス（timescaledb, minio, grafana）は現時点で消費するコンポーネントが
 # 無いため追加しない（infra.md「まず『なくても回るか』を検討する」）。必要になった
 # 着手順で追加する。
