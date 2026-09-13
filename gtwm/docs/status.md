@@ -3,9 +3,9 @@
 最終更新: 2026-09-13
 
 ## 現在のフェーズ
-P2 相当の一部（概念発見・LLM クライアント・EXP-08）完了。CLAUDE.md「現在のフェーズと
-着手順」の 9 のうち残り（2拠点連合＝EXP-09、反実仮想の忠実性＝EXP-07、EXP-10 準備）が次
-（docs/prompts.md ではセッション10・11として分離されている）。
+P2 相当の一部（概念発見・LLM クライアント・EXP-08、2拠点連合・EXP-09）完了。CLAUDE.md
+「現在のフェーズと着手順」の 9 のうち残り（反実仮想の忠実性＝EXP-07、EXP-10 準備）が次
+（docs/prompts.md ではセッション11として分離されている）。
 
 ## 着手順チェックリスト
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
@@ -16,7 +16,7 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08）完了。C
 - [x] 6. eval（ランナー、EXP-01/02/03/06）
 - [x] 7. whatif + ui
 - [x] 8. P1 相当（realism、EXP-04/05/11）
-- [~] 9. P2 相当：概念発見・LLM クライアント・EXP-08 は完了。2拠点連合（EXP-09）、
+- [~] 9. P2 相当：概念発見・LLM クライアント・EXP-08・2拠点連合（EXP-09）は完了。
       反実仮想の忠実性（EXP-07）、EXP-10 準備は未着手
 
 ## 実験の状態
@@ -30,6 +30,7 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08）完了。C
 | EXP-06 | H5（シールド付き計画） | smoke実行済み | `runs/EXP-06/20260913-074554`：violations_with_shield=0/3, violations_without_shield=3/3, throughput_loss≈1.42 | 参考（smoke） |
 | EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
 | EXP-08 | H7（概念発見） | smoke実行済み | `runs/EXP-08/20260913-100119`：n_candidates=5, injected_concept_top5_hit=3/3種（目標2種以上） | 参考（smoke） |
+| EXP-09 | H8（連合ツインと漏洩評価） | smoke実行済み | `runs/EXP-09/20260913-103010`：ece=1.0（要フォローアップ、下記参照）, reconstruction_ssim≈0.123（目標0.30以下は満たす）, reid_top1_vs_chance=3.0（目標1.2倍以下を大きく超過、線形分類器がsmoke規模のワーカー3人を容易に判別）, n_policy_violations=1（意図的な違反要求が正しく拒否・記録された） | 参考（smoke） |
 
 ## 既知の制約・記録
 - MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
@@ -168,5 +169,57 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08）完了。C
   poc_plan.md 6.2が要求する盲検の人手評価3名分は、EXP-10と同様Claude Codeでは代替できない
   ため、`experiments/EXP-08/README.md`に人手評価が必要な旨を明記した（手順書は本実行時に
   `docs/results/EXP-08_protocol.md`として別途用意する）。
-- **未着手（次セッションへの申し送り）**：2拠点連合（EXP-09、docs/prompts.mdセッション10）、
-  反実仮想の忠実性（EXP-07）とEXP-10準備（同セッション11）。
+- **未着手（次セッションへの申し送り）**：反実仮想の忠実性（EXP-07）とEXP-10準備
+  （docs/prompts.mdセッション11）。
+
+## 着手順9（P2相当：2拠点連合、EXP-09）の実装メモ（2026-09-13）
+
+- **EDC ではなく最小 HTTP コネクタ（ADR-0002）**：Eclipse Dataspace Components は Java の
+  コントロール/データプレーン2プロセス構成＋Postgres/Vault相当が必要で、この PoC の作業
+  予算（1日）を明確に超えると判断した。`src/gtwm/dataspace/`（policy.py=ODRL相当の目的限定・
+  保持期間・再共有禁止検査、audit.py=SQLite監査台帳、models.py=交換データモデル、
+  connector.py=コアロジック、server.py=標準ライブラリのみのHTTPラッパー、leakage.py=
+  漏洩評価）を実装した。詳細は `docs/adr/0002-minimal-http-connector-instead-of-edc.md`。
+- **交換データの型的制約**：`ExchangeBelief`/`PredictionRecord`（pydantic、
+  `extra="forbid"`）には生映像・潜在フィールドが型として存在しない。追加しようとすると
+  `ValidationError` になることを `tests/unit/test_dataspace_models.py` で確認済み
+  （poc_plan.md 5.5「生映像・潜在表現は交換しない」の型レベルでの強制）。
+- **docker-compose profile p2**：site_a/site_b を別 Docker ネットワークに配置した2コネクタ
+  コンテナ（`docker/dataspace/Dockerfile`、`python:3.11-slim`、arm64、torch/mujoco/rdflib
+  等の重い extras は一切インストールしない自己完結ビルドで4秒程度）。Oxigraph と異なり
+  python:3.11-slim にはシェル/pythonが両方あるため、実際にコンテナ側 `HEALTHCHECK` を
+  書けた（infra.md の「全サービスに healthcheck」を満たす）。`make up-p2`/`make down-p2`
+  を追加。実機で healthy を確認し、`curl` で実際に `/exchange` を叩いて許可応答・
+  ポリシー違反拒否（監査ログへの記録含む）の両方をライブで確認済み（コード上のテストだけ
+  でなく Docker 越しの実通信で確認）。
+- **実バグを2件、実機検証中に発見・修正**：
+  1. `ThreadingHTTPServer` はリクエストごとに別スレッドを立てるが、`AuditLog` の
+     sqlite3コネクションが `check_same_thread=True`（既定）のままだったため、2件目の
+     リクエストで `ProgrammingError` が発生しサーバが落ちた（`curl` で2回目のリクエストを
+     送って実際に再現）。`check_same_thread=False` + `threading.Lock` で修正。
+  2. `experiments/eval/experiments/exp09.py` で、site_b が予測を発行した**後**の時刻を
+     交換要求の `since`（下限）に渡していたため、`Connector` の
+     `generated_at >= since` フィルタで自分が今publishした予測が常に0件除外されていた
+     （`n_predictions_exchanged` が常に0になる実バグ、smoke実行で発覚）。予測発行**前**の
+     時刻を `since` に使うよう修正し、`tests/unit/test_dataspace_connector.py` に
+     「`since` が対象データより後なら除外される」ケースを回帰テストとして追加した。
+- **EXP-09 の簡略化**：
+  - 「模擬第二拠点」は同一レイアウトを別 seed（`site_b_seed=9000+seed`）で生成した
+    `p2_site_b` データセット（docs/prompts.md セッション10自身が「別レイアウトである
+    必要はない」と明記）。
+  - `PredictionRecord` は poc_plan.md 5.5 の交換単位定義（値・区間・ホライズン・モデル版）
+    通り確信度フィールドを持たないため、受領側 ECE は「全予測を確信度1.0として送った体」
+    で計算する簡略化（ECE＝誤り率になる）。本実行では確信度を伴う交換スキーマへの拡張が
+    必要（次セッションへの申し送り）。
+  - 復元攻撃はフレーム全体の融合潜在（Kスロット平均）→16×16縮小画像の線形デコーダ、
+    再識別攻撃は識別済みワーカースロット潜在→3クラス線形分類器（いずれも smoke 規模に
+    見合う最小構成）。
+- **EXP-09 smoke の実測結果**（`runs/EXP-09/20260913-103010`、104〜115秒、5分予算に余裕）：
+  `reconstruction_ssim≈0.123`（目標0.30以下を満たす＝復元攻撃は低品質）、
+  `reid_top1_vs_chance=3.0`（目標1.2倍以下を大きく超過＝smoke規模ではワーカー3人を
+  線形分類器が容易に判別できてしまう。ただしサンプル数が18件と極小なため smoke 特有の
+  過学習の可能性が高く、本実行でエピソード数・フレーム数を増やして再評価が必要）、
+  `ece=1.0`（上記の確信度簡略化により accuracy=0 のときの理論値と一致。α のゾーン予測
+  精度そのものの問題か、確信度簡略化の副作用かを本実行で切り分ける必要がある）、
+  `n_policy_violations=1`（意図した違反1件が正しく拒否・記録された）。
+- `make lint test`（214 unit tests）・`test_blindness.py` は引き続き緑。

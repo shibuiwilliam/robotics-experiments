@@ -50,6 +50,25 @@ def test_grants_request_with_permitted_purpose(tmp_path: Path) -> None:
     assert conn.audit.count_violations() == 0
 
 
+def test_excludes_items_older_than_since(tmp_path: Path) -> None:
+    """`since` が対象の valid_from より後なら除外される（EXP-09 の実バグの回帰テスト：
+    `since=now`（データ発行後の時刻）を渡すと常に0件になっていた）。"""
+    conn = _connector(tmp_path)
+    now = datetime.now(UTC)
+    conn.publish_belief(_belief(now))
+    resp = conn.handle_request(
+        ExchangeRequest(
+            requester_site="site_b",
+            purpose="inbound_planning",
+            item_type="belief",
+            since=now + timedelta(seconds=1),  # データ発行「後」の時刻を要求の下限にする
+        ),
+        now=now,
+    )
+    assert resp.granted is True
+    assert resp.items == []
+
+
 def test_rejects_request_with_wrong_purpose(tmp_path: Path) -> None:
     conn = _connector(tmp_path)
     now = datetime.now(UTC)
