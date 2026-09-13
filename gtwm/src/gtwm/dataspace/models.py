@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Provenance(BaseModel):
@@ -49,6 +49,10 @@ class PredictionRecord(BaseModel):
     horizon_s: float
     model_version: str
     provenance: Provenance
+    # モデルが実際に較正済みで出した確信度（例：α の zone_probs.max()）。受領側 ECE
+    # （poc_plan.md 付録A）はこれを使って計算する。値そのもの・確信度・区間は交換対象だが、
+    # 潜在表現・生映像は運ばない（`extra="forbid"` により型で禁止、下記テスト参照）。
+    confidence: float = Field(ge=0.0, le=1.0)
     # 受領側 ECE 評価用（PoC の簡略化）：本来は受領側が後から自分の観測で正誤を確認するが、
     # このスモーク実装では発信側が同梱する「後から判明した正誤」をそのまま使う。実運用では
     # 受領側が独自に確認するまでの遅延・不確実性を別途モデル化する必要がある（要フォローアップ）。
