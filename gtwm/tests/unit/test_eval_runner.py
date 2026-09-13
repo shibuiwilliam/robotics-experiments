@@ -92,6 +92,51 @@ def test_run_keeps_smoke_config_when_smoke_true(tmp_path, monkeypatch) -> None:
     assert seen_configs == [(2, 30.0)]
 
 
+def test_run_smoke_env_var_overrides_config_smoke_true(tmp_path, monkeypatch) -> None:
+    """`make exp EXP=EXP-01 SMOKE=0` は環境変数 SMOKE を export するだけで、
+    これまで runner.run() がこれを一切読んでいなかった（config.yaml の
+    `smoke: true` がそのまま使われ続け、CLI から本実行を起動できないバグ）。"""
+    monkeypatch.setattr("gtwm.eval.runner.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("gtwm.eval.runner._write_mlflow", lambda *a, **k: None)
+    monkeypatch.setenv("SMOKE", "0")
+    config = OmegaConf.create(
+        {
+            "smoke": True,
+            "seeds": [0],
+            "full_run": {"seeds": [0, 1, 2]},
+        }
+    )
+
+    result = run("EXP-TEST", config, _fake_measure, run_timestamp="20260101-0020")
+
+    assert result.metrics["smoke"] is False
+    assert result.metrics["seeds"] == [0, 1, 2]
+
+
+def test_run_smoke_env_var_overrides_config_smoke_false(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("gtwm.eval.runner.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("gtwm.eval.runner._write_mlflow", lambda *a, **k: None)
+    monkeypatch.setenv("SMOKE", "1")
+    config = OmegaConf.create({"smoke": False, "seeds": [0, 1, 2]})
+
+    result = run("EXP-TEST", config, _fake_measure, run_timestamp="20260101-0021")
+
+    assert result.metrics["smoke"] is True
+
+
+def test_run_empty_smoke_env_var_falls_back_to_config(tmp_path, monkeypatch) -> None:
+    """SMOKE 未指定（Makefile が空文字列を export する場合も含む）なら
+    config.yaml 自身の smoke 値を使う——既存の呼び出し規約を壊さない。"""
+    monkeypatch.setattr("gtwm.eval.runner.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("gtwm.eval.runner._write_mlflow", lambda *a, **k: None)
+    monkeypatch.setenv("SMOKE", "")
+    config = OmegaConf.create({"smoke": True, "seeds": [0]})
+
+    result = run("EXP-TEST", config, _fake_measure, run_timestamp="20260101-0022")
+
+    assert result.metrics["smoke"] is True
+
+
 def test_judge_criteria_pass_and_fail() -> None:
     criteria = {"position_fact_f1": {"target": 0.9, "op": ">="}}
     assert judge_criteria({"position_fact_f1": 0.95}, criteria) == "合格"
