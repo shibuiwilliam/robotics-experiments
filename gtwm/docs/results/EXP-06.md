@@ -8,9 +8,11 @@
 - データ: `p0_eval`（5分×10本、seed=200始まり。`task_idx % len(episodes)` で巡回）
 - WM チェックポイント: `runs/wm/checkpoints_full/best.pt`（`configs/wm/full.yaml`、K=16/D=128/4層/アンサンブル3）
 - planner: `n_samples=32, horizon=5, temperature=0.3, noise_std=25.0, shortcut_bonus=30.0`（**`full_run` はこれらを上書きしない**——smoke用WM（K=8/D=64/2層、`wm_smoke`データ）に対して個別にチューニングされた値のまま、下記「考察」参照）
-- git: 実行時コミット `ec2d401` 付近、dirty フラグは `runs/EXP-06/test-debug-run/git.txt` を参照
+- git: `ec2d401`（SMOKE=0/1 の配線修正）適用後、`make exp EXP=EXP-06 SMOKE=0` で正式に再実行。実行結果は `runs/EXP-06/20260913-153615/`（`git.txt` にコミット・dirty フラグを記録）
 - seeds: [0, 1, 2]
-- 所要時間: 2774.92s（他の並列本実行（EXP-01/04/07/08/09）との CPU/MPS 資源競合下での実測値）
+- 所要時間: 2264.19s（他の並列本実行（EXP-01/04/07/08/09）との CPU/MPS 資源競合下での実測値）
+
+（初回の `runs/EXP-06/test-debug-run/` 相当の手動デバッグ実行は `SMOKE=0/1` 配線バグ（`4c9c82e`/`ec2d401` で修正）より前の状態だったため無効。本 report は上記の正式な再実行の結果を反映する。数値・考察の本質は同一——後述の「シールドの実効性が試されていない」問題は配線バグとは独立の、`planner:` チューニング値の未継承によるもの。）
 
 ## 結果表
 
