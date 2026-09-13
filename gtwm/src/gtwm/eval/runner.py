@@ -90,8 +90,16 @@ def run(
     `run_timestamp` は呼び出し側（CLI）が生成して渡す（テストで固定できるように
     引数化し、このモジュール自身は時刻を生成しない）。
     """
-    seeds = [int(s) for s in config.get("seeds", [0])]
     smoke = bool(config.get("smoke", False))
+    if not smoke and config.get("full_run") is not None:
+        # `full_run:` はこれまで各 experiments/EXP-xx/config.yaml に転記されているだけの
+        # ドキュメントで、smoke=false でも自動適用されなかった（本実行が smoke と同じ
+        # n_episodes/duration_s/probe_config を使ってしまうバグ）。ここで一度だけ、
+        # トップレベル設定へ full_run の値を上書きマージする（Phase B Stage 1 で発見・修正）。
+        merged = OmegaConf.merge(config, config.full_run)
+        assert isinstance(merged, DictConfig)
+        config = merged
+    seeds = [int(s) for s in config.get("seeds", [0])]
 
     run_dir = repo_root() / "runs" / exp_id / run_timestamp
     run_dir.mkdir(parents=True, exist_ok=True)
