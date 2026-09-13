@@ -35,8 +35,24 @@ def test_prediction_record_rejects_latent_field() -> None:
             interval_high=1.5,
             horizon_s=600.0,
             model_version="wm-smoke",
+            confidence=0.8,
             provenance=_prov(),
             latent=[0.1, 0.2, 0.3],  # type: ignore[call-arg]
+        )
+
+
+def test_prediction_record_confidence_must_be_a_probability() -> None:
+    """`confidence` はモデルが実際に出す較正済み確率のためのフィールド：[0,1] 範囲外は拒否する。"""
+    with pytest.raises(ValidationError):
+        PredictionRecord(
+            variable="queue_len",
+            point_estimate=1.0,
+            interval_low=0.5,
+            interval_high=1.5,
+            horizon_s=600.0,
+            model_version="wm-smoke",
+            confidence=1.5,
+            provenance=_prov(),
         )
 
 

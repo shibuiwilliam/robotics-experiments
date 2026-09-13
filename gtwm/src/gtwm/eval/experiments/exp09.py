@@ -77,7 +77,7 @@ def _site_b_predictions(set_name: str, probe_config: str, stride: int) -> list[P
                     modules, frame, cam_names, cam_params
                 )
                 zone_probs = probe.zone_probs(slots, calibrated=True)
-                _conf, idx = zone_probs.max(dim=-1)
+                conf, idx = zone_probs.max(dim=-1)
 
             atol = 0.5 / ep.log_hz
             pose_rows = poses[np.isclose(poses["t"].to_numpy(), t_s, atol=atol)]
@@ -96,6 +96,7 @@ def _site_b_predictions(set_name: str, probe_config: str, stride: int) -> list[P
                     interval_high=float(idx[slot_idx]),
                     horizon_s=0.0,
                     model_version=f"wm-smoke:{probe_config}",
+                    confidence=float(conf[slot_idx]),
                     provenance=Provenance(
                         generated_by="gt:ProbeAlpha",
                         attributed_to="site_b",
@@ -172,17 +173,17 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
 
 
 def _received_side_ece(received: list[PredictionRecord]) -> float:
-    """受領した予測の確信度は `PredictionRecord` に運ばれないため（意図的：poc_plan.md 5.5
-    は値・区間・ホライズン・モデル版のみを交換対象とし確信度は明示していない）、ここでは
-    `outcome_correct` の充足率そのものを一様確信度1.0とみなした ECE として計算する
-    （全予測を「確信度1.0」として送っている体で較正誤差=誤り率になる、という簡略化。
-    本実行では `ExchangeBelief.confidence` を伴う信念の交換に切り替えて正しく評価すること
-    を次セッションへの申し送りとする）。
+    """受領側 ECE（poc_plan.md 付録A）。`PredictionRecord.confidence` は発信側の α が実際に
+    出した較正済みゾーン確信度（`probe.zone_probs(slots, calibrated=True).max()`）であり、
+    一様な仮の値ではない。旧実装は confidence フィールド自体が無く一様1.0を仮定していたため
+    ECE が実質 (1-accuracy) に退化していた（docs/status.md 全体まとめ・既知の制約#4）。
     """
     if not received:
         return float("nan")
-    correct = [bool(p.outcome_correct) for p in received if p.outcome_correct is not None]
-    if not correct:
+    pairs = [
+        (p.confidence, bool(p.outcome_correct)) for p in received if p.outcome_correct is not None
+    ]
+    if not pairs:
         return float("nan")
-    confidences = [1.0] * len(correct)
-    return ece(confidences, correct)
+    confidences, correct = zip(*pairs, strict=True)
+    return ece(list(confidences), list(correct))
