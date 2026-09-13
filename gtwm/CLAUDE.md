@@ -80,7 +80,7 @@ uv run gtwm --help  # サブコマンド：doctor sim kg wm ground exp whatif ll
 - オントロジー・指標・文法など「契約」に当たるものはコードより先にドキュメント（ttl / criteria.yaml / 文法ファイル）を変更する。
 
 ## 秘密情報・データ
-- API キーは `.env`（gitignore 済）。`.env.example` には変数名だけ：`ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GOOGLE_API_KEY`。キーをログ・コミット・チャット出力に出さない。
+- API キーは `.env`（gitignore 済）。`.env.example` には変数名だけ：`ANTHROPIC_API_KEY` `OPENAI_API_KEY` `GEMINI_API_KEY`。キーをログ・コミット・チャット出力に出さない。
 - 生成データは全て自前。外部データセット・外部映像は取り込まない。
 - `PYTORCH_ENABLE_MPS_FALLBACK=1` と `TOKENIZERS_PARALLELISM=false` は `.env` と Makefile の両方で設定する。
 
