@@ -14,6 +14,7 @@ import mujoco
 import numpy as np
 import pandas as pd
 
+from gtwm.sim.concept_injection import ConceptInjectionConfig, apply_concept_injections
 from gtwm.sim.drift import DriftConfig, apply_drift
 from gtwm.sim.env import PHYSICS_DT, RawTrajectory, WarehouseEnv
 from gtwm.sim.realism import RealismConfig, apply_observation_realism
@@ -60,6 +61,7 @@ class GenConfig:
     seed: int
     realism: RealismConfig | None = None  # None＝P0/smoke（realism 無効、既定）
     drift: DriftConfig | None = None  # None＝ドリフト無し（既定）
+    concept_injections: ConceptInjectionConfig | None = None  # None＝概念注入無し（既定、EXP-08用）
 
 
 def _unify_anchor_events(anchor_df: pd.DataFrame, zones: dict[str, list[str]]) -> pd.DataFrame:
@@ -147,6 +149,7 @@ def generate_episode(
     output_root: Path | None = None,
     realism: RealismConfig | None = None,
     drift: DriftConfig | None = None,
+    concept_injections: ConceptInjectionConfig | None = None,
 ) -> Path:
     """1エピソードを生成し、出力ディレクトリを返す。"""
     seed_everything(seed)
@@ -201,6 +204,24 @@ def generate_episode(
                 occ_row[oi] = occlusion_rate(frame.seg_id, frame.seg_type, gid, area)
             writer.add_frame(cam, t_idx, frame, occ_row)
 
+    poses_rows = []
+    for name in env.tracked_names:
+        for t_idx in range(n_log):
+            pos = positions[name][t_idx]
+            poses_rows.append(
+                {
+                    "t": float(times[t_idx]),
+                    "entity": name,
+                    "entity_gt_id": ontology_id(name),
+                    "x": float(pos[0]),
+                    "y": float(pos[1]),
+                    "z": float(pos[2]),
+                    "yaw": float(yaws[name][t_idx]) if name in yaws else 0.0,
+                    "zone": zones[name][t_idx],
+                }
+            )
+    poses_df = pd.DataFrame(poses_rows)
+
     traj = RawTrajectory(times=times, positions=positions, yaws=yaws, zones=zones)
     anchor_cfg = AnchorConfig()
     anchor_df = detect_all_anchors(
@@ -233,29 +254,18 @@ def generate_episode(
     events_df, injection_ledger = apply_injections(
         events_df, injection_cfg, injection_seed=seed + 1_000_000
     )
-    if not injection_ledger.empty:
-        injection_ledger = injection_ledger.assign(episode_id=episode_id)
+
+    concept_cfg = concept_injections or ConceptInjectionConfig()
+    events_df, concept_ledger = apply_concept_injections(
+        events_df, poses_df, concept_cfg, injection_seed=seed + 2_000_000
+    )
+
+    combined_ledger = pd.concat([injection_ledger, concept_ledger], ignore_index=True)
+    if not combined_ledger.empty:
+        combined_ledger = combined_ledger.assign(episode_id=episode_id)
         ledger_dir = repo_root() / "data" / "injections"
         ledger_dir.mkdir(parents=True, exist_ok=True)
-        injection_ledger.to_parquet(ledger_dir / f"{episode_id}.parquet", index=False)
-
-    poses_rows = []
-    for name in env.tracked_names:
-        for t_idx in range(n_log):
-            pos = positions[name][t_idx]
-            poses_rows.append(
-                {
-                    "t": float(times[t_idx]),
-                    "entity": name,
-                    "entity_gt_id": ontology_id(name),
-                    "x": float(pos[0]),
-                    "y": float(pos[1]),
-                    "z": float(pos[2]),
-                    "yaw": float(yaws[name][t_idx]) if name in yaws else 0.0,
-                    "zone": zones[name][t_idx],
-                }
-            )
-    poses_df = pd.DataFrame(poses_rows)
+        combined_ledger.to_parquet(ledger_dir / f"{episode_id}.parquet", index=False)
 
     meta = {
         "episode_id": episode_id,
@@ -290,6 +300,7 @@ def generate_set(cfg: GenConfig, output_root: Path | None = None) -> list[Path]:
                 output_root=output_root,
                 realism=cfg.realism,
                 drift=cfg.drift,
+                concept_injections=cfg.concept_injections,
             )
         )
     return dirs
