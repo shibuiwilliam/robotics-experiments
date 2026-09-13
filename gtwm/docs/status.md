@@ -32,7 +32,7 @@ CLAUDE.md「現在のフェーズと着手順」の 1〜9 が全て完了（smok
 | EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
 | EXP-08 | H7（概念発見） | smoke実行済み | `runs/EXP-08/20260913-100119`：n_candidates=5, injected_concept_top5_hit=3/3種（目標2種以上） | 参考（smoke） |
 | EXP-09 | H8（連合ツインと漏洩評価） | smoke実行済み | `runs/EXP-09/20260913-103010`：ece=1.0（要フォローアップ、下記参照）, reconstruction_ssim≈0.123（目標0.30以下は満たす）, reid_top1_vs_chance=3.0（目標1.2倍以下を大きく超過、線形分類器がsmoke規模のワーカー3人を容易に判別）, n_policy_violations=1（意図的な違反要求が正しく拒否・記録された） | 参考（smoke） |
-| EXP-07 | H6（WHAT-IF反実仮想の忠実性） | smoke実行済み | `runs/EXP-07/20260913-105003`：kpi_relative_error≈0.72（目標0.15以下、smoke規模の代理KPIでは未達）, interval_coverage_90=0.0（目標0.80以上、predicted point が smoke WM+probe で常に0.0になる既知の傾向——session07検証時から同一現象、下記参照） | 参考（smoke） |
+| EXP-07 | H6（WHAT-IF反実仮想の忠実性） | smoke実行済み（行動チャネル修正後に再実行） | `runs/EXP-07/20260913-114126`：kpi_relative_error≈0.72（目標0.15以下、未達）, interval_coverage_90=0.0（目標0.80以上、未達）。predicted_point は行動チャネル修正（commit 84e2321）後も3介入とも0.0のまま——原因は診断済み（下記「全体まとめ」ガップ2参照：Pickゾーンのsmoke規模での分類バイアス＋action_in未学習の2点、配線の問題ではない） | 参考（smoke） |
 | EXP-10 | H9（オペレータ評価） | 準備完了（評価は人が実施） | `src/gtwm/grounding/exp10_harness.py` + `gtwm dashboard`「EXP-10」2タブ、`docs/results/EXP-10_protocol.md`。AppTestで開始→対応→完了→SUS送信を実機確認済み | 未実施（人手評価待ち） |
 
 ## 既知の制約・記録
@@ -286,12 +286,41 @@ CLAUDE.md「現在のフェーズと着手順」の1〜9が全てsmoke規模で�
    ε で測る」という仕組みそのものはまだ実装されていない。本実行前に
    `wms_mock.generate_orders()`（または `events.parquet` の直近記録）を参照する
    真の F^h への置き換えが必要。
-2. **EXP-07 の predicted_point が smoke で常に0.0になる**（本セッションで確認、上記
-   参照）。本実行の規模で解消するか要検証。
-3. **行動空間がエンティティ×プロパティで意味付けされていない**（`kg/whatif/compiler.py`
-   の `ACTION_DIM_FOR_INTERVENTION` 簡略化、session 07 からの申し送り、ADR候補）。
-   EXP-07の3介入がいずれも「意味的に正しい」`do()` ではなく行動ベクトル次元0への
-   一様上書きになっている一因。
+2. **EXP-07 の predicted_point が smoke で常に0.0になる（診断済み、未解消）**：
+   下記ガップ3の修正（行動チャネルの意味付け）を適用した後も再現することを
+   確認した（`runs/EXP-07/20260913-114126`：3介入とも predicted_point=0.0 のまま、
+   measured 側は 0.13〜0.53 と非ゼロ）。原因は2つ特定済みで、どちらもチャネル
+   配線の問題ではない：(a) EXP-07 が問い合わせる `gt:Zone_Pick` は smoke規模データで
+   はほぼ滞在者がおらず、確率化ヘッド（`grounding/probes.py`）はゾーン分類が
+   多数派クラス（`Storage_A`、session 5 の実装メモに記載済み）に偏っているため、
+   ロールアウト後の終端スロットが Pick に分類されることがほぼ無い（実測で
+   確認：`gtwm whatif` で `gt:Zone_Storage_A` を問い合わせると同じ設定で
+   非ゼロ値（2.0/6.0）が得られる——KPI集計ロジック自体は正しく動作している）。
+   (b) 下記ガップ3参照：`action_in` が学習されていないため、`do()` の介入値を
+   変えても現実的なスケールでは終端スロットの分類にほぼ影響しない。本実行では
+   Pick により多くの滞在が起きるデータ規模・シナリオを使うか、KPI対象ゾーンを
+   見直すことで(a)は緩和されうるが、(b)（行動条件付き学習）が無い限り `do()` に
+   よる真の予測変化は原理的に得られない。
+3. **行動空間の意味付けを修正済み（`fix(gtwm): replace uniform dim-0 action
+   override with named action channels`、commit 84e2321）**：`kg/whatif/compiler.py`
+   の `ACTION_CHANNELS`（speed=0, active=1, staging_offset=2、次元3は予約）と
+   `DEFAULT_CURRENT_VALUE_BY_PROPERTY`（倍率プロパティは基準1.0、加減算プロパティは
+   基準0.0）で、プロパティ名からエンティティ非依存の固定チャネルへ解決するように
+   なった（未知のプロパティは例外＋既知プロパティ一覧を返す。旧: 常に次元0への
+   一様上書き）。EXP-06 再実行で回帰が無いことを確認済み
+   （violations_with_shield=0/3, without=3/3、変更前と同じ）。
+   **ただし、これは配線の修正であって学習の修正ではない**：`wm/dynamics.py` の
+   docstring に明記した通り、`wm/train.py` の学習ループは
+   `dynamics.rollout(context, None, None, horizon)` を常に `actions=None` で
+   呼んでおり、`DynamicsHead.action_in`（行動トークンの線形射影）は一度も
+   非ゼロの行動勾配を受け取らずランダム初期化のまま学習されていない。
+   実測で確認：`action_in` は行動値0→50のような大きな振れには数値的に反応する
+   （出力ノルムが変化する）が、これは学習された意味的効果ではなく未学習の線形層に
+   よる入力増幅であり、`1.8 * current`（=1.8）のような現実的な介入スケールでは
+   基準（actions=None）との差がノイズに埋もれる。`do()` に真の予測的レバレッジを
+   持たせるには、行動条件付きの訓練データ（実際に行動を変えた結果とペアになった
+   エピソード）の生成と、`wm/train.py` のロールアウト損失計算に非ゼロの `actions`
+   を渡す学習ループの拡張が別途必要（本セッションのスコープ外、次の作業項目）。
 4. **[解消済み 2026-09-13] EXP-09 の受領側ECEが確信度なし交換スキーマの副作用で accuracy
    と等価になる**（session 10 からの申し送り）。`PredictionRecord` に `confidence`
    フィールド（[0,1] 検証付き、`extra="forbid"` は維持——生映像・潜在は引き続き交換不可）
