@@ -95,3 +95,80 @@ def test_budget_exceeded_rejects_call(tmp_path: Path, monkeypatch: pytest.Monkey
     with pytest.raises(LLMBudgetExceededError):
         client.call("concept_naming", "prompt")
     client.close()
+
+
+def test_openai_dispatch_retries_without_temperature_on_unsupported_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一部の実プロバイダのモデル（例：2026-09-13 に確認した gpt-5.6-luna）は
+    temperature の変更を受け付けず、`Unsupported value: 'temperature' ...` で
+    BadRequestError を返す。`_dispatch` はこの特定のエラーだけを検知して
+    temperature 無指定（モデル既定値）で1回だけ再試行しなければならない。"""
+    import httpx
+    import openai
+
+    config_path = tmp_path / "llm_openai.yaml"
+    config_path.write_text(
+        "tasks:\n"
+        "  concept_naming:\n"
+        "    provider: openai\n"
+        "    model: fake-temperature-locked-model\n"
+        "pricing: {}\n"
+        "retry:\n"
+        "  max_retries: 0\n"
+        "  temperature_for_json_tasks: 0.0\n"
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+
+    call_count = {"n": 0}
+
+    class _FakeMessage:
+        content = '{"value": "ok"}'
+
+    class _FakeChoice:
+        message = _FakeMessage()
+
+    class _FakeUsage:
+        prompt_tokens = 3
+        completion_tokens = 1
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+        usage = _FakeUsage()
+
+    def _fake_create(**kwargs: object) -> object:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            assert kwargs.get("temperature") == 0.0
+            req = httpx.Request("POST", "https://api.openai.com/v1/chat/completions")
+            resp = httpx.Response(400, request=req, json={"error": {"message": "x"}})
+            raise openai.BadRequestError(
+                "Unsupported value: 'temperature' does not support 0.0 with this model.",
+                response=resp,
+                body=None,
+            )
+        assert "temperature" not in kwargs
+        return _FakeResponse()
+
+    class _FakeCompletions:
+        create = staticmethod(_fake_create)
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            del api_key
+            self.chat = _FakeChat()
+
+    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAIClient)
+
+    client = LLMClient(
+        config_path=str(config_path),
+        cache=LLMCache(tmp_path / "cache.sqlite"),
+        usage_log_path=tmp_path / "usage.jsonl",
+    )
+    resp = client.call("concept_naming", "prompt", schema=_Output, max_tokens=10)
+    assert resp.text == '{"value": "ok"}'
+    assert call_count["n"] == 2
+    client.close()
