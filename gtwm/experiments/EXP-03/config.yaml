@@ -10,4 +10,7 @@ horizons_steps: [2, 4, 8, 16] # frame_stride=5, log_hz=10 -> 実時間 1s/2s/4s/
 effective_horizon_tau: 0.2 # poc_plan.md 付録A の既定値と一致（configs/grounding/epsilon.yaml参照）
 full_run:
   seeds: [0, 1, 2]
-  note: "60秒先の比較には30秒超のエピソード（p0_train/p0_eval相当）が必要。smokeは1〜8秒までしか届かない。"
+  wm_config: configs/wm/full.yaml # Phase B Stage 1 で学習した本実行チェックポイント
+  data_set: p0_eval # 300秒エピソード（p0_train相当）。60秒先の比較に必要な長さを満たす
+  horizons_steps: [2, 4, 8, 16, 32, 64, 120] # frame_stride=5, log_hz=10 -> 1/2/4/8/16/32/60秒
+  note: "60秒先の比較には30秒超のエピソード（p0_train/p0_eval相当）が必要。smokeは1〜8秒までしか届かない。Phase B Stage 1 で解消。"

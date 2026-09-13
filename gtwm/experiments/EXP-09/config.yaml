@@ -10,6 +10,7 @@ frame_stride: 10
 full_run:
   seeds: [0, 1, 2]
   n_episodes: 20
+  probe_config: configs/grounding/probe_train_full.yaml # Phase B Stage 1 で学習
   note: >
     poc_plan.md 6.2 は「本サイトと模擬第二拠点」間の継続的な予測交換を想定。本実行では
     ADR-0002 の最小 HTTP コネクタを実際に Docker (`make up-p2`) 越しに使う構成へ切替え、

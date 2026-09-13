@@ -21,4 +21,8 @@ planner:
 full_run:
   seeds: [0, 1, 2]
   n_tasks: 100
-  note: "poc_plan.md 6.2 通りの100タスク・P0模擬AGVでの実行が必要。危険物隣接・容量制約も対象に含める拡張が要る。"
+  probe_config: configs/grounding/probe_train_full.yaml # Phase B Stage 1 で学習
+  data_set: p0_eval # 10エピソード×3000フレーム。task_idx % len(episodes) で巡回するため
+  # wm_smoke(2エピソード)よりはるかに多様な初期状態が得られる
+  note: "poc_plan.md 6.2 通りの100タスク。危険物隣接・容量制約（ComplianceShield は対応済みだが、
+    本タスク生成は単一禁止ゾーンのみを対象、Phase B Stage 1時点でも未拡張）は依然対象外。"

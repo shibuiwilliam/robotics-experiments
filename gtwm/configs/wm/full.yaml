@@ -1,0 +1,56 @@
+# 本実行（full run）用の世界モデル設定。configs/wm/base.yaml のアーキテクチャ
+# （K=16, D=128, 4層, アンサンブル3）を使うが、Phase B Stage 1 でこの設定自体の
+# 学習時間を実測してから max_steps を確定する（CLAUDE.md「学習1ランは2時間以内」）。
+# max_steps は実測後にこのファイルへ反映する（当初 null=base.yaml のまま学習し、
+# 2時間を超えそうなら縮小して再学習する、というCLAUDE.mdの指示に従う）。
+encoder:
+  model_name: facebook/dinov2-small
+  freeze_backbone: true
+  adapter_dim: 128
+
+slots:
+  n_slots: 16
+  slot_dim: 128
+  n_iters: 3
+  n_types: 6
+
+fusion:
+  n_slots: 16
+  slot_dim: 128
+  n_heads: 4
+
+dynamics:
+  n_layers: 4
+  d_model: 256
+  n_heads: 8
+  ensemble_size: 3
+  action_dim: 4
+  cond_dim: 64
+
+planner:
+  n_samples: 256
+  horizon: 20
+
+train:
+  data_set: p0_train
+  seed: 0
+  batch_size: 4
+  seq_len: 16
+  frame_stride: 1
+  lr: 3.0e-4
+  max_epochs: 20
+  max_steps: 2500 # 実測 ~2.18s/step（p1_trainでの20ステップ試験、docs/status.md参照）
+  # ×2500 ≈ 91分。2時間予算に対し十分な余裕（eval・チェックポイント保存の
+  # オーバーヘッドを見込んでも安全）。
+  early_stop_patience: 5
+  checkpoint_dir: runs/wm/checkpoints_full
+  mlflow_experiment: gtwm-wm-full
+  loss_weights:
+    prediction: 1.0
+    anchor_grounding: 0.0
+    constraint: 0.0
+    identity: 0.0
+
+synthetic_eval:
+  horizon: 10
+  max_latent_cosine_distance: 0.2
