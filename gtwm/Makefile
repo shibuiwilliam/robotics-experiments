@@ -42,6 +42,15 @@ up:
 down:
 	docker compose --profile core down
 
+up-p2:
+	docker compose --profile p2 up -d --build
+	@echo "拠点コネクタの healthcheck 待ち..."
+	@timeout 60 sh -c 'until [ "$$(docker inspect -f "{{.State.Health.Status}}" gtwm-site-a-connector-1 2>/dev/null)" = "healthy" ] && [ "$$(docker inspect -f "{{.State.Health.Status}}" gtwm-site-b-connector-1 2>/dev/null)" = "healthy" ]; do sleep 1; done'
+	@echo "site_a (:9101) / site_b (:9102) ともに healthy"
+
+down-p2:
+	docker compose --profile p2 down
+
 sim-smoke:
 	uv run gtwm sim gen --set smoke --episodes 1 --duration 30 --seed 0
 
