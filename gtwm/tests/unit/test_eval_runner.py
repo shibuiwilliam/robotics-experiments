@@ -43,6 +43,55 @@ def test_run_aggregates_across_seeds(tmp_path, monkeypatch) -> None:
     assert result.metrics["aggregated"]["position_fact_f1"] == pytest.approx(0.6)
 
 
+def test_run_merges_full_run_overrides_when_not_smoke(tmp_path, monkeypatch) -> None:
+    """`full_run:` はこれまで各 experiments/EXP-xx/config.yaml に転記されるだけの
+    ドキュメントで、smoke=false でも自動適用されなかった（本実行が smoke と同じ
+    n_episodes/duration_s を使ってしまうバグ、Phase B Stage 1 で発見）。"""
+    monkeypatch.setattr("gtwm.eval.runner.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("gtwm.eval.runner._write_mlflow", lambda *a, **k: None)
+    config = OmegaConf.create(
+        {
+            "smoke": False,
+            "seeds": [0],
+            "n_episodes": 2,
+            "duration_s": 30.0,
+            "full_run": {"seeds": [0, 1, 2], "n_episodes": 14, "duration_s": 90.0},
+        }
+    )
+    seen_configs = []
+
+    def measure(config, seed):  # noqa: ANN001
+        seen_configs.append((config.n_episodes, config.duration_s))
+        return {"x": 1.0}
+
+    result = run("EXP-TEST", config, measure, run_timestamp="20260101-0010")
+
+    assert result.metrics["seeds"] == [0, 1, 2]
+    assert seen_configs == [(14, 90.0), (14, 90.0), (14, 90.0)]
+
+
+def test_run_keeps_smoke_config_when_smoke_true(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("gtwm.eval.runner.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("gtwm.eval.runner._write_mlflow", lambda *a, **k: None)
+    config = OmegaConf.create(
+        {
+            "smoke": True,
+            "seeds": [0],
+            "n_episodes": 2,
+            "duration_s": 30.0,
+            "full_run": {"seeds": [0, 1, 2], "n_episodes": 14, "duration_s": 90.0},
+        }
+    )
+    seen_configs = []
+
+    def measure(config, seed):  # noqa: ANN001
+        seen_configs.append((config.n_episodes, config.duration_s))
+        return {"x": 1.0}
+
+    run("EXP-TEST", config, measure, run_timestamp="20260101-0011")
+    assert seen_configs == [(2, 30.0)]
+
+
 def test_judge_criteria_pass_and_fail() -> None:
     criteria = {"position_fact_f1": {"target": 0.9, "op": ">="}}
     assert judge_criteria({"position_fact_f1": 0.95}, criteria) == "合格"
