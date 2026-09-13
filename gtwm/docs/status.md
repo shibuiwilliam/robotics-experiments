@@ -292,8 +292,20 @@ CLAUDE.md「現在のフェーズと着手順」の1〜9が全てsmoke規模で�
    の `ACTION_DIM_FOR_INTERVENTION` 簡略化、session 07 からの申し送り、ADR候補）。
    EXP-07の3介入がいずれも「意味的に正しい」`do()` ではなく行動ベクトル次元0への
    一様上書きになっている一因。
-4. **EXP-09 の受領側ECEが確信度なし交換スキーマの副作用で accuracy と等価になる**
-   （session 10 からの申し送り）。
+4. **[解消済み 2026-09-13] EXP-09 の受領側ECEが確信度なし交換スキーマの副作用で accuracy
+   と等価になる**（session 10 からの申し送り）。`PredictionRecord` に `confidence`
+   フィールド（[0,1] 検証付き、`extra="forbid"` は維持——生映像・潜在は引き続き交換不可）
+   を追加し、`_site_b_predictions` が既に計算していた較正済み確信度
+   （`probe.zone_probs(slots, calibrated=True).max()`、従来は `_conf` として破棄されて
+   いた）を実際に交換レコードへ載せるよう修正（`src/gtwm/eval/experiments/exp09.py`）。
+   `make up-p2` 上の実コネクタで確信度フィールドが実際に HTTP JSON に載ることを確認済み。
+   修正後の ECE は 1.0→0.944 とわずかな改善に留まったが、これは計算方法自体のバグでは
+   なく、site_b のプローブがこの smoke 規模（`p2_site_b`、2エピソード）では
+   **accuracy=0.000**（mean_confidence=0.944 と同水準）という、より深刻な既知の
+   問題を露呈させた結果である（`_site_b_predictions` を直接呼んで実測・確認済み）。
+   ECE 修正自体は完了だが、site_b プローブの学習不足（データ量または学習ステップ数が
+   smoke 既定のままで `p2_site_b` には不足している可能性）は新たな申し送り事項として
+   記録する——本実行前に `p2_site_b` の生成規模・probe 学習設定を見直すこと。
 5. **CBV（Core Business Vocabulary）がスタブ**（session 03、`ref.gs1.org`/`gs1.org`
    から機械可読なRDFを取得できなかったため）。
 6. **pre-commit install がこの開発機では失敗する**（親リポジトリの `core.hooksPath`
