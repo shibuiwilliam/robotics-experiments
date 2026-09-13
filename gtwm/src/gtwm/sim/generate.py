@@ -150,10 +150,23 @@ def generate_episode(
     realism: RealismConfig | None = None,
     drift: DriftConfig | None = None,
     concept_injections: ConceptInjectionConfig | None = None,
+    active_workers: frozenset[str] | None = None,
+    worker_speed_multiplier: float = 1.0,
+    worker_loop_overrides: dict[str, list[tuple[float, float]]] | None = None,
 ) -> Path:
-    """1エピソードを生成し、出力ディレクトリを返す。"""
+    """1エピソードを生成し、出力ディレクトリを返す。
+
+    `active_workers`/`worker_speed_multiplier`/`worker_loop_overrides` は EXP-07
+    （H6）の介入実測用に `WarehouseEnv` へそのまま渡す（`sim/env.py` の docstring
+    参照）。既定値では従来と挙動が変わらない。
+    """
     seed_everything(seed)
-    env = WarehouseEnv(seed=seed)
+    env = WarehouseEnv(
+        seed=seed,
+        active_workers=active_workers,
+        worker_speed_multiplier=worker_speed_multiplier,
+        worker_loop_overrides=worker_loop_overrides,
+    )
 
     n_log = int(round(duration_s * LOG_HZ))
     substeps = int(round(1.0 / LOG_HZ / PHYSICS_DT))

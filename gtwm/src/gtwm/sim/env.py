@@ -55,7 +55,30 @@ class RawTrajectory:
 class WarehouseEnv:
     """倉庫 MJCF を読み込み、AGV/作業者の簡易スクリプト制御でステップする。"""
 
-    def __init__(self, seed: int = 0) -> None:
+    def __init__(
+        self,
+        seed: int = 0,
+        active_workers: frozenset[str] | None = None,
+        worker_speed_multiplier: float = 1.0,
+        worker_loop_overrides: dict[str, list[tuple[float, float]]] | None = None,
+    ) -> None:
+        """
+        `active_workers` / `worker_speed_multiplier` / `worker_loop_overrides` は
+        EXP-07（H6、反実仮想の忠実性）が「担当人数変更」「コンベア速度変更」
+        「一時置き場位置変更」の3介入を物理的に実測するために追加した拡張点。
+        既定値（全員稼働・倍率1.0・上書き無し）では従来と完全に同じ挙動になる。
+
+        この sim は作業者の移動とパレット/ケースの実位置が独立（`sim/drift.py` の
+        docstring参照）なため、「担当人数」「コンベア速度」を字義通りに物理接続する
+        手段が無い。EXP-07では以下の簡易代理として実装する（docs/status.md に明記）：
+        - `active_workers`: 指定しない作業者はスプラインの起点で静止する
+          （＝担当から外れた、の代理）。
+        - `worker_speed_multiplier`: 全作業者の巡回速度を一律倍にする
+          （＝コンベアが速いほど処理サイクルが速くなる、という業務上の意味を
+          作業者の移動速度で代理する）。
+        - `worker_loop_overrides`: 指定した作業者の巡回経路（ウェイポイント）を
+          差し替える（＝一時置き場の位置が変わり、動線が変わる、の代理）。
+        """
         self.model = mujoco.MjModel.from_xml_path(str(warehouse_xml_path()))
         self.data = mujoco.MjData(self.model)
         self.seed = seed
@@ -64,6 +87,9 @@ class WarehouseEnv:
         self.case_names = [f"case:{i}" for i in range(1, N_CASES + 1)]
         self.agv_names = list(AGV_LOOPS.keys())
         self.worker_names = list(WORKER_LOOPS.keys())
+        self.active_workers = (
+            active_workers if active_workers is not None else frozenset(self.worker_names)
+        )
         self.tracked_names = (
             self.pallet_names + self.case_names + self.agv_names + self.worker_names
         )
@@ -88,9 +114,13 @@ class WarehouseEnv:
         self.agv_controllers = {
             name: AgvController(waypoints=np.array(wp)) for name, wp in AGV_LOOPS.items()
         }
+        overrides = worker_loop_overrides or {}
         self.worker_paths: dict[str, WorkerPath] = {
             name: make_worker_path(
-                wp, speed=len(wp) / WORKER_LOOP_SECONDS, phase=float(i), seed=seed * 100 + i
+                overrides.get(name, wp),
+                speed=len(overrides.get(name, wp)) / WORKER_LOOP_SECONDS * worker_speed_multiplier,
+                phase=float(i),
+                seed=seed * 100 + i,
             )
             for i, (name, wp) in enumerate(WORKER_LOOPS.items())
         }
@@ -118,7 +148,8 @@ class WarehouseEnv:
             self.data.ctrl[act_yaw] = vyaw
 
         for name, path in self.worker_paths.items():
-            xy = path.position_at(t_s)
+            t_eff = t_s if name in self.active_workers else 0.0
+            xy = path.position_at(t_eff)
             mocap_id = self.mocap_ids[name]
             self.data.mocap_pos[mocap_id] = [float(xy[0]), float(xy[1]), 0.5]
 

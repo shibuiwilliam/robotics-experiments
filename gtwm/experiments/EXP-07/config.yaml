@@ -1,0 +1,17 @@
+# EXP-07 WHAT-IF反実仮想の忠実性。smoke: true で ≤5分の縮小版に切り替わる。
+smoke: true
+seeds: [0]
+probe_config: configs/grounding/probe_train_smoke.yaml
+base_set: exp07_smoke
+duration_s: 20.0
+horizon_s: 12.0
+window_half_s: 8.0
+samples: 8
+full_run:
+  seeds: [0, 1, 2]
+  duration_s: 300.0
+  note: >
+    poc_plan.md 6.2 は「業務側と合意した介入を各2回実施し実測と比較」を想定。
+    本実行では各介入をseedを変えて複数回繰り返し測定のばらつきを報告すること。
+    また `kg/whatif/compiler.py` の ACTION_DIM_FOR_INTERVENTION 簡略化（行動空間が
+    エンティティ×プロパティで意味付けされていない）の解消を検討すること（ADR候補）。
