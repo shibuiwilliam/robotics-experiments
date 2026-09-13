@@ -1,48 +1,51 @@
 # LLM タスク割当・料金表（.claude/rules/llm.md）。
 # モデル名はここでのみ指定し、コードに書かない（gtwm.llm.client.LLMClient が読む）。
 #
-# NOTE: 以下のモデル識別子はプレースホルダーであり、実在確認は行っていない
-# （`gtwm llm ping` で疎通・実在を確認してから使うこと。llm.md「起動時に gtwm llm
-# ping で各プロバイダの疎通と設定モデルの実在を確認し、失敗したらエラーにする」）。
-# 使用前に、実際に契約しているプロバイダの最新モデル名に置き換えて確認すること。
+# NOTE: 以下のモデル識別子は 2026-09-13 に ai.google.dev / developers.openai.com の
+# 公式ドキュメントを WebFetch で直接確認した上で設定したものだが、取得内容の要約は
+# 中間モデルを経由しており完全な保証ではない。`gtwm llm ping` は疎通（APIキー認証）
+# のみ確認し、モデル名自体の実在は確認しない。実行前に必ず最小のテスト呼出（例：
+# `gtwm llm ping` 後、実タスクを1件だけ実行してエラーが無いか確認）で実在を確かめる
+# こと。モデルの入替時期が早い分野のため、契約プロバイダの最新モデル名と乖離して
+# いないか都度確認すること。
 
 tasks:
   # (1) オントロジーのラベル・コメント下書き
   ontology_label_draft:
     provider: anthropic
-    model: claude-placeholder-prose
+    model: claude-sonnet-5
   # (2) SPARQL 候補生成
   sparql_candidate:
     provider: anthropic
-    model: claude-placeholder-prose
+    model: claude-sonnet-5
   # (3) 概念候補の命名と説明（JSON厳格出力）
   concept_naming:
     provider: openai
-    model: gpt-placeholder-json
+    model: gpt-5.6-luna
   # (4) 自然言語→WHAT-IF クエリ変換（JSON厳格出力）
   nl_to_whatif:
     provider: openai
-    model: gpt-placeholder-json
+    model: gpt-5.6-luna
   # (5) レポート下書き
   report_draft:
     provider: anthropic
-    model: claude-placeholder-prose
+    model: claude-sonnet-5
   # (6) 生成エピソードのQA・LLM-as-judge（映像・画像）
   episode_qa:
     provider: gemini
-    model: gemini-placeholder-vision
+    model: gemini-2.5-flash
 
 # 概算費用（USD / 1M トークン）。不明なプロバイダ/モデルは記録時に null として扱い、
 # 推定しない（llm.md「費用単価は configs/llm.yaml の pricing から読む。不明なら
-# null で記録し、推定しない」）。ここもプレースホルダーであり実額ではない。
+# null で記録し、推定しない」）。ここも実額を確認していないため null のままにする。
 pricing:
-  claude-placeholder-prose:
+  claude-sonnet-5:
     input_per_1m: null
     output_per_1m: null
-  gpt-placeholder-json:
+  gpt-5.6-luna:
     input_per_1m: null
     output_per_1m: null
-  gemini-placeholder-vision:
+  gemini-2.5-flash:
     input_per_1m: null
     output_per_1m: null
   mock-model:
