@@ -5,13 +5,14 @@ set_name: smoke
 episode_id: ep_0000_seed0
 full_run:
   seeds: [0, 1, 2]
-  set_name: p0_eval # Phase B Stage 1：smoke の1エピソードから300秒エピソードへ拡大
-  episode_id: ep_0000_seed200 # p0_eval の最初のエピソード（Stage 1 完了後に実IDを確認・要修正）
-  estimated_data: "P0で棚裏通過・積み重ね・作業者隠蔽シナリオ 200回相当"
-  known_limitation: >
-    measure()（src/gtwm/eval/experiments/exp02.py）は単一エピソード（config.set_name +
-    config.episode_id）のみを処理する設計で、seed は同一エピソードの乱数再シードにしか
-    ならない（複数エピソードを跨いで選択しない）。poc_plan.md 6.2 の「200回相当」を真に
-    満たすには、measure() を p0_eval の複数エピソード（または複数の遮蔽シナリオ）を
-    ループして集計するよう拡張する必要がある（Phase B Stage 1 では未実施、コードの
-    測定ロジック変更はデータ生成・学習の範囲外のため次段階に送る）。
+  set_name: p0_eval
+  episode_ids: # Phase B Stage 2: 単一エピソードから p0_eval 全10本のプール集計へ拡張
+    [
+      ep_0000_seed200, ep_0001_seed201, ep_0002_seed202, ep_0003_seed203,
+      ep_0004_seed204, ep_0005_seed205, ep_0006_seed206, ep_0007_seed207,
+      ep_0008_seed208, ep_0009_seed209,
+    ]
+  estimated_data: >
+    P0で棚裏通過・積み重ね・作業者隠蔽シナリオ 200回相当（実行時間の都合上、
+    p0_eval の10エピソード×300秒をプール集計する PoC 縮小版で代替。文字通りの
+    200エピソードは実行時間の見積り上非現実的なため採用しない）。
