@@ -25,7 +25,7 @@ CLAUDE.md「現在のフェーズと着手順」の 1〜9 が全て完了（smok
 |---|---|---|---|---|
 | EXP-01 | H1（接地精度） | 本実行済み（seed×3） | `runs/EXP-01/20260913-145330`：position_fact_f1=0.898（目標0.90にわずかに未達）, type_accuracy=0.714（目標0.95に未達）。詳細は `docs/results/EXP-01.md` | **不合格** |
 | EXP-02 | H1（遮蔽下の同一性） | **本実行済み（seed×3, p0_eval全10本をプール集計するようmeasure()を修正）** | `runs/EXP-02/20260913-152707`：id_switch_rate=0.166（目標0.05以下、未達だがbaseline 0.394から58%改善）, idf1=0.794。詳細: `docs/results/EXP-02.md` | **不合格** |
-| EXP-03 | H2（記号条件付け） | smoke実行済み | `runs/EXP-03/20260913-072507`：error_improvement_60s≈0.004, effective_horizon_ratio=NaN | 参考（smoke） |
+| EXP-03 | H2（記号条件付け） | **本実行済み（seed×3）** | `runs/EXP-03/20260913-165719`：error_improvement_60s=NaN（`full_run`が`seq_len`を拡張し忘れたバグで60秒地点が測定不能、要修正）、effective_horizon_ratio=1.0（未達）。有効な1〜8秒では dynamic が none よりわずかに悪化——条件付けが効いていない可能性（EXP-07の未学習action_inと同型）。詳細: `docs/results/EXP-03.md` | **不合格** |
 | EXP-04 | H3（ε とドリフト検知） | smoke実行済み | `runs/EXP-04/20260913-084456`：drift_detection_auroc=1.0（n=2+2の極小サンプル）, epsilon_daily_cv≈0.003 | 参考（smoke） |
 | EXP-05 | H4（乖離注入と検知） | smoke実行済み | `runs/EXP-05/20260913-085936`：detection_rate=0.567(17/30), false_alarms_per_day≈149760（smoke分母が極小なための人為的な跳ね上がり）, detection_latency_median_s=0.0 | 参考（smoke） |
 | EXP-06 | H5（シールド付き計画） | 本実行済み（seed×3, n_tasks=100, SMOKE配線修正`ec2d401`後に再実行） | `runs/EXP-06/20260913-153615`：violations_with_shield=0/100, violations_without_shield=0/100, throughput_loss=0.0 | 合格（機械的）だが**要注意**：shield有無でコストが完全一致＝シールドの実効性が試されていない退行実験。`full_run`がplanner（noise_std/shortcut_bonus）を上書きしないためsmoke用チューニングのまま使われたことが原因と推測（詳細: docs/results/EXP-06.md） |
