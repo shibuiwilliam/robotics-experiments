@@ -26,6 +26,7 @@ from gtwm.grounding.consistency import (
     FactSample,
     compute_epsilon,
     load_epsilon_config,
+    lookup_expected_future_zone_idx,
 )
 from gtwm.grounding.identity import TrackedEntity, resolve_identities
 from gtwm.grounding.ledger import DiscrepancyEntry, DiscrepancyLedger
@@ -96,6 +97,12 @@ def run_ground(
 
     ep = episode_meta_from_dir(episode_dir_name, set_name)
     poses = pd.read_parquet(ep.episode_dir / "poses.parquet")
+    # F^h（業務プロセスの遷移、consistency.lookup_expected_future_zone_idx）が参照する
+    # 業務記録。record_consistency.detect_record_discrepancies でも使うため、ここで
+    # 一度だけ読む（events.parquet は検知パイプラインが読んで良い正規の業務記録であり、
+    # 盲検境界の対象である注入答え合わせ台帳（別ディレクトリ、eval/scoring.py 専用）
+    # とは別物）。
+    events_df = pd.read_parquet(ep.episode_dir / "events.parquet")
 
     out_dir = repo_root() / "runs" / "ground" / ep.episode_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -186,12 +193,16 @@ def run_ground(
             truth_zone_idx = ZONE_NAMES.index(gt_zone)
 
             for h_name, future_idx_tensor in future_zone_idx_by_horizon.items():
+                expected_future_zone_idx = lookup_expected_future_zone_idx(
+                    events_df, entity_gt_id, t_s, horizons[h_name], ZONE_NAMES
+                )
                 sample = FactSample(
                     entity_gt_id=entity_gt_id,
                     t=t_s,
                     perceived_zone_idx=int(zone_idx[slot_idx]),
                     truth_zone_idx=truth_zone_idx,
                     future_zone_idx=int(future_idx_tensor[slot_idx]),
+                    expected_future_zone_idx=expected_future_zone_idx,
                 )
                 horizon_samples[h_name].append(sample)
 
@@ -219,10 +230,9 @@ def run_ground(
 
     # 記録 vs 物理の突き合わせ（poc_plan.md 2.2「(2)プロセス不遵守」）。上のループは
     # WMロールアウトの内部一貫性しか見ておらず、`sim/wms_mock.apply_injections` が
-    # 注入する5型の異常（record 側の改変）を検知できないため、`events.parquet` を
-    # 直接読んで突き合わせる（`record_consistency.py` 参照。EXP-05 の初回実行で
-    # detection_rate=0.0 として発覚した欠落）。
-    events_df = pd.read_parquet(ep.episode_dir / "events.parquet")
+    # 注入する5型の異常（record 側の改変）を検知できないため、`events.parquet`
+    # （関数冒頭で読み込み済み）と突き合わせる（`record_consistency.py` 参照。
+    # EXP-05 の初回実行で detection_rate=0.0 として発覚した欠落）。
     for candidate in detect_record_discrepancies(events_df, poses):
         # 検知は記録が実際に登録された時刻（t_obs）より前には起こり得ない
         # （detection_latency_median_s を意味のある値にするための最小の遅延モデル。
