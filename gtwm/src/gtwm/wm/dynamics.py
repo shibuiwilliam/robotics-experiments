@@ -8,6 +8,26 @@ Dynamics.rollout(slots_t: [B,K,D], cond, actions: [B,h,Da] | None, h) -> [B,h,K,
 Conditioner（γ：KGSubgraph -> cond[B,Dc]）は接地層（session 05、grounding/conditioning.py）
 の責務。ここでは `cond: Tensor[B,Dc] | None` を受け取るだけで、None の場合はゼロ条件
 （無条件ロールアウト）として扱う。
+
+行動空間（actions: [B,h,Da]）の各次元の意味付け（例：「次元0はコンベア速度」）は
+このモジュールの契約外で、`kg/whatif/compiler.py` の `ACTION_CHANNELS` が唯一の
+定義元である（変更する場合は両方を同時に更新する）。現状 action_dim=4
+（`configs/wm/*.yaml`）のうち3チャネルが割当済み（speed/active/staging_offset）、
+1チャネルは将来の介入種別のため未使用のまま予約されている
+（`ACTION_DIM_RESERVED`）。
+
+**重要な既知の制約**：`wm/train.py` の学習ループは `dynamics.rollout(context, None,
+None, horizon)` を常に `actions=None` で呼び出しており、`action_in`（下記）は
+学習中に一度も非ゼロの行動勾配を受け取らない。そのため現時点では
+`action_in` の重みはランダム初期化のまま学習されておらず、`do()` 介入が
+ロールアウト出力に及ぼす差は「学習された意味的効果」ではなく「未学習の線形層に
+よる入力の増幅」でしかない（実測：action値を0→50に振ると出力ノルムは変化するが、
+現実的な介入スケール（例：`1.8 * current` で 1.8）では基準との差はノイズに埋もれる
+——EXP-07 の `kpi_relative_error`/`interval_coverage_90` が smoke で悪い値になる
+一因）。WHAT-IF の `do()` に真の予測的な効果を持たせるには、行動条件付きの
+訓練データ（実際に行動を変えた場合の結果とペアになったエピソード）を生成し、
+`wm/train.py` のロールアウト損失に非ゼロの `actions` を渡すよう学習ループを
+拡張する必要がある（本セッションのスコープ外、docs/status.md に申し送り）。
 """
 
 from __future__ import annotations
