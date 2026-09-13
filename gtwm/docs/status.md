@@ -3,9 +3,9 @@
 最終更新: 2026-09-13
 
 ## 現在のフェーズ
-P2 相当の一部（概念発見・LLM クライアント・EXP-08、2拠点連合・EXP-09）完了。CLAUDE.md
-「現在のフェーズと着手順」の 9 のうち残り（反実仮想の忠実性＝EXP-07、EXP-10 準備）が次
-（docs/prompts.md ではセッション11として分離されている）。
+CLAUDE.md「現在のフェーズと着手順」の 1〜9 が全て完了（smoke規模での実装・検証まで）。
+次は各実験の本実行（seed×3、poc_plan.md 6.2 通りの規模）と、下記「既知の制約」に挙げた
+ギャップの解消。
 
 ## 着手順チェックリスト
 - [x] 1. 足場（pyproject / uv / Makefile / ruff / mypy / pre-commit / gtwm doctor）
@@ -16,8 +16,9 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08、2拠点連
 - [x] 6. eval（ランナー、EXP-01/02/03/06）
 - [x] 7. whatif + ui
 - [x] 8. P1 相当（realism、EXP-04/05/11）
-- [~] 9. P2 相当：概念発見・LLM クライアント・EXP-08・2拠点連合（EXP-09）は完了。
-      反実仮想の忠実性（EXP-07）、EXP-10 準備は未着手
+- [x] 9. P2 相当：概念発見・LLM クライアント（EXP-08）、2拠点連合（EXP-09）、
+      反実仮想の忠実性（EXP-07）、EXP-10 準備（模擬例外10件・記録機構・SUS・
+      `docs/results/EXP-10_protocol.md`）を全て完了。
 
 ## 実験の状態
 | EXP | 仮説 | 状態 | 最新結果（runs/ パス） | 判定 |
@@ -31,6 +32,8 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08、2拠点連
 | EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
 | EXP-08 | H7（概念発見） | smoke実行済み | `runs/EXP-08/20260913-100119`：n_candidates=5, injected_concept_top5_hit=3/3種（目標2種以上） | 参考（smoke） |
 | EXP-09 | H8（連合ツインと漏洩評価） | smoke実行済み | `runs/EXP-09/20260913-103010`：ece=1.0（要フォローアップ、下記参照）, reconstruction_ssim≈0.123（目標0.30以下は満たす）, reid_top1_vs_chance=3.0（目標1.2倍以下を大きく超過、線形分類器がsmoke規模のワーカー3人を容易に判別）, n_policy_violations=1（意図的な違反要求が正しく拒否・記録された） | 参考（smoke） |
+| EXP-07 | H6（WHAT-IF反実仮想の忠実性） | smoke実行済み | `runs/EXP-07/20260913-105003`：kpi_relative_error≈0.72（目標0.15以下、smoke規模の代理KPIでは未達）, interval_coverage_90=0.0（目標0.80以上、predicted point が smoke WM+probe で常に0.0になる既知の傾向——session07検証時から同一現象、下記参照） | 参考（smoke） |
+| EXP-10 | H9（オペレータ評価） | 準備完了（評価は人が実施） | `src/gtwm/grounding/exp10_harness.py` + `gtwm dashboard`「EXP-10」2タブ、`docs/results/EXP-10_protocol.md`。AppTestで開始→対応→完了→SUS送信を実機確認済み | 未実施（人手評価待ち） |
 
 ## 既知の制約・記録
 - MPS fallback が発生した op：`make train-smoke`（configs/wm/smoke.yaml）実行中は **0件**（`PYTORCH_ENABLE_MPS_FALLBACK=1` 下で `The operator '...' is not currently supported on the MPS backend` 系の warning は一度も出なかった）。ただし別種の MPS 制約を1件発見：`nn.TransformerEncoderLayer` の既定 dropout（0.1）を使うと、`torch.no_grad()` 経路（推論）で `NotImplementedError: scaled_dot_product_attention for MPS does not support dropout` が発生する（train() の勾配ありパスでは再現しなかった＝SDPA のバックエンド選択が学習時と推論時で異なるため）。これは fallback ではなく明示的な未サポートの組み合わせなので `PYTORCH_ENABLE_MPS_FALLBACK` では救えない。対応：`src/gtwm/wm/dynamics.py` の `DynamicsHead` で `TransformerEncoderLayer(..., dropout=0.0)` を明示指定し、この動態モデルでは dropout を使わないことにした（`gtwm wm rollout` で再現・解消を確認済み）。
@@ -223,3 +226,79 @@ P2 相当の一部（概念発見・LLM クライアント・EXP-08、2拠点連
   精度そのものの問題か、確信度簡略化の副作用かを本実行で切り分ける必要がある）、
   `n_policy_violations=1`（意図した違反1件が正しく拒否・記録された）。
 - `make lint test`（214 unit tests）・`test_blindness.py` は引き続き緑。
+
+## 着手順9（続き）：EXP-07（H6）・EXP-10準備（H9）の実装メモ（2026-09-13）
+
+- **EXP-07の物理接続の簡略化**：この sim は作業者の移動とパレット/ケースの実位置が
+  独立している（`sim/drift.py` のスコープ限定と同根）。3介入（コンベア速度・担当人数・
+  一時置き場位置）を文字通り物理接続する手段が無いため、`sim/env.py`
+  （`WarehouseEnv` の新規パラメータ `active_workers`/`worker_speed_multiplier`/
+  `worker_loop_overrides`）を使った代理を実装した：コンベア速度→全作業者の巡回速度を
+  一律倍にする、担当人数→指定した作業者をスプライン起点で静止させる、一時置き場位置→
+  指定した作業者の巡回経路（ウェイポイント）を差し替える。記録レベルの書き換え
+  （`sim/drift.py` 方式）ではなく、実際に `gtwm sim gen` で異なる物理軌跡を持つ
+  エピソードとして生成する点で、より誠実な実測になっている。KPIは「対象ゾーンの
+  作業者滞在数（時間窓平均）」——パレット/ケースはこの sim では静的で、型を限定しないと
+  介入と無関係な定数項に信号が埋もれることを実測で確認した（詳細は
+  `eval/experiments/exp07.py` docstring）。
+- **EXP-07 smoke の実測結果**（`runs/EXP-07/20260913-105003`、101秒、5分予算に余裕）：
+  3介入すべてで予測・実測ペアが得られた（`measured` は 0.13〜0.53 で介入間に実際の差が
+  出ている＝介入機構自体は機能している）。ただし `predicted_point` が3介入とも
+  厳密に 0.0 になった。これは新しい不具合ではなく、session 07 の実装検証時点で既に
+  観測されていた smoke WM+probe の傾向（`gtwm whatif "...WHERE station = gt:Zone_Pick..."`
+  で同じく 0.000 が返っていた）と一致する——smoke規模の較正済み確信度付きゾーン確率が
+  Pick ゾーンでは常に existence_threshold（0.5）を下回るとみられる。本実行では
+  smoke より大きい訓練データでこの現象が解消するか、あるいは existence_threshold や
+  α の学習量を見直す必要がある（次セッションへの申し送り）。この結果として
+  `kpi_relative_error≈0.72`、`interval_coverage_90=0.0` はいずれも目標未達だが、
+  **smokeは参考値であり合否判定には使わない**ため報告のみ。
+- **EXP-10準備**：`grounding/exp10_harness.py` に、H4の5型から各2件ずつの模擬例外10件
+  （決定的生成、乱数なし）、解決時間・正答率（評価者には非提示の正解と自動照合）・
+  訂正反映率を記録する SQLite バックエンドの `Exp10Harness`、標準SUS10問のスコア計算
+  （`compute_sus_score`）を実装した。`gtwm dashboard` に「EXP-10 例外対応」（従来手順＝
+  生の記録/現物確認メモのみ提示、ダッシュボード条件＝台帳エントリ形式で提示）と
+  「EXP-10 SUSアンケート」の2タブを追加。Streamlit公式ヘッドレステストAPI
+  （`AppTest`）で開始→対応入力→完了→SUS送信の一連の操作を実行し、例外なく完了する
+  こと、`runs/exp10_resolutions.sqlite` に正答判定（自動照合）・SUSスコアが正しく
+  記録されることを実機確認した。**この準備物を使った実際の評価（現場リーダー・
+  作業者5名以上、順序無作為化）は人が行う**（CLAUDE.md「絶対条件」）。実施手順は
+  `docs/results/EXP-10_protocol.md` に評価者数・順序無作為化方法・記録項目を
+  poc_plan.md 6.2 の原文通りに記載した。
+- `make lint test`（229 unit tests）・`test_blindness.py`・`make test-sim`
+  （12件）・`make test-int`（`make up`→3件→`make down`）・`make train-smoke`
+  （4.5秒）が全て緑であることを最終確認した。
+
+## 全体まとめ（着手順1〜9 完了時点、2026-09-13）
+
+CLAUDE.md「現在のフェーズと着手順」の1〜9が全てsmoke規模で実装・検証済み。11実験
+（EXP-01〜EXP-11）全てにsmoke検証済みのハーネスがあり、`make exp EXP=EXP-xx SMOKE=1`
+でいずれも5分以内に完走する（EXP-10のみ、ハーネスは完成しているが実行自体は人手評価を
+要するため「準備完了・未実施」）。本実行（seed×3、poc_plan.md 6.2通りの規模）に進む前に
+解消すべき既知のギャップ：
+
+1. **ε の F^h が業務記録を読まない（最重要、着手順8で発見）**：
+   `grounding/consistency.py` の `compute_epsilon` は F^h（業務プロセスの遷移）を
+   `expected_future_zone_idx = perceived_zone_idx` という恒等写像で実装しており、
+   `events.parquet`（業務記録）を一切参照しない。そのため ε は realism/注入設定に
+   構造的に無反応（session 08 で ε_60s が realism 有無で完全に同一値になることを
+   確認済み）。EXP-04のドリフト検知はこの経路を介さず「知覚ゾーンの時間変化」を
+   直接見ているため実際に機能しているが、H3/H4が本来意図する「記録と物理の乖離を
+   ε で測る」という仕組みそのものはまだ実装されていない。本実行前に
+   `wms_mock.generate_orders()`（または `events.parquet` の直近記録）を参照する
+   真の F^h への置き換えが必要。
+2. **EXP-07 の predicted_point が smoke で常に0.0になる**（本セッションで確認、上記
+   参照）。本実行の規模で解消するか要検証。
+3. **行動空間がエンティティ×プロパティで意味付けされていない**（`kg/whatif/compiler.py`
+   の `ACTION_DIM_FOR_INTERVENTION` 簡略化、session 07 からの申し送り、ADR候補）。
+   EXP-07の3介入がいずれも「意味的に正しい」`do()` ではなく行動ベクトル次元0への
+   一様上書きになっている一因。
+4. **EXP-09 の受領側ECEが確信度なし交換スキーマの副作用で accuracy と等価になる**
+   （session 10 からの申し送り）。
+5. **CBV（Core Business Vocabulary）がスタブ**（session 03、`ref.gs1.org`/`gs1.org`
+   から機械可読なRDFを取得できなかったため）。
+6. **pre-commit install がこの開発機では失敗する**（親リポジトリの `core.hooksPath`
+   設定、session 01 から未解消。`doctor`/`lint`/`test` はこれに依存せず単独で緑）。
+
+いずれも `docs/adr/` の対象になり得るか、次セッションの冒頭で対応要否を判断すること。
+本実行にあたっては `experiments/criteria.yaml` の数値・`ontology/gt-core.ttl` の
+名前空間・WHAT-IF文法（付録C）を変更しないこと（変更するなら先にADR）。
