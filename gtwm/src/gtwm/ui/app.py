@@ -9,6 +9,12 @@
   エピソード横断で集め、各エピソードの実行を時系列の1点として扱う代替可視化とする。
 - NL→WHAT-IF 変換（LLM 経由）はセッション09以降の範囲外（llm.md 参照）。ここでの
   WHAT-IF タブは付録Cの文法をそのまま入力するフォームのみ。
+- 「EXP-10」タブは H9（オペレータ評価）の**準備**であり、評価そのものは行わない
+  （CLAUDE.md「絶対条件」：EXP-10は人が手動で行う）。模擬例外10件を「従来手順
+  （記録と現物の目視突合。ダッシュボードのUIは使わない、生の記録/現物情報のみを
+  提示）」と「ダッシュボード条件（乖離台帳の該当エントリを提示）」の両方で提示し、
+  解決時間・正答率・訂正反映率を記録する。手順の詳細は
+  `docs/results/EXP-10_protocol.md`。
 """
 
 from __future__ import annotations
@@ -21,6 +27,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from gtwm.grounding.exp10_harness import (
+    CONDITIONS,
+    SUS_QUESTIONS,
+    Exp10Harness,
+    generate_mock_cases,
+)
 from gtwm.grounding.ledger import STATUSES, DiscrepancyLedger
 from gtwm.kg.whatif.compiler import WhatIfCompileError
 from gtwm.kg.whatif.engine import WhatIfUnsupportedVarError, run_whatif
@@ -28,6 +40,7 @@ from gtwm.kg.whatif.parser import WhatIfSyntaxError
 from gtwm.utils.paths import repo_root
 
 FEEDBACK_PATH = repo_root() / "runs" / "ui_feedback.jsonl"
+EXP10_DB_PATH = repo_root() / "runs" / "exp10_resolutions.sqlite"
 
 st.set_page_config(page_title="gtwm ダッシュボード", layout="wide")
 st.title("gtwm ダッシュボード")
@@ -51,8 +64,15 @@ def _append_feedback(record: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-tab_ledger, tab_epsilon, tab_warnings, tab_whatif = st.tabs(
-    ["乖離台帳", "ε の推移", "将来違反の予兆", "WHAT-IF 実行"]
+tab_ledger, tab_epsilon, tab_warnings, tab_whatif, tab_exp10, tab_sus = st.tabs(
+    [
+        "乖離台帳",
+        "ε の推移",
+        "将来違反の予兆",
+        "WHAT-IF 実行",
+        "EXP-10 例外対応",
+        "EXP-10 SUSアンケート",
+    ]
 )
 
 # --- 1. 乖離台帳 -------------------------------------------------------------
@@ -225,3 +245,88 @@ with tab_whatif:
                     ),
                     width="stretch",
                 )
+
+# --- 5. EXP-10 例外対応（H9 準備。評価そのものは人が行う） ----------------------
+with tab_exp10:
+    st.header("EXP-10 模擬例外対応（準備。実際の評価は人が行う）")
+    st.caption(
+        "poc_plan.md 6.2：「現場リーダー・作業者5名以上に、模擬例外10件を従来手順と"
+        "ダッシュボードの両方で処理してもらう（順序は無作為化）」。詳細な実施手順は "
+        "docs/results/EXP-10_protocol.md を参照。ここでは記録機構のデモのみ。"
+    )
+    cases = generate_mock_cases()
+    exp10_harness = Exp10Harness(EXP10_DB_PATH)
+
+    col_ev, col_cond, col_case = st.columns(3)
+    evaluator_id = col_ev.text_input("評価者ID", value="evaluator:demo", key="exp10_evaluator")
+    condition = col_cond.selectbox("条件", CONDITIONS, key="exp10_condition")
+    case_id = col_case.selectbox("ケース", [c.case_id for c in cases], key="exp10_case_id")
+    case = next(c for c in cases if c.case_id == case_id)
+
+    if condition == "traditional":
+        st.subheader("従来手順：記録と現物の目視突合")
+        st.write(f"**業務記録（{case.record_source_system}）**：{case.record_value}")
+        st.write(f"**現物確認メモ**：{case.physical_evidence_note}")
+        st.caption("ダッシュボードのUI（乖離台帳の構造化表示）は使わず、生の情報のみ提示する。")
+    else:
+        st.subheader("ダッシュボード条件：乖離台帳エントリ")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "object_id": case.object_id,
+                        "discrepancy_type": case.discrepancy_type,
+                        "severity": case.severity,
+                        "physical_value": case.physical_evidence_note,
+                        "record_value": case.record_value,
+                        "record_source_system": case.record_source_system,
+                    }
+                ]
+            ),
+            width="stretch",
+        )
+
+    timer_key = f"exp10_timer_{evaluator_id}_{case_id}_{condition}"
+    if st.button("対応開始（タイマー開始）", key=f"start_{timer_key}"):
+        resolution_id = exp10_harness.start_case(
+            evaluator_id, case_id, condition, order_index=cases.index(case)
+        )
+        st.session_state[timer_key] = resolution_id
+        st.success(
+            f"開始しました（resolution_id={resolution_id}）。対応を終えたら下で記録してください。"
+        )
+
+    resolution_given = st.text_input(
+        "対応内容（訂正・確定内容を記入）", key=f"resolution_{timer_key}"
+    )
+    correction_reflected = st.checkbox("訂正が実際に反映された", key=f"reflected_{timer_key}")
+    if st.button(
+        "対応完了（記録）", key=f"finish_{timer_key}", disabled=timer_key not in st.session_state
+    ):
+        rid = st.session_state.pop(timer_key)
+        elapsed = exp10_harness.finish_case(rid, resolution_given, case, correction_reflected)
+        st.success(f"記録しました。解決時間={elapsed:.1f}秒")
+
+    st.divider()
+    st.subheader("集計（条件別）")
+    summary = exp10_harness.summary()
+    if summary:
+        st.dataframe(pd.DataFrame([summary]).T.rename(columns={0: "値"}), width="stretch")
+    else:
+        st.info("まだ記録がありません。")
+    exp10_harness.close()
+
+# --- 6. EXP-10 SUSアンケート ---------------------------------------------------
+with tab_sus:
+    st.header("EXP-10 SUS（System Usability Scale）アンケート")
+    st.caption("標準10問。各問1（強く反対）〜5（強く賛成）で回答する（poc_plan.md 6.2「SUS」）。")
+    sus_evaluator = st.text_input("評価者ID", value="evaluator:demo", key="sus_evaluator")
+    answers = [
+        st.slider(f"Q{i + 1}. {q}", min_value=1, max_value=5, value=3, key=f"sus_q{i}")
+        for i, q in enumerate(SUS_QUESTIONS)
+    ]
+    if st.button("SUSスコアを記録", key="sus_submit"):
+        exp10_harness = Exp10Harness(EXP10_DB_PATH)
+        score = exp10_harness.record_sus(sus_evaluator, answers)
+        exp10_harness.close()
+        st.success(f"SUSスコア = {score:.1f}（0〜100、目標 ≥70）")
