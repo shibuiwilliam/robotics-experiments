@@ -368,3 +368,127 @@ CLAUDE.md「現在のフェーズと着手順」の1〜9が全てsmoke規模で�
 いずれも `docs/adr/` の対象になり得るか、次セッションの冒頭で対応要否を判断すること。
 本実行にあたっては `experiments/criteria.yaml` の数値・`ontology/gt-core.ttl` の
 名前空間・WHAT-IF文法（付録C）を変更しないこと（変更するなら先にADR）。
+
+## Phase B Stage 1（本実行データ生成・WM/probe学習）完了（2026-09-13）
+
+3件の既知ギャップ修正（F^h、行動チャンネル、EXP-09確信度）と並行して、smoke規模から
+本実行（seed×3、poc_plan.md 6.2相当）へ移行するための土台を整備した。
+
+### 発見・修正した重要な配線バグ
+
+`experiments/EXP-xx/config.yaml` の `full_run:` ブロックは全実験に転記済みだったが、
+**`src/gtwm/eval/runner.py` の `run()` がこれを一切マージしていなかった**——
+`smoke: false` に切り替えるだけでは smoke と同じ `n_episodes`/`duration_s`/
+`probe_config` が使われ続ける、本実行が事実上smoke設定のまま3回走るだけの
+バグだった。`run()` に `smoke=false` かつ `full_run` が存在する場合の
+`OmegaConf.merge()` を追加し（`src/gtwm/eval/runner.py`、テスト2件追加、
+コミット `8327c7b`）、これで **単に `SMOKE=0` を渡すだけで各実験の `full_run:`
+オーバーライドが自動適用される**ようになった。
+
+### 生成したデータ
+
+- `data/sim/p0_train`：5分×50本、seed=100始まり（`gtwm sim gen --set p0_train
+  --episodes 50 --duration 300 --seed 100`）。実測 約56分（1エピソード約67秒、
+  実時間比0.22倍）。全50本でファイル7種の完全性を抽出サンプルで確認済み。
+- `data/sim/p0_eval`：5分×10本、seed=200始まり。実測 約13分。最初のエピソードは
+  `ep_0000_seed200`（EXP-02のfull_run `episode_id` はこれを指す）。
+- `data/sim/p1_train`（20本）・`p1_eval`（10本、注入180件）：session 8生成分が
+  健在であることを確認済み（再生成なし）。
+- EXP-04/05/07/08/09 は `measure()` 内で `generate_episode()`/`_ensure_dataset()`
+  を直接呼び、`config.n_episodes`/`duration_s`/`seed` に応じて**必要なデータを
+  実行時に自動生成する**設計（既存のsmoke実装がそうだったので変更していない）。
+  したがって Stage 1 では p2_concept_full・p2_site_b・EXP-07介入セットを
+  手動で事前生成していない——`full_run:` マージが直るこの修正により、
+  `SMOKE=0` で実行すれば自動的に本実行規模で生成される。
+
+### 作成した本実行用設定
+
+- `configs/wm/full.yaml`：K=16/D=128/4層/アンサンブル3（`base.yaml`と同じ
+  アーキテクチャ）、`train.data_set=p0_train`、`max_steps=2500`
+  （p1_trainでの20ステップ計測 ~2.18s/step から算出、2時間予算に対し
+  十分な余裕を持たせた上限）。`checkpoint_dir=runs/wm/checkpoints_full`。
+- `configs/grounding/probe_train_full.yaml`：`wm_config=configs/wm/full.yaml`、
+  `data_set=p0_train`、`eval_fraction=0.2`（時系列後方20%をホールドアウト）。
+  `train_probes()` は単一 `data_set` のみ対応するため `p0_eval` は使っていない
+  ——`p0_eval` はEXP-03/06/09等が「学習に一度も使っていない」完全ホールドアウト
+  として別途参照する。
+
+### 本実行WM学習の実測結果
+
+`gtwm wm train --config configs/wm/full.yaml`：**613.4秒**（早期終了、
+`max_steps=2500`のうち287ステップで収束、`early_stop_patience=5`）、
+`final_loss=0.00063`、`mps_fallback_ops=[]`（fallbackなし）、
+`eval_episodes=10`（p0_train内の時系列後方10本）。ピークメモリ
+（`/usr/bin/time -l`の`maximum resident set size`）**約1.09GB**
+（12GB予算に大幅な余裕）。チェックポイント：`runs/wm/checkpoints_full/best.pt`
+（26MB）。
+
+### 本実行probe学習の実測結果（サニティ確認、`probe_train_full.yaml`）
+
+`zone_f1_macro=0.808`（smoke: 0.658 から改善。H1目標0.90には未達）、
+`type_accuracy=0.717`（smokeの0.806より**低下**——smokeより多様なp0_train
+50本の型分布の方が難しい可能性、要調査）、`ece_before=0.1066` →
+`ece_after=0.1107`（**較正後にわずかに悪化**——smokeでは改善方向だったのと逆。
+較正の温度パラメータがp0_train規模のデータ分布に対して最適でない可能性があり、
+本実行の実際のEXP-01結果を見て要フォローアップ）。`n_train_samples=23237`、
+`n_eval_samples=5809`、学習時間25.8秒。
+
+### 個別experiments/EXP-xx/config.yamlのfull_runブロック補完
+
+以下は元々 `note`/`estimated_data` の説明文だけで実際の値（`data_set`/
+`wm_config`/`probe_config`）が無く、`full_run`マージが効くようになっても
+smoke値のまま実行されてしまう状態だった。Stage 1で補完した：
+- **EXP-03**：`wm_config: configs/wm/full.yaml`、`data_set: p0_eval`
+  （300秒エピソードが必要）、`horizons_steps: [2,4,8,16,32,64,120]`
+  （frame_stride=5,log_hz=10で1/2/4/8/16/32/60秒に対応、60秒地点を追加）。
+- **EXP-06**：`probe_config: configs/grounding/probe_train_full.yaml`、
+  `data_set: p0_eval`（`task_idx % len(episodes)`で巡回するため
+  wm_smoke(2本)よりp0_eval(10本×3000フレーム)の方が多様な初期状態を作れる、
+  `exp06.py`のコードを読んで確認済み）。
+- **EXP-08**：`n_episodes`を1→10に修正（元の値はほぼsmoke同然で本実行の
+  意味を成さなかった）、`probe_config`追加。**重要な既知のブロッカー**：
+  `llm_config_path: configs/llm.yaml`（実プロバイダ）を指すが、この開発機に
+  `.env`のAPIキーが無い（`gtwm llm ping`で確認可能）。本実行前にユーザーが
+  APIキーを設定するか、Stage 2がmockへフォールバックしその旨を結果に明記する
+  必要がある。
+- **EXP-09**：`probe_config: configs/grounding/probe_train_full.yaml`を追加
+  （元々欠落していた）。
+
+### 未解決の既知の制約（コード変更が要るため Stage 1 のスコープ外）
+
+- **EXP-02の単一エピソード設計**：`src/gtwm/eval/experiments/exp02.py`の
+  `measure()`は`config.set_name`+`config.episode_id`で指定した**単一**
+  エピソードのみを処理し、`seed`は同一エピソードの乱数再シードにしかならない
+  （複数エピソードを跨いだ選択をしない）。poc_plan.md 6.2の「200回相当」を
+  真に満たすには`measure()`を複数エピソードでループし集計するようコード変更が
+  必要（`experiments/EXP-02/config.yaml`の`full_run.known_limitation`に記載）。
+  Stage 1では`full_run.set_name/episode_id`をsmokeのtiny episodeから
+  `p0_eval/ep_0000_seed200`（300秒、より現実的な1本）に差し替えるに留めた。
+
+### Stage 2への引き継ぎ
+
+1. 各実験は基本的に `make exp EXP=EXP-xx SMOKE=0` を実行するだけで
+   `full_run:`が自動適用され、EXP-04/05/07/08/09は必要なデータを実行時に
+   自動生成する（初回はデータ生成分だけ時間がかかる——EXP-05は
+   `n_episodes=14, duration_s=300`で生成に約16分、EXP-09は`n_episodes=20`
+   で約22分、EXP-07は複数介入×複数repで数分〜十数分と見積もること。
+   10分を超えるものは`nohup`でバックグラウンド実行しポーリングする
+   ——CLAUDE.mdの既存ルール通り）。
+2. EXP-01/03/06/09/11は`configs/grounding/probe_train_full.yaml`
+   （ひいては`configs/wm/full.yaml`の学習済みチェックポイント
+   `runs/wm/checkpoints_full/best.pt`）を経由する。チェックポイントは
+   Stage 1で学習済み・on-diskに存在する。
+3. EXP-08は上記のLLM APIキーのブロッカーに先に対処すること（ユーザーに
+   確認するか、mockフォールバックで実行し結果に明記する）。
+4. 各実験の`report.md`は`smoke=false`なら`judge_criteria()`で実際に
+   `合格`/`不合格`を判定する（`runner.py`の既存ロジック、smokeのように
+   常に「参考」にはならない）——不合格の指標には`.claude/rules/experiments.md`
+   の言う通り、εの分解に基づく原因仮説を記載すること。
+5. `docs/results/EXP-xx.md`を`.claude/rules/experiments.md`のレポート形式で
+   各実験ぶん作成し、`docs/status.md`の実験表を本実行結果で更新すること。
+6. EXP-10は人手評価が必須のため実行できない（ハーネスは準備済み、
+   `docs/results/EXP-10_protocol.md`参照）——`docs/results/EXP-10.md`には
+   「ハーネス準備完了、人手評価待ち」と正直に書き、結果を捏造しないこと。
+
+Stage 1の総所要時間：データ生成（p0_train+p0_eval）約69分＋WM学習10分強＋
+probe学習・設定作業 約20分 ＝ 実働約100分。
