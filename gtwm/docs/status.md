@@ -31,8 +31,8 @@ CLAUDE.md「現在のフェーズと着手順」の 1〜9 が全て完了（smok
 | EXP-06 | H5（シールド付き計画） | 本実行済み（seed×3, n_tasks=100, SMOKE配線修正`ec2d401`後に再実行） | `runs/EXP-06/20260913-153615`：violations_with_shield=0/100, violations_without_shield=0/100, throughput_loss=0.0 | 合格（機械的）だが**要注意**：shield有無でコストが完全一致＝シールドの実効性が試されていない退行実験。`full_run`がplanner（noise_std/shortcut_bonus）を上書きしないためsmoke用チューニングのまま使われたことが原因と推測（詳細: docs/results/EXP-06.md） |
 | EXP-11 | N1（非機能） | smoke実行済み | `runs/EXP-11/20260913-090429`：e2e_latency_p50_s≈7.16（batch実装のため悲観的上限）, availability=1.0（代理指標）, monthly_cost_per_zone≈$180（概算） | 参考（smoke） |
 | EXP-08 | H7（概念発見） | smoke実行済み | `runs/EXP-08/20260913-100119`：n_candidates=5, injected_concept_top5_hit=3/3種（目標2種以上） | 参考（smoke） |
-| EXP-09 | H8（連合ツインと漏洩評価） | smoke実行済み | `runs/EXP-09/20260913-103010`：ece=1.0（要フォローアップ、下記参照）, reconstruction_ssim≈0.123（目標0.30以下は満たす）, reid_top1_vs_chance=3.0（目標1.2倍以下を大きく超過、線形分類器がsmoke規模のワーカー3人を容易に判別）, n_policy_violations=1（意図的な違反要求が正しく拒否・記録された） | 参考（smoke） |
-| EXP-07 | H6（WHAT-IF反実仮想の忠実性） | smoke実行済み（行動チャネル修正後に再実行） | `runs/EXP-07/20260913-114126`：kpi_relative_error≈0.72（目標0.15以下、未達）, interval_coverage_90=0.0（目標0.80以上、未達）。predicted_point は行動チャネル修正（commit 84e2321）後も3介入とも0.0のまま——原因は診断済み（下記「全体まとめ」ガップ2参照：Pickゾーンのsmoke規模での分類バイアス＋action_in未学習の2点、配線の問題ではない） | 参考（smoke） |
+| EXP-09 | H8（連合ツインと漏洩評価） | **本実行済み（seed×3）** | `runs/EXP-09/20260913-144718`：ece=0.580（未達）, reconstruction_ssim=0.193（**達成**）, reid_top1_vs_chance=2.47（未達）, n_policy_violations=1（正しく拒否・記録）。詳細: `docs/results/EXP-09.md` | **不合格**（3指標中1指標のみ達成） |
+| EXP-07 | H6（WHAT-IF反実仮想の忠実性） | **本実行済み（seed×3）** | `runs/EXP-07/20260913-144644`：kpi_relative_error=0.694（未達）, interval_coverage_90=0.0（未達）。原因：`wm/train.py`が`actions=None`固定で学習するため`Dynamics`の行動条件付け重みが未学習——行動チャネル自体は正しく配線済み（commit 84e2321）だが学習データが無い。詳細: `docs/results/EXP-07.md` | **不合格** |
 | EXP-10 | H9（オペレータ評価） | 準備完了（評価は人が実施） | `src/gtwm/grounding/exp10_harness.py` + `gtwm dashboard`「EXP-10」2タブ、`docs/results/EXP-10_protocol.md`。AppTestで開始→対応→完了→SUS送信を実機確認済み | 未実施（人手評価待ち） |
 
 ## 既知の制約・記録
