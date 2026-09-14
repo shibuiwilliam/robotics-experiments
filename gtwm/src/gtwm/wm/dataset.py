@@ -62,20 +62,32 @@ def chronological_split(
     return episodes[:-n_eval], episodes[-n_eval:]
 
 
-def open_video_reader(path: Path, retries: int = 3, delay_s: float = 1.0) -> Any:
-    """`imageio.get_reader` を開く。高負荷下で ffmpeg サブプロセスの起動が一時的に
-    失敗し `OSError: Could not load meta information` になることが実際に観測された
-    （2026-09-14、EXP-04 本実行で複数回発生。ファイル自体は `ffprobe` で正常と確認済み
-    ＝一時的な資源枯渇が原因で、ファイル破損ではない）。短い間隔を空けて数回だけ
-    再試行する。"""
+def read_frames_with_retry(
+    path: Path, indices: list[int], retries: int = 3, delay_s: float = 1.0
+) -> list[Any]:
+    """`path` の動画から `indices` のフレームを読む（`imageio.get_reader` を都度開き直す）。
+
+    高負荷下で `OSError: Could not load meta information` が一時的に発生することが
+    実際に観測された（2026-09-14、EXP-04 本実行で複数回発生。ファイル自体は
+    `ffprobe` で正常と確認済み＝一時的な資源枯渇が原因で、ファイル破損ではない）。
+    ffmpeg サブプロセスは `imageio.get_reader()` 自体ではなく、最初の
+    `reader.get_data()` 呼出時に遅延初期化されるため（imageio-ffmpeg の実装）、
+    `get_reader()` だけを再試行しても意味が無い——open から get_data まで一連の
+    操作全体を1つの再試行単位として、失敗時は reader を開き直す。"""
     last_exc: OSError | None = None
     for attempt in range(retries):
+        reader = None
         try:
-            return imageio.get_reader(path)
+            reader = imageio.get_reader(path)
+            frames = [reader.get_data(idx) for idx in indices]
+            return frames
         except OSError as exc:
             last_exc = exc
             if attempt < retries - 1:
                 time.sleep(delay_s)
+        finally:
+            if reader is not None:
+                reader.close()
     assert last_exc is not None
     raise last_exc
 
@@ -84,13 +96,7 @@ def _read_camera_frames(episode_dir: Path, cam_name: str, indices: list[int]) ->
     """cam_<id>.mp4 から指定フレームインデックスを読む -> [T,H,W,3] uint8。"""
     cam_id = cam_name.split(":")[1]
     path = episode_dir / f"cam_{cam_id}.mp4"
-    reader = open_video_reader(path)
-    frames = []
-    try:
-        for idx in indices:
-            frames.append(reader.get_data(idx))
-    finally:
-        reader.close()
+    frames = read_frames_with_retry(path, indices)
     return np.stack(frames, axis=0)
 
 
@@ -156,5 +162,5 @@ __all__ = [
     "WMSequenceDataset",
     "camera_names",
     "read_single_frame",
-    "open_video_reader",
+    "read_frames_with_retry",
 ]
