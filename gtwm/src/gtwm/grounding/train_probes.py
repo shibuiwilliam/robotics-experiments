@@ -15,7 +15,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-import imageio.v2 as imageio
 import numpy as np
 import torch
 from omegaconf import DictConfig
@@ -32,7 +31,7 @@ from gtwm.utils.config import load_config
 from gtwm.utils.device import get_device
 from gtwm.utils.paths import repo_root
 from gtwm.utils.seed import seed_everything
-from gtwm.wm.dataset import list_episodes
+from gtwm.wm.dataset import list_episodes, open_video_reader
 from gtwm.wm.fusion import CameraParams, load_camera_params
 from gtwm.wm.train import WMModules, build_modules
 
@@ -64,7 +63,7 @@ def _preload_frames(samples: list[AnchorSample]) -> FrameCache:
         for cam in ep.cameras:
             cam_id = cam.split(":")[1]
             path = ep.episode_dir / f"cam_{cam_id}.mp4"
-            reader = imageio.get_reader(path)
+            reader = open_video_reader(path)
             try:
                 for idx in sorted_idxs:
                     per_cam[idx].append(reader.get_data(idx))
