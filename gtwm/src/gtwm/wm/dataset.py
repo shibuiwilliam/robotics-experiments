@@ -6,8 +6,10 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import imageio.v2 as imageio
 import numpy as np
@@ -60,11 +62,29 @@ def chronological_split(
     return episodes[:-n_eval], episodes[-n_eval:]
 
 
+def open_video_reader(path: Path, retries: int = 3, delay_s: float = 1.0) -> Any:
+    """`imageio.get_reader` を開く。高負荷下で ffmpeg サブプロセスの起動が一時的に
+    失敗し `OSError: Could not load meta information` になることが実際に観測された
+    （2026-09-14、EXP-04 本実行で複数回発生。ファイル自体は `ffprobe` で正常と確認済み
+    ＝一時的な資源枯渇が原因で、ファイル破損ではない）。短い間隔を空けて数回だけ
+    再試行する。"""
+    last_exc: OSError | None = None
+    for attempt in range(retries):
+        try:
+            return imageio.get_reader(path)
+        except OSError as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(delay_s)
+    assert last_exc is not None
+    raise last_exc
+
+
 def _read_camera_frames(episode_dir: Path, cam_name: str, indices: list[int]) -> np.ndarray:
     """cam_<id>.mp4 から指定フレームインデックスを読む -> [T,H,W,3] uint8。"""
     cam_id = cam_name.split(":")[1]
     path = episode_dir / f"cam_{cam_id}.mp4"
-    reader = imageio.get_reader(path)
+    reader = open_video_reader(path)
     frames = []
     try:
         for idx in indices:
@@ -136,4 +156,5 @@ __all__ = [
     "WMSequenceDataset",
     "camera_names",
     "read_single_frame",
+    "open_video_reader",
 ]
