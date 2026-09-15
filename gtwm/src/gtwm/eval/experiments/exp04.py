@@ -25,18 +25,23 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig
 
 from gtwm.eval.metrics import roc_auc
-from gtwm.grounding.ground_run import run_ground
-from gtwm.sim.drift import DriftConfig
+from gtwm.grounding.ground_run import TrainedProbeBundle, run_ground
+from gtwm.grounding.train_probes import train_probes
+from gtwm.sim.drift import DriftConfig, apply_drift, drift_change_report
 from gtwm.sim.generate import generate_episode
+from gtwm.utils.paths import data_dir
 
 _HORIZON_S = 10.0
 
 
-def _episode_mean_epsilon(episode_id: str, set_name: str, probe_config: str) -> float:
-    result = run_ground(episode_id, set_name, probe_config=probe_config)
+def _episode_mean_epsilon(
+    episode_id: str, set_name: str, probe_config: str, pretrained: TrainedProbeBundle
+) -> float:
+    result = run_ground(episode_id, set_name, probe_config=probe_config, pretrained=pretrained)
     for rec in result.epsilon_records:
         if rec.horizon_s == _HORIZON_S and rec.n_samples > 0:
             return float(rec.epsilon)
@@ -49,22 +54,46 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
     duration_s = float(config.get("duration_s", 30.0))
     probe_config = str(config.get("probe_config", "configs/grounding/probe_train_smoke.yaml"))
     set_name = f"exp04_seed{seed}"
+    # `run_ground` は呼ぶたびに `train_probes(probe_config)` を再学習する設計だが、
+    # このループは同一 probe_config で `n_baseline+n_drift` エピソード分を評価する
+    # だけなので、一度だけ学習して使い回す（EXP-08 の概念発見ループで先に見つかった
+    # のと同じ無駄な再計算を避ける。詳細は `ground_run.run_ground` の `pretrained`
+    # docstring 参照）。
+    trained = train_probes(probe_config)
+    pretrained: TrainedProbeBundle = (trained[0], trained[1], trained[2], trained[3])
 
     baseline_scores: list[float] = []
     for i in range(n_baseline):
         ep_seed = seed * 10_000 + i
         generate_episode(set_name, i, duration_s, ep_seed)
         episode_id = f"ep_{i:04d}_seed{ep_seed}"
-        baseline_scores.append(_episode_mean_epsilon(episode_id, set_name, probe_config))
+        baseline_scores.append(
+            _episode_mean_epsilon(episode_id, set_name, probe_config, pretrained)
+        )
 
     drift_cfg = DriftConfig(inspection_position_change=True, picking_order_change=True)
     drift_scores: list[float] = []
+    drift_rows_changed = 0
+    drift_inspecting_rows = 0
     for j in range(n_drift):
         idx = n_baseline + j
         ep_seed = seed * 10_000 + idx
         generate_episode(set_name, idx, duration_s, ep_seed, drift=drift_cfg)
         episode_id = f"ep_{idx:04d}_seed{ep_seed}"
-        drift_scores.append(_episode_mean_epsilon(episode_id, set_name, probe_config))
+        drift_scores.append(_episode_mean_epsilon(episode_id, set_name, probe_config, pretrained))
+        # ドリフトが実際に記録を変更しているかを指標として残す。EXP-04 本実行
+        # （2026-09-14）で `inspection_position_change` が実データに対して0行しか
+        # 変更しておらず（`inspecting` が一度も発火しないため）、AUROC が偶然水準に
+        # なっていたことが判明した。「処置が施されたか」を測らないと、検知性能の未達と
+        # 処置の不在を区別できない（docs/results/EXP-04.md 参照）。
+        # 生成済みの events は既にドリフト適用後なので、同じ変換をもう一度当てて
+        # 「この変換がこのデータで何行に触れるのか」を計測する（no-op なら0のまま）。
+        events_path = data_dir() / "sim" / set_name / episode_id / "events.parquet"
+        if events_path.exists():
+            stored = pd.read_parquet(events_path)
+            report = drift_change_report(stored, apply_drift(stored, drift_cfg))
+            drift_rows_changed += report["zone_changed"] + report["entity_changed"]
+            drift_inspecting_rows += report["inspecting_rows"]
 
     scores = baseline_scores + drift_scores
     labels = [0] * len(baseline_scores) + [1] * len(drift_scores)
@@ -92,6 +121,10 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         "drift_epsilon_10s_mean": drift_mean,
         "n_baseline_episodes": n_baseline,
         "n_drift_episodes": n_drift,
+        # ドリフト注入の実効性。0 なら「検知できなかった」のではなく
+        # 「処置が施されていない」ことを意味する（結果の解釈に必須）。
+        "drift_rows_changed": drift_rows_changed,
+        "drift_inspecting_rows": drift_inspecting_rows,
     }
 
 
