@@ -292,7 +292,7 @@ realism OFF: 0.3515151515151509    ← 表示可能な全桁が一致
 `compute_epsilon` の F^h（業務プロセスの遷移）が、こう実装されていたのです。
 
 ```python
-expected_future_zone_idx = s.perceived_zone_idx   # 恒等写像
+expected_future_zone_idx = s.perceived_zone_idx  # 恒等写像
 ```
 
 つまり「h 秒後に記録が想定するゾーン」を、**世界モデル自身の現在の知覚ゾーンで代用していた**。realism 設定が変更するのは `events.parquet`（業務記録）だけなので、記録を一切参照しないこの実装では、realism は数学的に ε に影響し得ません。

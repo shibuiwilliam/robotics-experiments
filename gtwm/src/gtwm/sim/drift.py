@@ -57,4 +57,37 @@ def apply_drift(events_df: pd.DataFrame, cfg: DriftConfig) -> pd.DataFrame:
     return df
 
 
-__all__ = ["DriftConfig", "apply_drift"]
+def drift_change_report(before: pd.DataFrame, after: pd.DataFrame) -> dict[str, int]:
+    """ドリフトが実際に何行を変更したかを数える。
+
+    EXP-04 の本実行（2026-09-14）で、`inspection_position_change` が実データに対して
+    **0行しか変更していない**（`inspecting` イベントがこのシミュレーションでは一度も
+    発火しないため）ことが判明した。その結果 AUROC は偶然水準（0.472）になり、
+    「ε がドリフトを検知できない」のではなく「ドリフトが注入されていない」退行実験に
+    なっていた（`docs/results/EXP-04.md` 参照）。
+
+    注入が no-op に退化したことを実験の指標として可視化するために、変更行数を返す。
+    合成フィクスチャでは通ってしまう類の欠陥なので、実データに対して呼ぶこと。
+    """
+    if before.empty:
+        return {"inspecting_rows": 0, "picking_rows": 0, "zone_changed": 0, "entity_changed": 0}
+
+    n_inspecting = int((before["biz_step"] == CBV_BIZSTEP["inspecting"]).sum())
+    n_picking = int((before["biz_step"] == CBV_BIZSTEP["picking"]).sum())
+
+    a = before.reset_index(drop=True)
+    b = after.reset_index(drop=True)
+    zone_changed = 0
+    entity_changed = 0
+    if len(a) == len(b):
+        zone_changed = int((a["zone"].astype(str) != b["zone"].astype(str)).sum())
+        entity_changed = int((a["entity_gt_id"].astype(str) != b["entity_gt_id"].astype(str)).sum())
+    return {
+        "inspecting_rows": n_inspecting,
+        "picking_rows": n_picking,
+        "zone_changed": zone_changed,
+        "entity_changed": entity_changed,
+    }
+
+
+__all__ = ["DriftConfig", "apply_drift", "drift_change_report"]
