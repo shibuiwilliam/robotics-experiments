@@ -14,3 +14,4 @@ mlruns/
 !tests/fixtures/**
 .DS_Store
 MUJOCO_LOG.TXT
+blog/
