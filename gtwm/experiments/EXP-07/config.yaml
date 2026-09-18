@@ -1,5 +1,9 @@
 # EXP-07 WHAT-IF反実仮想の忠実性。smoke: true で ≤5分の縮小版に切り替わる。
-smoke: true
+# 本実行のため smoke: false に切替済み（Phase B Stage 2、2026-09-13）。
+# 注：Makefile の `make exp EXP=... SMOKE=0/1` は SMOKE 変数を一切参照しておらず
+# 何もしない（`exp:` ターゲット本体を確認済み）。本実行への切替は、この smoke: の
+# 値を直接書き換えることでのみ行える。
+smoke: false
 seeds: [0]
 probe_config: configs/grounding/probe_train_smoke.yaml
 base_set: exp07_smoke
@@ -10,8 +14,14 @@ samples: 8
 full_run:
   seeds: [0, 1, 2]
   duration_s: 300.0
+  probe_config: configs/grounding/probe_train_full.yaml
+  base_set: exp07_full
   note: >
     poc_plan.md 6.2 は「業務側と合意した介入を各2回実施し実測と比較」を想定。
     本実行では各介入をseedを変えて複数回繰り返し測定のばらつきを報告すること。
-    また `kg/whatif/compiler.py` の ACTION_DIM_FOR_INTERVENTION 簡略化（行動空間が
-    エンティティ×プロパティで意味付けされていない）の解消を検討すること（ADR候補）。
+    probe_config/base_set は元々未指定で smoke 値のまま実行される欠落だったため
+    Phase B Stage 2 で補完（Stage 1 は EXP-03/06/08/09 のみ補完し EXP-07 は
+    見落とされていた）。`kg/whatif/compiler.py` の ACTION_DIM_FOR_INTERVENTION
+    簡略化（行動空間がエンティティ×プロパティで意味付けされておらず、
+    `wm/train.py` が行動条件付き学習をしていないため do() に実効性が無い）は
+    Phase B のこのタスクではスコープ外（既知の制約として結果に明記する）。
