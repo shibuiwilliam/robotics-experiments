@@ -25,8 +25,9 @@ from omegaconf import DictConfig
 
 from gtwm.eval.metrics import detection_rate, false_alarms_per_day
 from gtwm.eval.scoring import load_injection_ledger, score_detection
-from gtwm.grounding.ground_run import run_ground
+from gtwm.grounding.ground_run import TrainedProbeBundle, run_ground
 from gtwm.grounding.ledger import DiscrepancyLedger
+from gtwm.grounding.train_probes import train_probes
 from gtwm.sim.generate import generate_episode
 from gtwm.sim.realism import load_realism_config
 
@@ -38,6 +39,11 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
     realism_path = str(config.get("realism_config", "configs/realism/p1.yaml"))
     set_name = f"exp05_seed{seed}"
     realism_cfg = load_realism_config(realism_path)
+    # 同一 probe_config を n_episodes 回使い回すだけなので、`run_ground` 呼び出しごとの
+    # 再学習を避けて一度だけ学習する（EXP-04/EXP-08 で先に見つかった無駄な再計算と
+    # 同じ理由。詳細は `ground_run.run_ground` の `pretrained` docstring 参照）。
+    trained = train_probes(probe_config)
+    pretrained: TrainedProbeBundle = (trained[0], trained[1], trained[2], trained[3])
 
     n_injected_total = 0
     n_detected_total = 0
@@ -50,7 +56,7 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         ep_seed = seed * 10_000 + i
         generate_episode(set_name, i, duration_s, ep_seed, realism=realism_cfg)
         episode_id = f"ep_{i:04d}_seed{ep_seed}"
-        result = run_ground(episode_id, set_name, probe_config=probe_config)
+        result = run_ground(episode_id, set_name, probe_config=probe_config, pretrained=pretrained)
 
         # 盲検境界：注入台帳の読み出しは eval/scoring.py 経由のみ（唯一の例外モジュール）。
         injection_ledger = load_injection_ledger(episode_id)

@@ -30,7 +30,7 @@ from gtwm.grounding.consistency import (
 )
 from gtwm.grounding.identity import TrackedEntity, resolve_identities
 from gtwm.grounding.ledger import DiscrepancyEntry, DiscrepancyLedger
-from gtwm.grounding.probes import SlotFacts, slot_facts_to_beliefs, utc
+from gtwm.grounding.probes import Probe, SlotFacts, slot_facts_to_beliefs, utc
 from gtwm.grounding.record_consistency import detect_record_discrepancies
 from gtwm.grounding.train_probes import train_probes
 from gtwm.kg.store import RdflibKGStore
@@ -82,14 +82,29 @@ def encode_single_frame_slots(
     return fused[0, 0], type_logits[0, 0]  # [K,D], [K,n_types]
 
 
+TrainedProbeBundle = tuple[Probe, WMModules, list[str], dict[str, CameraParams]]
+
+
 def run_ground(
     episode_dir_name: str,
     set_name: str,
     probe_config: str = "configs/grounding/probe_train_smoke.yaml",
     existence_threshold: float = 0.5,
+    pretrained: TrainedProbeBundle | None = None,
 ) -> GroundRunResult:
+    """`pretrained` を渡すと `train_probes(probe_config)` の再学習をスキップし、
+    呼び出し側が一度だけ学習した probe/modules を使い回す。EXP-04 等が同一
+    `probe_config` のまま `run_ground` をエピソードごとに何十回も呼ぶ場合、
+    毎回フルの学習をやり直すのは（EXP-08 の概念発見ループで先に見つかった
+    のと同じ種類の）無駄な再計算であり、この引数はその再計算を避けるための
+    ものである。省略時は従来通り `train_probes(probe_config)` を呼ぶ
+    （`gtwm ground run` CLI の単発呼び出しはこの経路のまま）。
+    """
     device = get_device()
-    probe, modules, cam_names, cam_params, _train_result = train_probes(probe_config)
+    if pretrained is not None:
+        probe, modules, cam_names, cam_params = pretrained
+    else:
+        probe, modules, cam_names, cam_params, _train_result = train_probes(probe_config)
     probe.eval()
     modules.slot_module.eval()
     modules.fusion.eval()

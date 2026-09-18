@@ -1,5 +1,8 @@
 # EXP-09 連合ツインと漏洩評価。smoke: true で ≤5分の縮小版に切り替わる。
-smoke: true
+# 本実行のため smoke: false に切替済み（Phase B Stage 2、2026-09-13）。
+# 注：Makefile の `make exp EXP=... SMOKE=0/1` は SMOKE 変数を一切参照しておらず
+# 何もしない。本実行への切替は、この smoke: の値を直接書き換えることでのみ行える。
+smoke: false
 seeds: [0]
 probe_config: configs/grounding/probe_train_smoke.yaml
 site_b_set: p2_site_b
