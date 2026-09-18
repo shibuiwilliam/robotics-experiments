@@ -32,6 +32,9 @@ from omegaconf import DictConfig
 from gtwm.grounding.ground_run import run_ground
 from gtwm.grounding.train_probes import train_probes
 from gtwm.sim.generate import generate_episode
+from gtwm.utils.logging import get_logger
+
+log = get_logger(__name__)
 
 # 実測値（このセッションで計測、docs/status.md 参照）：
 # - 30秒エピソード生成: 約7〜15秒（session02実測、smoke構成）。
@@ -58,6 +61,12 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
 
     all_latencies: list[float] = []
     n_success = 0
+    # 失敗の内訳を例外クラス名ごとに数える。当初は `except Exception: continue` で
+    # 握り潰していたため、本実行（2026-09-14〜19）で availability=0.717（60トライアル中
+    # 17failure）という結果が出たにもかかわらず、**何が失敗したのか事後に一切分からなかった**
+    # （ログは10行、トレースバックは1件も残らない）。稼働率という指標は「落ちた」だけでなく
+    # 「なぜ落ちたか」を残さなければ next action に繋がらない（docs/results/EXP-11.md 参照）。
+    failure_counts: dict[str, int] = {}
     for i in range(n_trials):
         ep_seed = seed * 10_000 + i
         try:
@@ -68,7 +77,12 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
             )
             all_latencies.extend(result.frame_latencies_s)
             n_success += 1
-        except Exception:  # noqa: BLE001 - 稼働率の代理指標として「例外なく完走したか」を見る
+        except Exception as exc:  # noqa: BLE001 - 稼働率の代理指標として完走可否を見る
+            key = type(exc).__name__
+            failure_counts[key] = failure_counts.get(key, 0) + 1
+            log.warning(
+                "exp11_trial_failed", trial=i, episode_seed=ep_seed, error_type=key, error=str(exc)
+            )
             continue
 
     p50 = float(np.percentile(all_latencies, 50)) if all_latencies else float("nan")
@@ -90,6 +104,9 @@ def measure(config: DictConfig, seed: int) -> dict[str, Any]:
         "n_trials": n_trials,
         "n_success": n_success,
         "n_frame_samples": len(all_latencies),
+        # 稼働率が1.0未満のとき、何が落ちたのかを metrics.json だけで追えるようにする
+        # （例："OSError:5,ValueError:1"）。空文字なら失敗ゼロ。
+        "failure_types_csv": ",".join(f"{k}:{v}" for k, v in sorted(failure_counts.items())),
     }
 
 
