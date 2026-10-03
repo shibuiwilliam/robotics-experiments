@@ -31,6 +31,15 @@ from sbp.reasoning.explain import (
     explain_belief,
     explain_discrepancy,
 )
+from sbp.reasoning.rules import (
+    Derivation,
+    Fact,
+    NormRule,
+    Propagation,
+    RuleProgram,
+    RuleResult,
+    propagate_confidence,
+)
 
 __all__ = [
     "AggregationRule",
@@ -38,11 +47,17 @@ __all__ = [
     "BeliefFilter",
     "BeliefUpdate",
     "CouplingResult",
+    "Derivation",
     "DwellTime",
     "Explanation",
+    "Fact",
     "LatentSide",
     "MaskedEvidence",
+    "NormRule",
     "PartWhole",
+    "Propagation",
+    "RuleProgram",
+    "RuleResult",
     "SituationLink",
     "SourceContribution",
     "SymbolicSide",
@@ -51,5 +66,6 @@ __all__ = [
     "explain_discrepancy",
     "no_audit",
     "propagate",
+    "propagate_confidence",
     "update_belief",
 ]

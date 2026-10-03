@@ -101,8 +101,12 @@ holds_at(F, E, T) :-
     step(T),
     not clipped(F, E, T0, T).
 
+% T0 は initiated、T は step で束縛する。比較だけに現れる変数は接地できない
+% （clingo の unsafe variable）——規則を実際に走らせるまで気付けなかった欠陥である。
 clipped(F, E, T0, T) :-
+    initiated(F, E, T0),
     terminated(F, E, T1),
+    step(T),
     T0 < T1,
     T1 < T.
 
@@ -135,3 +139,35 @@ candidate_event(Ev, F, E, T) :-
 #show holds_at/3.
 #show exclusive_violation/4.
 #show candidate_event/4.
+
+% ---- 確信度伝播の宣言（設計書 §8.9）----------------------------------------
+% 規則の実行は信念の上で行うため、確信度をどう伝播するかを**規則ごとに宣言する**。
+% confidence_rule(RuleName, HeadPredicate, Propagation)
+%   min       : 連言（body の全てが要る）→ 最小値。既定。
+%   product   : 独立な連言 → 積。body が独立と言える場合のみ。
+%   noisy_or  : 選言（複数の導出が同じ結論を支える）→ 1 - Π(1 - c)。
+
+confidence_rule(inertia, holds_at, min).
+confidence_rule(exclusive_violation, exclusive_violation, min).
+confidence_rule(event_lifting_inverse, candidate_event, noisy_or).
+
+% ---- 導出の根拠（来歴）------------------------------------------------------
+% 導出された原子ごとに、それを支えた body の原子を明示する。Python 側はこの support/2 を
+% 読んで確信度を伝播する——導出木を推測せず、規則自身が根拠を申告する形にしている。
+
+support(exclusive_violation(F, G, E, T), holds_at(F, E, T)) :-
+    exclusive_violation(F, G, E, T).
+support(exclusive_violation(F, G, E, T), holds_at(G, E, T)) :-
+    exclusive_violation(F, G, E, T).
+
+support(candidate_event(Ev, F, E, T), fluent_change(F, E, T, From, To)) :-
+    candidate_event(Ev, F, E, T),
+    fluent_change(F, E, T, From, To).
+
+support(holds_at(F, E, T), initiated(F, E, T0)) :-
+    holds_at(F, E, T),
+    initiated(F, E, T0),
+    T0 < T.
+
+#show support/2.
+#show confidence_rule/3.
