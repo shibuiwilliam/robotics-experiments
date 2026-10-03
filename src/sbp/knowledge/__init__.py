@@ -9,6 +9,12 @@
 
 from __future__ import annotations
 
+from sbp.knowledge.artifacts import (
+    ArtifactStore,
+    LocalArtifactStore,
+    S3ArtifactStore,
+    parse_s3_uri,
+)
 from sbp.knowledge.assertions import AssertionRow, AssertionStore
 from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph, schema_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
@@ -35,6 +41,7 @@ from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 
 __all__ = [
     "AggregationByFluent",
+    "ArtifactStore",
     "AssertionRow",
     "AssertionStore",
     "CompatibilityMatrix",
@@ -46,17 +53,20 @@ __all__ = [
     "LatentIndex",
     "LatentNeighbour",
     "LatentRegistration",
+    "LocalArtifactStore",
     "PartWholeEdge",
     "PlanStrategy",
     "RegroundingPlan",
     "RegroundingReport",
     "RegroundingTrigger",
+    "S3ArtifactStore",
     "ScopeEstimate",
     "Selectivity",
     "aggregation_rules",
     "belief_graph",
     "group_by_whole",
     "is_scenario_graph",
+    "parse_s3_uri",
     "part_whole_edges",
     "plan_hybrid",
     "plan_regrounding",

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Self
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from sbp.core.errors import BridgeError, ProbePromotionError
+from sbp.core.errors import BridgeError, CalibrationError, ProbePromotionError
 from sbp.core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -266,9 +266,45 @@ class LinearProbe:
         return self._weights.copy()
 
     @property
+    def bias(self) -> float:
+        """バイアス項。重みと合わせて直列化の対象になる（:mod:`sbp.bridge.serialization`）。"""
+        return self._bias
+
+    @property
+    def calibrator(self) -> Calibrator | None:
+        """取り付けられている較正器。``None`` なら未較正で、``predict`` は失敗する。
+
+        公開するのは直列化のためである。較正器を持たないプローブを置き場に入れると、
+        ロードした側は「保存されているのだから使える」と読む（不変条件 7）。
+        """
+        return self._calibrator
+
+    @property
     def is_trained(self) -> bool:
         """学習済みかどうか。"""
         return self._trained
+
+    def load_parameters(self, *, weights: NDArray[np.float64], bias: float) -> None:
+        """直列化された重みを戻す（:func:`sbp.bridge.serialization.restore_probe` 専用）。
+
+        ``fit`` を通さずに学習済みにするのはここだけである。**次元が合わなければ落とす**
+        ——別の WM 版の潜在に対して学習された重みは、次元が偶然一致しても意味が違う
+        （設計書 §4.8 の互換性行列が扱う問題）。
+
+        Args:
+            weights: 重み（``(次元,)``）。
+            bias: バイアス項。
+
+        Raises:
+            BridgeError: 重みの形がこのプローブの次元と合わない場合。
+        """
+        if weights.shape != (self._dim,):
+            raise BridgeError(
+                f"weight shape {weights.shape} does not match probe dimension ({self._dim},)"
+            )
+        self._weights = weights.astype(np.float64, copy=True)
+        self._bias = float(bias)
+        self._trained = True
 
     def logits(self, latents: NDArray[np.float64]) -> NDArray[np.float64]:
         """生のロジット（較正前のスコア）。
@@ -350,9 +386,27 @@ class LinearProbe:
     def attach_calibrator(self, calibrator: Calibrator) -> None:
         """較正器を取り付ける。
 
+        **実行時に形を検査する。** :class:`~sbp.bridge.calibration.Calibrator` は Protocol
+        なので、型検査を通らないものでも実行時には取り付けられてしまう——
+        :class:`~sbp.bridge.calibration.ConformalRegressor`（``apply`` を持たない回帰用の
+        較正器）を分類プローブに付ける取り違えが実際に起こる。付いた時点で落とさないと、
+        ``predict`` まで「較正済み」として扱われる（不変条件 7）。
+
         Args:
             calibrator: 較正器（温度スケーリングなど）。
+
+        Raises:
+            CalibrationError: ``apply`` / ``is_fitted`` を持たないものを渡した場合。
         """
+        from sbp.bridge.calibration import Calibrator as CalibratorProtocol  # noqa: PLC0415
+
+        # 静的には常に真だが、Protocol は実行時に構造を強制しない。型検査を通さない
+        # 呼び出し（``type: ignore`` 付き、動的なプラグイン）が実際に起こるので残す
+        if not isinstance(calibrator, CalibratorProtocol):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise CalibrationError(
+                f"{type(calibrator).__name__} is not a Calibrator (needs apply / is_fitted); "
+                "attaching it would make uncalibrated scores look calibrated (invariant 7)"
+            )
         self._calibrator = calibrator
 
     def predict(self, latents: NDArray[np.float64], *, ensemble_noise: float = 0.0) -> ProbeOutput:

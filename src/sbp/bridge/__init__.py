@@ -51,6 +51,14 @@ from sbp.bridge.probes import (
     expected_calibration_error,
     promote,
 )
+from sbp.bridge.serialization import (
+    BUNDLE_SCHEMA_VERSION,
+    ProbeBundle,
+    TemperatureState,
+    artifact_key,
+    bundle_probe,
+    restore_probe,
+)
 from sbp.bridge.spatial import (
     PositionBelief,
     Zone,
@@ -61,6 +69,7 @@ from sbp.bridge.spatial import (
 from sbp.bridge.validate import Disposition, ValidationFinding, ValidationOutcome, validate_graph
 
 __all__ = [
+    "BUNDLE_SCHEMA_VERSION",
     "AlignmentReport",
     "BindingResult",
     "BocpdDetector",
@@ -75,6 +84,7 @@ __all__ = [
     "LiftedEvent",
     "LinearProbe",
     "PositionBelief",
+    "ProbeBundle",
     "ProbeKind",
     "ProbeMetrics",
     "ProbeOutput",
@@ -82,6 +92,7 @@ __all__ = [
     "ProbeStatus",
     "SymbolicTransition",
     "TemperatureScaler",
+    "TemperatureState",
     "TimeBag",
     "Track",
     "TrackKind",
@@ -90,8 +101,10 @@ __all__ = [
     "Zone",
     "alignment_residual",
     "apply_hysteresis",
+    "artifact_key",
     "auroc",
     "bind_tracks",
+    "bundle_probe",
     "containment_hierarchy",
     "containment_probability",
     "detect_change_points",
@@ -104,6 +117,7 @@ __all__ = [
     "most_likely_zone",
     "promote",
     "reliability_diagram",
+    "restore_probe",
     "should_revoke",
     "symbolize",
     "validate_graph",

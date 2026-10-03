@@ -138,6 +138,18 @@ class RegroundingError(KnowledgeError):
     """再接地ジョブの失敗。"""
 
 
+class ArtifactNotFoundError(KnowledgeError):
+    """モデル成果物（重み・プローブ束ね）が置き場に無い。"""
+
+
+class ArtifactImmutableError(KnowledgeError):
+    """既存のモデル成果物を上書きしようとした。
+
+    成果物は版ごとに不変である。同じキーの中身が入れ替わると、``latest`` を禁じていても
+    実質 ``latest`` になり、過去の信念の説明が再構成できなくなる（設計書 §8.8）。
+    """
+
+
 # ---- 業務統合 ----------------------------------------------------------------
 
 

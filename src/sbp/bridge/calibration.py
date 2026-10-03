@@ -109,6 +109,28 @@ class TemperatureScaler:
         log.debug("bridge.calibrated", temperature=self._temperature, n_samples=len(raw_scores))
         return self
 
+    def restore(self, *, temperature: float) -> Self:
+        """推定済みの温度を戻す（:mod:`sbp.bridge.serialization` 専用）。
+
+        保留データを持たずに ``is_fitted`` を真にする唯一の経路である。**``fit`` の代わりに
+        使わない**——温度は保留データから推定するものであり、ここは「別のプロセスで推定した
+        温度を持ち込む」ためだけにある。
+
+        Args:
+            temperature: 推定済みの温度（正）。
+
+        Raises:
+            CalibrationError: 温度が正でない場合（``sigmoid(logit / T)`` が定義されない）。
+        """
+        if not temperature > 0.0:
+            raise CalibrationError(
+                f"temperature must be positive, got {temperature}; sigmoid(logit / T) is "
+                "undefined otherwise"
+            )
+        self._temperature = float(temperature)
+        self._fitted = True
+        return self
+
     def apply(self, raw_scores: NDArray[np.float64]) -> NDArray[np.float64]:
         """生スコアを較正済み確率に変換する。
 
