@@ -469,12 +469,18 @@ class WorldModel(Protocol):
         timestamps: Sequence[datetime],
         *,
         reference: NDArray[np.float64] | None = None,
+        align_residual: float = 0.0,
     ) -> ModelHealth:
         """潜在シフト・予測誤差・整合残差を返す。
+
+        **整合残差は引数で受け取る**（ADR-0007）。計算には記号側の遷移 T とプローブ出力が必要で、
+        どちらも ``bridge`` にある。WM が自分で計算すると層依存に反する。渡されなければ 0 の
+        ままになり、「評価していない」ことを呼び出し側が意識する形にしている。
 
         Args:
             observations: 評価に使う観測窓。
             timestamps: 各行の時刻。
             reference: 基準となる潜在分布（学習時の潜在）。
+            align_residual: ``bridge.alignment`` が計算した整合残差。
         """
         ...
