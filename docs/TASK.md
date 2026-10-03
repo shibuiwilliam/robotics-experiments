@@ -302,7 +302,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 
 ## 4. 横断・継続タスク（マイルストーンに属さない）
 
-- [ ] **X-01** CI 整備 — GitHub Actions 等で `make check` + 統合テスト（サービスコンテナ）。M0 完了後すぐ
+- [x] **X-01** CI 整備 — `.github/workflows/ci.yml`。3 ジョブ（`check` / `integration` / `ui`）。`check` が落ちたら `integration` を走らせない（型が通らないのに Compose の起動を待っても情報が増えない）。`integration` は `.env.example` の既定ポートを使い、**healthy の期待件数を明示して待つ**——「healthy でないものが 0 件」を成功条件にすると、コンテナが 1 つも起きていないときも通る
 - [ ] **X-02** import 境界 lint — 層依存の向き（development-rules.md §4）と `sbp/testing` オラクル境界を機械検査（import-linter 等）。M0-05 以降随時
 - [ ] **X-03** ADR の継続運用 — 設計逸脱・閾値変更・ライブラリ選定のたびに `docs/adr/NNNN-*.md`
 - [ ] **X-04** `docs/STATUS.md` 更新 — ゲート通過時のみ（§2 の更新手順）

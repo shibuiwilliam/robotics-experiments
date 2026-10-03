@@ -10,15 +10,25 @@
 
 ```sh
 make bootstrap   # brew bundle → uv sync → .env 生成 → docker compose pull
-make up          # Compose 起動（redpanda / postgres / oxigraph / minio）
+make up          # Compose 起動（redpanda / postgres / oxigraph / objectstore）
 make seed        # オントロジー投入・トピック作成・マイグレーション
 make dev         # API（:8000）とワーカーをホットリロードで起動
-make check       # lint + typecheck + ontology-check + test（コミット前に必ず緑）
+make check       # lint + 型 + 層依存 + ontology-check + シークレット走査 + 単体（コミット前に必ず緑）
+make test-int    # 統合テスト（Compose 必須）
 ```
+
+UI（`apps/ui`、Node 20+）を触るときは `make ui-install` → `make check-all`
+（`make check` + UI の型検査とテスト）。`make check` に UI を入れていないのは、
+**追加のインストール無しで必ず走る**状態に保つためである。
 
 コマンド一覧と開発規約は `CLAUDE.md`、詳細は `docs/development-rules.md` を参照。
 
-> 現在地: **M0（骨格）着手前**。コードは未実装で、設計ドキュメントと開発ルール一式が揃った状態（`docs/STATUS.md`）。
+> 現在地: **M0〜M7 完了**（ゲート G0〜G7 通過）。計画上のマイルストーンは出し切り、残るのは
+> 横断タスクと「実データに当てるまで確かめられない」種類の制約である（`docs/STATUS.md`、
+> `docs/PROGRESS.md` の既知の制約）。
+
+CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 不要）が落ちたら
+`integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。
 
 ## ドキュメントマップ
 
@@ -34,6 +44,8 @@ make check       # lint + typecheck + ontology-check + test（コミット前に
 | `docs/STATUS.md` | マイルストーン進捗（M0〜M7）。進捗はここだけに書く |
 | `.claude/rules/*.md` | 層別の詳細ルール（paths 連動で該当ファイルを開くと自動読込） |
 | `.claude/settings.json` | Claude Code のガードレール（ルートの `settings.json` はここへのシンボリックリンク） |
+| `docs/runbooks/` | 運用手順（再接地 / 版昇格 / 障害対応 / バックアップ・リストア / ローカル環境） |
+| `apps/ui/` | UI（不一致キュー・信念ビュー・期待ボード・概念 curation。ADR-0008） |
 | `.env.example` | 全環境変数の一覧（`.env` はコミットしない） |
 
 優先順位: 矛盾があれば 設計書 → CLAUDE.md → その他ドキュメント の順に従う。

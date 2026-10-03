@@ -1,0 +1,143 @@
+# CI（docs/TASK.md X-01）。
+#
+# ジョブを 3 つに分けている。**速い検査を先に落とすため**である——lint と型が通らないのに
+# Compose を起動して 5 分待つのは、待ち時間を買っているだけで情報が増えない。
+#
+# `check` は Compose もネットワークも要らない（CLAUDE.md のテスト方針）。`integration` だけが
+# サービスを必要とし、`ui` は Node のジョブとして独立している。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # 同じ branch の古い実行は止める（PR を連続で push したとき、古い結果を待たない）
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # GitHub のランナーは amd64。CLAUDE.md の Intel 向け逃げ道をそのまま使う
+  SBP_PLATFORM: linux/amd64
+  # 非対応 op の CPU フォールバックを許す（MPS は無いが、環境変数の前提を揃えておく）
+  PYTORCH_ENABLE_MPS_FALLBACK: "1"
+
+jobs:
+  check:
+    name: make check（lint・型・層依存・オントロジー・走査・単体）
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # シークレット走査は git ls-files を使う。浅い clone でもファイル一覧は取れる
+          fetch-depth: 1
+
+      - name: uv を入れる
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Python 3.12
+        run: uv python install 3.12
+
+      - name: 依存を lock どおりに同期
+        run: uv sync --all-extras --frozen
+
+      - name: make check
+        run: make check
+
+  integration:
+    name: 統合テスト（Compose 必須）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # check が落ちているなら Compose を起動しない（待ち時間を買わない）
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv を入れる
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Python 3.12
+        run: uv python install 3.12
+
+      - name: 依存を lock どおりに同期
+        run: uv sync --all-extras --frozen
+
+      - name: .env を作る（ポートは .env.example の既定値を使う）
+        run: cp .env.example .env
+
+      - name: Compose 起動
+        run: make up
+
+      - name: サービスの healthcheck を待つ
+        # oxigraph は distroless で healthcheck を持たない（ADR-0004）ので、残り 3 つを待ち、
+        # oxigraph はアプリ側の疎通検査（seed と統合テストの fixture）に任せる。
+        #
+        # **期待する件数を明示するのが要点である。** 「healthy でないものが 0 件」を成功条件に
+        # すると、コンテナが 1 つも起きていないときも 0 件になって通ってしまう。
+        env:
+          EXPECTED_HEALTHY: "3"
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            healthy=$(docker compose -f infra/compose.yaml ps \
+              --format '{{.Service}} {{.Health}}' \
+              | awk '$2 == "healthy" {print $1}' | sort | tr '\n' ' ')
+            count=$(echo "$healthy" | wc -w | tr -d ' ')
+            if [ "$count" -eq "$EXPECTED_HEALTHY" ]; then
+              echo "healthy ($count/$EXPECTED_HEALTHY): $healthy"
+              exit 0
+            fi
+            echo "待機中 ($attempt/60) healthy=$count/$EXPECTED_HEALTHY: $healthy"
+            sleep 5
+          done
+          echo "::error::$EXPECTED_HEALTHY 個のサービスが healthy にならなかった"
+          docker compose -f infra/compose.yaml ps
+          docker compose -f infra/compose.yaml logs --tail=80
+          exit 1
+
+      - name: seed（オントロジー投入・トピック・マイグレーション・バケット）
+        run: make seed
+
+      - name: 統合テスト
+        run: make test-int
+
+      - name: 失敗したらサービスのログを出す
+        if: failure()
+        run: docker compose -f infra/compose.yaml logs --tail=200
+
+      - name: Compose 停止
+        if: always()
+        run: make down
+
+  ui:
+    name: apps/ui（型検査・テスト・ビルド）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Node 20（CLAUDE.md: Node は apps/ui のみ）"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/ui/package-lock.json
+
+      - name: 依存を lock どおりに入れる
+        working-directory: apps/ui
+        run: npm ci
+
+      - name: 型検査とテスト
+        working-directory: apps/ui
+        run: npm run typecheck && npm test
+
+      - name: ビルドが通ること
+        working-directory: apps/ui
+        run: npm run build
