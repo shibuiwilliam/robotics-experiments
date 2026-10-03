@@ -6,14 +6,14 @@
 - ``vocab.core.<LocalName>`` — L1 中核（``https://sbp.example/core#``）
 - ``vocab.ent.<LocalName>`` — ドメイン・企業層（``https://sbp.example/ent#``）
 
-生成元オントロジー版: 0.2.0
+生成元オントロジー版: 0.3.0
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-ONTOLOGY_VERSION: Final = "0.2.0"
+ONTOLOGY_VERSION: Final = "0.3.0"
 """この語彙を生成したオントロジーの版（アサーションの ``ontology_version`` に入れる）。"""
 
 CORE_NAMESPACE: Final = "https://sbp.example/core#"
@@ -460,7 +460,7 @@ class _Ent:
     Fault: Final = "https://sbp.example/ent#Fault"
     """故障（event_type, L2）
 
-    設備の故障。Running を終了し Faulted を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。
+    設備の故障。Running を終了し Faulted と Accessible を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。
     """
 
     Faulted: Final = "https://sbp.example/ent#Faulted"
@@ -496,7 +496,7 @@ class _Ent:
     MaintStart: Final = "https://sbp.example/ent#MaintStart"
     """保全開始（event_type, L2）
 
-    保全作業の開始。UnderMaintenance を開始する。
+    保全作業の開始。UnderMaintenance と Accessible を開始する。
     """
 
     MaintenancePlan: Final = "https://sbp.example/ent#MaintenancePlan"
@@ -562,13 +562,13 @@ class _Ent:
     StartCmd: Final = "https://sbp.example/ent#StartCmd"
     """起動指令（event_type, L2）
 
-    設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。
+    設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。稼働中は人が近づけないため Accessible を終了する。
     """
 
     StopCmd: Final = "https://sbp.example/ent#StopCmd"
     """停止指令（event_type, L2）
 
-    設備の計画停止指令。Running を終了する（遅延 LogNormal(ln 10s, 0.4)）。
+    設備の計画停止指令。Running を終了し、停止により人が近づけるようになるため Accessible を開始する（遅延 LogNormal(ln 10s, 0.4)）。
     """
 
     UnderMaintenance: Final = "https://sbp.example/ent#UnderMaintenance"

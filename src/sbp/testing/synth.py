@@ -291,9 +291,15 @@ class SynthWorld:
             anomalous = bool(anomaly[first_stop])
             stop_cause = "Fault" if anomalous else "StopCmd"
             if anomalous:
-                # Faulted は次の起動まで続く（再起動で解消する）
-                next_run = next((r.start for r in run_ranges[1:] if r.start > first_stop), count)
-                for i in range(first_stop, next_run):
+                # Faulted は保全終了（MaintEnd）まで続く。**再起動では解消しない。**
+                # 事象計算（ontology/process/*.lp）で faulted を terminates するのは
+                # maint_end だけであり、ここで勝手に解消すると「事象計算が説明できない
+                # 状態変化」を合成世界が作ることになる。それは整合残差を無意味にする
+                # （何と比べても合わない世界を基準にしてしまう）。
+                clear_at = count
+                if maint_range is not None and maint_range.stop > first_stop:
+                    clear_at = maint_range.stop
+                for i in range(first_stop, clear_at):
                     faulted[i] = True
 
         fluents: dict[Fluent, NDArray[np.bool_]] = {

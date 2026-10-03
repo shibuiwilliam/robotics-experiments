@@ -187,9 +187,24 @@ def check_process_rules(graph: Graph, report: Report) -> None:
     for pair in sorted(ttl_exclusive - lp_exclusive):
         report.fail("process", f"exclusive{pair} is in TTL but missing from *.lp")
 
+    # すべてのフルーエント型が少なくとも 1 つの事象型に変化させられること。
+    # EventTypeShape（すべての事象型は何かを変化させる）の双対であり、片側だけ検査していると
+    # 「変化させられないフルーエント」が通ってしまう。変化しないフルーエントは事象駆動の
+    # 信念更新に乗らず、アクションの前提としても永久に初期値のままになる。
+    changeable = {f for _, f in ttl_initiates} | {f for _, f in ttl_terminates}
+    for term in fluent_types(graph):
+        if term.local_name not in changeable:
+            report.fail(
+                "process",
+                f"fluent type {term.local_name!r} is not initiated or terminated by any event "
+                "type; it can never change, so it cannot take part in event-driven belief "
+                "updates (dual of the EventTypeShape constraint)",
+            )
+
     report.note(
         f"process: {len(ttl_fluents)} fluent types, {len(ttl_events)} event types, "
-        f"{len(ttl_initiates)} initiates, {len(ttl_terminates)} terminates aligned"
+        f"{len(ttl_initiates)} initiates, {len(ttl_terminates)} terminates aligned; "
+        f"{len(changeable)} fluent types are changeable by events"
     )
 
 

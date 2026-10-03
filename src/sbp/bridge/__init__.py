@@ -16,11 +16,19 @@ from sbp.bridge.alignment import (
     equipment_maintenance_transition,
     symbolize,
 )
+from sbp.bridge.bocpd import BocpdDetector, ChangePoint, apply_hysteresis, detect_change_points
 from sbp.bridge.calibration import (
     Calibrator,
     ConformalRegressor,
     TemperatureScaler,
     reliability_diagram,
+)
+from sbp.bridge.lifting import (
+    EventCalculusRules,
+    FluentChange,
+    LiftedEvent,
+    lift_events,
+    load_event_calculus,
 )
 from sbp.bridge.mil import TimeBag, fit_with_bags, mil_loss
 from sbp.bridge.probes import (
@@ -37,8 +45,13 @@ from sbp.bridge.probes import (
 
 __all__ = [
     "AlignmentReport",
+    "BocpdDetector",
     "Calibrator",
+    "ChangePoint",
     "ConformalRegressor",
+    "EventCalculusRules",
+    "FluentChange",
+    "LiftedEvent",
     "LinearProbe",
     "ProbeKind",
     "ProbeMetrics",
@@ -49,10 +62,14 @@ __all__ = [
     "TemperatureScaler",
     "TimeBag",
     "alignment_residual",
+    "apply_hysteresis",
     "auroc",
+    "detect_change_points",
     "equipment_maintenance_transition",
     "expected_calibration_error",
     "fit_with_bags",
+    "lift_events",
+    "load_event_calculus",
     "mil_loss",
     "promote",
     "reliability_diagram",

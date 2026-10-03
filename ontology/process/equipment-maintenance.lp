@@ -39,12 +39,17 @@ exclusive(under_maintenance, running).
 % initiates(EventType, FluentType) / terminates(EventType, FluentType)
 
 initiates(start_cmd, running).
+terminates(start_cmd, accessible).      % 稼働中は人が近づけない
+
 terminates(stop_cmd, running).
+initiates(stop_cmd, accessible).        % 停止すれば近づける
 
 terminates(fault, running).
 initiates(fault, faulted).
+initiates(fault, accessible).           % 故障停止でも近づけるようになる
 
 initiates(maint_start, under_maintenance).
+initiates(maint_start, accessible).
 terminates(maint_end, under_maintenance).
 terminates(maint_end, faulted).
 initiates(maint_end, inspected).

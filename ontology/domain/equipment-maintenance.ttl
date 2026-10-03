@@ -18,7 +18,7 @@
 <https://sbp.example/ent>
     a owl:Ontology ;
     rdfs:label "設備保全ドメインオントロジー"@ja , "Equipment maintenance domain ontology"@en ;
-    owl:versionInfo "0.1.0" ;
+    owl:versionInfo "0.3.0" ;
     owl:imports <https://sbp.example/core> ;
     skos:definition "回転機の稼働・保全と、その業務記録（CMMS 作業指示・MES 稼働実績・保全計画）を結ぶ概念。"@ja ;
     dcterms:publisher "maintenance-domain-owner" .
@@ -181,33 +181,35 @@ ent:Present
 ent:StartCmd
     a sbp:EventType ;
     rdfs:label "起動指令"@ja , "Start command"@en ;
-    skos:definition "設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。"@ja ;
+    skos:definition "設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。稼働中は人が近づけないため Accessible を終了する。"@ja ;
     sbp:initiates ent:Running ;
+    sbp:terminates ent:Accessible ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
 ent:StopCmd
     a sbp:EventType ;
     rdfs:label "停止指令"@ja , "Stop command"@en ;
-    skos:definition "設備の計画停止指令。Running を終了する（遅延 LogNormal(ln 10s, 0.4)）。"@ja ;
+    skos:definition "設備の計画停止指令。Running を終了し、停止により人が近づけるようになるため Accessible を開始する（遅延 LogNormal(ln 10s, 0.4)）。"@ja ;
     sbp:terminates ent:Running ;
+    sbp:initiates ent:Accessible ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
 ent:Fault
     a sbp:EventType ;
     rdfs:label "故障"@ja , "Fault"@en ;
-    skos:definition "設備の故障。Running を終了し Faulted を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。"@ja ;
+    skos:definition "設備の故障。Running を終了し Faulted と Accessible を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。"@ja ;
     sbp:terminates ent:Running ;
-    sbp:initiates ent:Faulted ;
+    sbp:initiates ent:Faulted , ent:Accessible ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
 ent:MaintStart
     a sbp:EventType ;
     rdfs:label "保全開始"@ja , "Maintenance start"@en ;
-    skos:definition "保全作業の開始。UnderMaintenance を開始する。"@ja ;
-    sbp:initiates ent:UnderMaintenance ;
+    skos:definition "保全作業の開始。UnderMaintenance と Accessible を開始する。"@ja ;
+    sbp:initiates ent:UnderMaintenance , ent:Accessible ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 

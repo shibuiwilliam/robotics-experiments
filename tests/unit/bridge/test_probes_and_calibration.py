@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,6 +24,7 @@ from sbp.bridge.calibration import (
     TemperatureScaler,
     reliability_diagram,
 )
+from sbp.bridge.lifting import load_event_calculus
 from sbp.bridge.mil import TimeBag, fit_with_bags, mil_loss
 from sbp.bridge.probes import (
     LinearProbe,
@@ -482,3 +485,77 @@ class TestEndToEndGrounding:
         promoted = promote(spec, settings=BridgeSettings(), active_alignment_residuals=())
         assert promoted.status is ProbeStatus.ACTIVE
         assert promoted.metrics is not None
+
+
+class TestSynthWorldConsistencyWithEventCalculus:
+    """合成世界が事象計算で説明できる状態変化しか作らないこと。
+
+    これは SynthWorld に対する不変条件である。説明できない変化を作る合成世界を基準にすると、
+    整合残差（``A∘f`` と ``T∘A`` のずれ）が無意味になる——何と比べても合わない世界を
+    「正しい物理」として扱うことになるからである。
+    """
+
+    def test_every_fluent_change_is_explicable(self) -> None:
+        """全フルーエントの全変化に、それを起こしえた事象型が存在する。"""
+
+        repo_root = Path(__file__).resolve().parents[3]
+        rules = load_event_calculus(
+            (repo_root / "ontology" / "process" / "equipment-maintenance.lp").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        def snake(name: str) -> str:
+            return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+        for cycles in (1, 2, 4):
+            synth = SynthWorld(
+                config=SynthConfig(start=T0, duration=timedelta(hours=4), cycles=cycles), seed=11
+            )
+            truth = synth.oracle
+            for fluent in Fluent:
+                series = truth.labels_for(fluent)
+                local = snake(fluent.value)
+                for i in range(1, len(series)):
+                    if series[i] == series[i - 1]:
+                        continue
+                    candidates = (
+                        rules.candidates_for_rise(local)
+                        if series[i]
+                        else rules.candidates_for_fall(local)
+                    )
+                    assert candidates, (
+                        f"cycles={cycles}: {fluent.value} の "
+                        f"{'成立' if series[i] else '不成立'}（添字 {i}）を説明できる事象型が無い。"
+                        "合成世界が事象計算と矛盾している"
+                    )
+
+    def test_exclusive_fluents_never_hold_together(self) -> None:
+        """排他フルーエント（Running ⊥ UnderMaintenance）が同時成立しない。"""
+        synth = SynthWorld(
+            config=SynthConfig(
+                start=T0,
+                duration=timedelta(hours=2),
+                maintenance_window=(timedelta(minutes=50), timedelta(minutes=70)),
+            ),
+            seed=11,
+        )
+        truth = synth.oracle
+        running = truth.labels_for(Fluent.RUNNING)
+        maintenance = truth.labels_for(Fluent.UNDER_MAINTENANCE)
+        assert not (running & maintenance).any(), "排他フルーエントが同時に成立している"
+
+    def test_faulted_persists_until_maintenance(self) -> None:
+        """Faulted は保全終了まで続く（再起動では解消しない）。
+
+        事象計算で faulted を terminates するのは maint_end だけなので、それ以外の経路で
+        解消すると説明できない変化になる。
+        """
+        synth = SynthWorld(
+            config=SynthConfig(start=T0, duration=timedelta(hours=2), cycles=2), seed=11
+        )
+        faulted = synth.oracle.labels_for(Fluent.FAULTED)
+        if not faulted.any():
+            pytest.skip("この設定では故障が起きない")
+        first_true = int(np.argmax(faulted))
+        assert faulted[first_true:].all(), "Faulted が保全なしで解消している"

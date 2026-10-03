@@ -127,7 +127,7 @@
 - [x] **M2-03** `TimeBag` と MIL 損失 — 記録由来の弱ラベル生成（Record → 概念×実体×時間バッグ）、信頼性由来の重み → 完了（TimeBag + noisy-OR MIL。重みは信頼性由来。勾配は解析的）
 - [x] **M2-04** `Calibrator` — 温度スケーリング / conformal、ECE 計測、認識的・偶然的不確実性の分離 → 完了（温度スケーリング + conformal。ECE 0.082→0.015 を実測、順位は不変）
 - [x] **M2-05** `promote()` ゲート — AUROC ≥ 0.85 ∧ ECE ≤ 0.05 ∧ 整合残差 ≤ 既存 active 中央値の AND。満たさなければ例外 → 完了（AND ゲート。AUROC 1.0 でも ECE・整合残差で拒否することをテストで保証）
-- [ ] **M2-06** 事象昇格パイプライン — BOCPD（自前 `bocpd.py`）→ ヒステリシス → 最小持続 → clingo 逆写像 → 重複抑制 → `TypedProbabilisticEvent`（`uncertainty_s` 必須）
+- [x] **M2-06** 事象昇格パイプライン — BOCPD（自前 `bocpd.py`）→ ヒステリシス → 最小持続 → clingo 逆写像 → 重複抑制 → `TypedProbabilisticEvent`（`uncertainty_s` 必須） → 完了（BOCPD はベイズ因子判定。逆写像が §14 の Fault/StopCmd 判別を再現）
 - [ ] **M2-07** 同一性束縛 — Track → `UnidentifiedPhysicalObject` 登録、`linear_sum_assignment`、`IdentityClaim`（撤回時 kind=4 起票は M3 と接続）
 - [ ] **M2-08** 空間束縛 — shapely ゾーン包含、位置 `(mean, cov)` → `locatedIn` 確率、包含階層の導出
 - [ ] **M2-09** 検証 — pyshacl（Violation → 隔離キュー / Warning → 不一致候補）、イベントの `validation` フィールド

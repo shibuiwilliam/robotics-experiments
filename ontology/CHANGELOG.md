@@ -8,6 +8,32 @@ semver の判定基準（CLAUDE.md「オントロジー変更の手順」）:
 
 非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 
+## 0.3.0 — 2026-10-03
+
+semver 判定: **MINOR**（``initiates`` / ``terminates`` の加法的追加のみ。既存の型・関係の
+削除や意味変更はない）。既存プローブは無く、`schemas/` の生成物も変わらないため後方互換の
+破壊はない。再接地は不要。
+
+### 追加（L2 設備保全 — `Accessible` を変化させる事象）
+
+M2-06（事象昇格）の実装中に、SynthWorld の不変条件テスト（「合成世界は事象計算で説明できる
+状態変化しか作らない」）が**オントロジーの欠落**を検出した。`Accessible` は FluentType として
+定義され、設計書 §9.1 でアクションの物理前提（`P(Accessible(?pump)) >= 0.8`）に使われるのに、
+**それを成立・不成立にする事象型が 1 つも無かった**。変化させられないフルーエントは
+事象駆動の信念更新に乗らず、アクションの前提としても永久に初期値のままになる。
+
+物理に即して次を追加した。
+
+- `StartCmd` → `terminates Accessible`（稼働中は人が近づけない）
+- `StopCmd` → `initiates Accessible`（停止すれば近づける）
+- `Fault` → `initiates Accessible`（故障停止でも近づけるようになる）
+- `MaintStart` → `initiates Accessible`
+
+あわせて `make ontology-check` に検査を 1 つ加えた（項目 7）: **すべての FluentType は
+少なくとも 1 つの EventType に変化させられること**。これは既存の `EventTypeShape`
+（すべての EventType は少なくとも 1 つの FluentType を変化させる）の双対である。片側だけ
+検査していたために今回の欠落が通っていた。
+
 ## 0.2.0 — 2026-10-03
 
 semver 判定: **MINOR**（加法的追加のみ。削除・意味変更なし）。既存プローブ・クエリは無いため
