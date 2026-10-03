@@ -23,6 +23,15 @@ from sbp.bridge.calibration import (
     TemperatureScaler,
     reliability_diagram,
 )
+from sbp.bridge.identity import (
+    BindingResult,
+    EvidenceKind,
+    IdentityClaim,
+    Track,
+    TrackKind,
+    bind_tracks,
+    should_revoke,
+)
 from sbp.bridge.lifting import (
     EventCalculusRules,
     FluentChange,
@@ -42,17 +51,30 @@ from sbp.bridge.probes import (
     expected_calibration_error,
     promote,
 )
+from sbp.bridge.spatial import (
+    PositionBelief,
+    Zone,
+    containment_hierarchy,
+    containment_probability,
+    most_likely_zone,
+)
+from sbp.bridge.validate import Disposition, ValidationFinding, ValidationOutcome, validate_graph
 
 __all__ = [
     "AlignmentReport",
+    "BindingResult",
     "BocpdDetector",
     "Calibrator",
     "ChangePoint",
     "ConformalRegressor",
+    "Disposition",
     "EventCalculusRules",
+    "EvidenceKind",
     "FluentChange",
+    "IdentityClaim",
     "LiftedEvent",
     "LinearProbe",
+    "PositionBelief",
     "ProbeKind",
     "ProbeMetrics",
     "ProbeOutput",
@@ -61,9 +83,17 @@ __all__ = [
     "SymbolicTransition",
     "TemperatureScaler",
     "TimeBag",
+    "Track",
+    "TrackKind",
+    "ValidationFinding",
+    "ValidationOutcome",
+    "Zone",
     "alignment_residual",
     "apply_hysteresis",
     "auroc",
+    "bind_tracks",
+    "containment_hierarchy",
+    "containment_probability",
     "detect_change_points",
     "equipment_maintenance_transition",
     "expected_calibration_error",
@@ -71,7 +101,10 @@ __all__ = [
     "lift_events",
     "load_event_calculus",
     "mil_loss",
+    "most_likely_zone",
     "promote",
     "reliability_diagram",
+    "should_revoke",
     "symbolize",
+    "validate_graph",
 ]

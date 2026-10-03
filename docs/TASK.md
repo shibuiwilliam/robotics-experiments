@@ -128,9 +128,9 @@
 - [x] **M2-04** `Calibrator` — 温度スケーリング / conformal、ECE 計測、認識的・偶然的不確実性の分離 → 完了（温度スケーリング + conformal。ECE 0.082→0.015 を実測、順位は不変）
 - [x] **M2-05** `promote()` ゲート — AUROC ≥ 0.85 ∧ ECE ≤ 0.05 ∧ 整合残差 ≤ 既存 active 中央値の AND。満たさなければ例外 → 完了（AND ゲート。AUROC 1.0 でも ECE・整合残差で拒否することをテストで保証）
 - [x] **M2-06** 事象昇格パイプライン — BOCPD（自前 `bocpd.py`）→ ヒステリシス → 最小持続 → clingo 逆写像 → 重複抑制 → `TypedProbabilisticEvent`（`uncertainty_s` 必須） → 完了（BOCPD はベイズ因子判定。逆写像が §14 の Fault/StopCmd 判別を再現）
-- [ ] **M2-07** 同一性束縛 — Track → `UnidentifiedPhysicalObject` 登録、`linear_sum_assignment`、`IdentityClaim`（撤回時 kind=4 起票は M3 と接続）
-- [ ] **M2-08** 空間束縛 — shapely ゾーン包含、位置 `(mean, cov)` → `locatedIn` 確率、包含階層の導出
-- [ ] **M2-09** 検証 — pyshacl（Violation → 隔離キュー / Warning → 不一致候補）、イベントの `validation` フィールド
+- [x] **M2-07** 同一性束縛 — Track → `UnidentifiedPhysicalObject` 登録、`linear_sum_assignment`、`IdentityClaim`（撤回時 kind=4 起票は M3 と接続） → 完了（割当問題で束縛。Person の個人識別を型レベルで禁止。撤回可能）
+- [x] **M2-08** 空間束縛 — shapely ゾーン包含、位置 `(mean, cov)` → `locatedIn` 確率、包含階層の導出 → 完了（shapely ゾーン包含をモンテカルロで確率化。境界では断定しない）
+- [x] **M2-09** 検証 — pyshacl（Violation → 隔離キュー / Warning → 不一致候補）、イベントの `validation` フィールド → 完了（pyshacl。Violation→隔離 / Warning→不一致候補。SHACL severity の位置バグを修正）
 - [ ] **M2-10** 統合テスト G2 — SynthWorld の合成潜在 → プローブ → 昇格 → イベントログ → 知識グラフまで通し、既知真値に対する AUROC/ECE を計測
 
 **ゲート G2**: G1 維持 + M2-10 緑 + 合成データ上で昇格ゲート（M2-05）を通るプローブが 1 概念以上存在。

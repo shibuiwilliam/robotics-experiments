@@ -134,8 +134,12 @@ sbp:MutuallyExclusiveFluentShape
     sh:targetClass sbp:FluentType ;
     rdfs:label "排他フルーエントの整合制約"@ja ;
     skos:definition "排他宣言は対称でなければならない。片側だけの宣言は衝突検出の穴になる。"@ja ;
+    # sh:severity はシェイプの属性である（SHACL 仕様 §2.1.3）。sh:sparql の制約ノード内に
+    # 書くと無視され、既定の sh:Violation として扱われてしまう。整合制約を Violation に
+    # してしまうと「登録して不一致候補にする」はずのものが隔離され、検出したい状態が
+    # 消える（設計書 §3.9「検証は拒否ではなく証拠生成」に反する）。
+    sh:severity sh:Warning ;
     sh:sparql [
-        sh:severity sh:Warning ;
         sh:message "mutuallyExclusiveWith must be declared symmetrically; add the reverse statement." ;
         sh:prefixes <https://sbp.example/core> ;
         sh:select """
@@ -153,8 +157,8 @@ sbp:ExclusiveFluentCollisionShape
     sh:targetClass sbp:Assertion ;
     rdfs:label "排他フルーエントの同時成立"@ja ;
     skos:definition "排他フルーエントが同一有効時間に共に確信度 > 0.5 で成立したら不一致候補（類型 2）を生成する。拒否はしない（設計書 §3.9, §5.7）。"@ja ;
+    sh:severity sh:Warning ;
     sh:sparql [
-        sh:severity sh:Warning ;
         sh:message "Mutually exclusive fluents both hold with confidence > 0.5; emit discrepancy candidate (kind 2)." ;
         sh:prefixes <https://sbp.example/core> ;
         sh:select """
