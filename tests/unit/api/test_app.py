@@ -1,0 +1,220 @@
+"""API 層の単体テスト（設計書 §10.1、M5-07）。
+
+重点:
+
+1. **GraphQL に mutation が無い** — 読み取りと副作用の経路を分け、承認フローを迂回させない。
+2. **SPARQL プロキシが更新操作を通さない** — 二時制 API を迂回して信念を書けないようにする。
+3. **時制・様相・確信度がフィールド引数である** — 引数なしでは答えられない問いを曖昧にしない。
+4. **様相の既定は inferred** — 計画と観測と推定を混ぜて返さない。
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
+
+import pytest
+from fastapi.testclient import TestClient
+
+from sbp.api import build_schema, create_app, is_read_only_sparql
+from sbp.core import vocab
+from sbp.core.config import Settings
+from sbp.core.modality import Modality
+from sbp.knowledge.assertions import AssertionRow
+
+T0 = datetime(2026, 9, 12, 9, tzinfo=UTC)
+PUMP = "https://sbp.example/site/siteA/asset/P-101"
+
+
+class _FakeStore:
+    """``AssertionStore`` の代わり（API 層が SPARQL を組み立てないことの確認にも使う）。"""
+
+    def __init__(self, rows: list[AssertionRow] | None = None) -> None:
+        self.rows = rows or []
+        self.calls: list[dict[str, Any]] = []
+
+    def query(self, **kwargs: Any) -> list[AssertionRow]:
+        self.calls.append(kwargs)
+        return self.rows
+
+
+def _row(*, modality: Modality = Modality.INFERRED, confidence: float = 0.87) -> AssertionRow:
+    return AssertionRow(
+        assertion_id=uuid4(),
+        subject=PUMP,
+        predicate=vocab.ent.Running,
+        object_="true",
+        valid_from=T0,
+        valid_to=None,
+        tx_from=T0,
+        tx_to=None,
+        modality=modality,
+        confidence=confidence,
+        provenance="prov:bundle-1",
+        ontology_version=vocab.ONTOLOGY_VERSION,
+        graph="urn:sbp:g:inferred:siteA:0.5.0",
+    )
+
+
+@pytest.fixture
+def store() -> _FakeStore:
+    return _FakeStore([_row()])
+
+
+@pytest.fixture
+def client(store: _FakeStore) -> TestClient:
+    app = create_app(
+        settings=Settings(),
+        assertion_store=store,  # type: ignore[arg-type]
+        sparql_reader=lambda query: {"query": query, "results": []},
+        stream_reader=lambda topic, limit: [{"topic": topic} for _ in range(min(limit, 2))],
+        command_handler=lambda name, payload: {"command": name, "echo": payload},
+    )
+    return TestClient(app)
+
+
+class TestSparqlGuard:
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "SELECT ?s WHERE { ?s ?p ?o }",
+            "ASK { ?s ?p ?o }",
+            "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
+            "DESCRIBE <https://sbp.example/x>",
+            "SELECT * WHERE { ?s ?p ?o } # DELETE は書いていない",
+        ],
+    )
+    def test_read_only_queries_pass(self, query: str) -> None:
+        assert is_read_only_sparql(query)
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "INSERT DATA { <a> <b> <c> }",
+            "DELETE WHERE { ?s ?p ?o }",
+            "CLEAR GRAPH <g>",
+            "DROP GRAPH <g>",
+            "LOAD <http://example.org/data>",
+            "SELECT * WHERE { ?s ?p ?o } ; DELETE WHERE { ?s ?p ?o }",
+        ],
+    )
+    def test_update_operations_are_blocked(self, query: str) -> None:
+        """二時制 API を迂回して信念を書けると、不変条件 1・2 がどちらも破れる。"""
+        assert not is_read_only_sparql(query)
+
+    def test_the_endpoint_rejects_updates_with_403(self, client: TestClient) -> None:
+        response = client.post("/sparql", json={"query": "INSERT DATA { <a> <b> <c> }"})
+        assert response.status_code == 403
+        assert "二時制 API" in response.json()["detail"]
+
+    def test_the_endpoint_passes_reads_through(self, client: TestClient) -> None:
+        response = client.post("/sparql", json={"query": "SELECT ?s WHERE { ?s ?p ?o }"})
+        assert response.status_code == 200
+        assert response.json()["query"].startswith("SELECT")
+
+    def test_a_missing_query_is_a_400(self, client: TestClient) -> None:
+        assert client.post("/sparql", json={}).status_code == 400
+
+
+class TestGraphQLSurface:
+    def test_there_is_no_mutation(self) -> None:
+        """mutation を出すと、読み取りと同じ経路で副作用が出せる（§9.2 の迂回）。"""
+        assert build_schema().mutation is None
+
+    def test_the_temporal_and_modal_arguments_exist(self) -> None:
+        """引数なしでは答えられない問いを曖昧にしない。"""
+        printed = str(build_schema())
+        assert "asOf: DateTime = null" in printed
+        assert "validAt: DateTime = null" in printed
+        assert "modality: Modality! = INFERRED" in printed
+        assert "minConfidence: Float! = 0" in printed
+
+    def test_every_modality_is_exposed(self) -> None:
+        """様相の列挙が core と食い違うと、API の指定が静かに別の意味になる。"""
+        printed = str(build_schema())
+        for modality in Modality:
+            assert modality.name in printed
+
+
+class TestGraphQLQueries:
+    def _ask(self, client: TestClient, query: str) -> dict[str, Any]:
+        response = client.post("/graphql", json={"query": query})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert "errors" not in payload, payload
+        return payload["data"]
+
+    def test_beliefs_are_returned_with_their_version(self, client: TestClient) -> None:
+        data = self._ask(
+            client,
+            f'{{ beliefs(subject: "{PUMP}") '
+            "{ subject predicate confidence modality ontologyVersion } }",
+        )
+        assert data["beliefs"][0]["subject"] == PUMP
+        assert data["beliefs"][0]["modality"] == "INFERRED"
+        assert data["beliefs"][0]["ontologyVersion"] == vocab.ONTOLOGY_VERSION
+
+    def test_the_default_modality_is_inferred(self, client: TestClient, store: _FakeStore) -> None:
+        """計画・観測・推定を混ぜて返すと、呼び出し側が区別せずに使う。"""
+        self._ask(client, f'{{ beliefs(subject: "{PUMP}") {{ subject }} }}')
+        assert store.calls[-1]["modality"] is Modality.INFERRED
+
+    def test_the_arguments_reach_the_store(self, client: TestClient, store: _FakeStore) -> None:
+        self._ask(
+            client,
+            f'{{ beliefs(subject: "{PUMP}", asOf: "2026-09-12T09:00:00Z", '
+            'validAt: "2026-09-12T08:00:00Z", modality: PLANNED, minConfidence: 0.5) '
+            "{ subject } }",
+        )
+        call = store.calls[-1]
+        assert call["as_of"] == T0
+        assert call["modality"] is Modality.PLANNED
+        assert call["min_confidence"] == pytest.approx(0.5)
+
+    def test_health_reports_the_ontology_version(self, client: TestClient) -> None:
+        data = self._ask(client, "{ health { ontologyVersion storeReachable } }")
+        assert data["health"]["ontologyVersion"] == vocab.ONTOLOGY_VERSION
+        assert data["health"]["storeReachable"] is True
+
+
+class TestStreamAndCommands:
+    def test_the_stream_only_reads(self, client: TestClient) -> None:
+        """投入の経路を API に作らない（外から任意のイベントを流し込めると来歴が無意味になる）。"""
+        response = client.get("/stream/siteA.bridge.physical", params={"limit": 2})
+        assert response.status_code == 200
+        assert response.json()["count"] == 2
+        assert client.post("/stream/siteA.bridge.physical", json={}).status_code == 405
+
+    def test_an_out_of_range_limit_is_refused(self, client: TestClient) -> None:
+        assert client.get("/stream/t", params={"limit": 0}).status_code == 400
+        assert client.get("/stream/t", params={"limit": 10_000}).status_code == 400
+
+    def test_commands_go_through_their_own_path(self, client: TestClient) -> None:
+        response = client.post("/commands/execute_action", json={"action_type": "x"})
+        assert response.status_code == 200
+        assert response.json()["command"] == "execute_action"
+
+    def test_a_failing_command_is_a_409(self, store: _FakeStore) -> None:
+        def explode(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+            del name, payload
+            raise ValueError("前提が未達")
+
+        app = create_app(
+            settings=Settings(),
+            assertion_store=store,  # type: ignore[arg-type]
+            command_handler=explode,
+        )
+        response = TestClient(app).post("/commands/execute_action", json={})
+        assert response.status_code == 409
+        assert "前提が未達" in response.json()["detail"]
+
+    def test_unconfigured_endpoints_report_503(self, store: _FakeStore) -> None:
+        """設定していない経路を「空の成功」で返さない。"""
+        app = create_app(settings=Settings(), assertion_store=store)  # type: ignore[arg-type]
+        client = TestClient(app)
+        assert (
+            client.post("/sparql", json={"query": "SELECT * WHERE {?s ?p ?o}"}).status_code == 503
+        )
+        assert client.get("/stream/t").status_code == 503
+        assert client.post("/commands/x", json={}).status_code == 503

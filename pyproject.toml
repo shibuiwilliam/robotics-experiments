@@ -24,6 +24,9 @@ dependencies = [
   "scipy>=1.18.1",
   "shapely>=2.1.2",
   "torch>=2.5",
+  "fastapi>=0.115",
+  "strawberry-graphql>=0.250",
+  "uvicorn[standard]>=0.32",
 ]
 
 [project.optional-dependencies]
