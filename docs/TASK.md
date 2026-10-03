@@ -76,12 +76,12 @@
 目的: 以後の全レイヤーが依存する「core の型」「イベントが流れる」「信念が二時制で永続化される」を最小で成立させ、`make check` を緑にする。
 
 - [x] **M0-01** リポジトリ独立化の判断と実施 — `git init`（親 repo から分離）、`.gitignore`（`.env`, `__pycache__`, `.DS_Store` 等）、初回コミット。独立しない場合は ADR に理由を残す → 完了（ADR-0001、2026-10-03）
-- [ ] **M0-02** プロジェクト基盤 — `pyproject.toml`（uv, Python 3.12, ruff, pyright strict, pytest + markers, pytest-socket, hypothesis, freezegun）、`Makefile`（help/bootstrap/test/lint/typecheck 他、全ターゲット .PHONY + 1 行説明）
-- [ ] **M0-03** `sbp.core.errors` / `sbp.core.config` — 例外階層、`Settings`（pydantic-settings, `SBP_` プレフィクス）。`.env.example` と同期
-- [ ] **M0-04** `sbp.core.time` / `sbp.core.ids` — UTC 強制（naive 拒否）、右開区間型 `Interval`、Allen 区間関係、UUIDv7。性質テスト（区間代数）同時作成
-- [ ] **M0-05** `sbp.core` 中核型 — `IRI`, `Modality`（様相格子）, `Belief`（boolean/categorical/numeric）, `Assertion`, `EventEnvelope`（pydantic v2、設計書 §3.5 / §6.1 / 付録 A.1 準拠）
-- [ ] **M0-06** オントロジー最小セット — `ontology/imports/` 取得スクリプト（固定版同梱）、`ontology/core/*.ttl`（L1 接続概念 + 必須注釈）、`shapes/`、`process/*.lp` の骨格、`VERSION` / `CHANGELOG.md`
-- [ ] **M0-07** 生成パイプライン — `make gen`（ontology → `vocab.py`、EventType → `schemas/*.json`）と `make ontology-check`（TTL 構文 / SHACL 自己検証 / .lp 対応 / semver 互換 / 生成物差分）
+- [x] **M0-02** プロジェクト基盤 — `pyproject.toml`（uv, Python 3.12, ruff, pyright strict, pytest + markers, pytest-socket, hypothesis, freezegun）、`Makefile`（help/bootstrap/test/lint/typecheck 他、全ターゲット .PHONY + 1 行説明） → 完了（pyproject: uv/ruff/pyright strict/pytest+markers/pytest-socket/hypothesis/freezegun、Makefile 17 ターゲット）
+- [x] **M0-03** `sbp.core.errors` / `sbp.core.config` — 例外階層、`Settings`（pydantic-settings, `SBP_` プレフィクス）。`.env.example` と同期 → 完了（errors 階層 40 例外、Settings + 層別閾値 3 グループ）
+- [x] **M0-04** `sbp.core.time` / `sbp.core.ids` — UTC 強制（naive 拒否）、右開区間型 `Interval`、Allen 区間関係、UUIDv7。性質テスト（区間代数）同時作成 → 完了（UTC 強制・右開 Interval・Allen 13 関係・UUIDv7、性質テスト 9 件）
+- [x] **M0-05** `sbp.core` 中核型 — `IRI`, `Modality`（様相格子）, `Belief`（boolean/categorical/numeric）, `Assertion`, `EventEnvelope`（pydantic v2、設計書 §3.5 / §6.1 / 付録 A.1 準拠） → 完了（Modality 格子・Belief 3 種・Assertion・EventEnvelope）
+- [x] **M0-06** オントロジー最小セット — `ontology/imports/` 取得スクリプト（固定版同梱）、`ontology/core/*.ttl`（L1 接続概念 + 必須注釈）、`shapes/`、`process/*.lp` の骨格、`VERSION` / `CHANGELOG.md` → 完了（オントロジー 0.1.0: 78 用語、SHACL 8 形状、事象計算 .lp）
+- [x] **M0-07** 生成パイプライン — `make gen`（ontology → `vocab.py`、EventType → `schemas/*.json`）と `make ontology-check`（TTL 構文 / SHACL 自己検証 / .lp 対応 / semver 互換 / 生成物差分） → 完了（make gen / make ontology-check 7 項目）
 - [ ] **M0-08** `infra/compose.yaml` — redpanda / timescaledb-ha / oxigraph / minio（platform・healthcheck・mem_limit、計 6 GB 以内）、名前付きボリューム、`make up/down/nuke`
 - [ ] **M0-09** `make seed` — トピック作成（`scripts/topics.py`）、alembic 初期マイグレーション（`processed_events`、`latent_index` 雛形、hypertable）、MinIO バケット
 - [ ] **M0-10** `sbp.eventlog` — producer（EventEnvelope のみ・送信前 JSON Schema 検証）、consumer（at-least-once、`processed_events` による冪等化、リトライ、graceful shutdown）。単体はモックブローカー

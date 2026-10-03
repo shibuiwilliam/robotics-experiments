@@ -10,9 +10,10 @@ paths:
 # インフラ / テストのルール
 
 ## Compose（`infra/compose.yaml`）
-- 既定サービスは redpanda, postgres（timescaledb-ha）, oxigraph, minio の 4 つ。profile は `ui`, `observability`, `console`。
+- 既定サービスは redpanda, postgres（timescaledb-ha）, oxigraph, objectstore（SeaweedFS。ADR-0003）の 4 つ。profile は `ui`, `observability`, `console`。
 - 全サービスに `platform: ${SBP_PLATFORM:-linux/arm64}`、`healthcheck`、`mem_limit` を付ける。合計 6 GB 以内。
-- ボリュームは名前付き（`sbp_pg`, `sbp_rp`, `sbp_ox`, `sbp_minio`）。削除は `make nuke` のみ。
+  - 既知の例外: oxigraph は distroless でコンテナ内に検査手段が無いため healthcheck を付けない。疎通検査は統合テストの fixture とワーカー起動時に行う（ADR-0004）。
+- ボリュームは名前付き（`sbp_pg`, `sbp_rp`, `sbp_ox`, `sbp_s3`）。削除は `make nuke` のみ。
 - ポートは 5432, 9092, 7878, 9000 / 9001, 8000（API）。衝突時は `.env` で上書きする。
 
 ## 設定

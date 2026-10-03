@@ -100,8 +100,8 @@ tests/         unit/ integration/ contract/ property/ fixtures/
 |---|---|---|---|
 | redpanda | `redpandadata/redpanda` | 9092 / 9644 | イベントログ（Kafka API） |
 | postgres | `timescale/timescaledb-ha:pg16` | 5432 | 時系列（hypertable）、潜在索引（pgvector）、投影・メトリクス |
-| oxigraph | `ghcr.io/oxigraph/oxigraph` | 7878 | 知識グラフ（SPARQL 1.1 + RDF-star） |
-| minio | `minio/minio` | 9000 / 9001 | raw 層・モデル重み（S3 互換） |
+| oxigraph | `oxigraph/oxigraph`（healthcheck なし。ADR-0004） | 7878 | 知識グラフ（SPARQL 1.1 + RDF-star） |
+| objectstore | `chrislusf/seaweedfs`（ADR-0003: MinIO が匿名取得不可になったため置換） | 9000 | raw 層・モデル重み（S3 互換） |
 | console / grafana+prometheus | 任意 profile | 8080 / 3000 | 運用可視化 |
 - SHACL は pyshacl、OWL RL は owlrl、事象計算・規範は clingo をアプリ側で実行する（ストアの推論機能に依存しない）。
 - 単体テストでは pyoxigraph を組み込みで使う（サーバ不要）。
