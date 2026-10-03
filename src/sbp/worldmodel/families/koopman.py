@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
     from numpy.typing import NDArray
 
-__all__ = ["KoopmanConfig", "KoopmanModel"]
+__all__ = ["KoopmanConfig", "KoopmanModel", "latent_shift_mmd"]
 
 log = get_logger(__name__)
 
@@ -473,7 +473,7 @@ class KoopmanModel:
         current = self._lift_series(observations)
         baseline = reference if reference is not None else self._reference
         assert baseline is not None
-        shift = _mmd(baseline, current)
+        shift = latent_shift_mmd(baseline, current)
 
         assert self._operator is not None
         predicted = current[:-1] @ self._operator.T
@@ -577,7 +577,7 @@ def _step_delta(meta: WorldModelMeta, level: LatentLevel) -> timedelta:
     return timedelta(seconds=meta.latent_spec.step_of(level))
 
 
-def _mmd(reference: NDArray[np.float64], current: NDArray[np.float64]) -> float:
+def latent_shift_mmd(reference: NDArray[np.float64], current: NDArray[np.float64]) -> float:
     """2 標本の最大平均差異（RBF カーネル、設計書 §4.8 の潜在シフト）。
 
     バンド幅は 2 標本をまとめた距離の中央値（median heuristic）。固定値にすると潜在の

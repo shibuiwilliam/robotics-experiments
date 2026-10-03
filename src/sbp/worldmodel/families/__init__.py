@@ -9,6 +9,14 @@
 
 from __future__ import annotations
 
-from sbp.worldmodel.families.koopman import KoopmanConfig, KoopmanModel
+from sbp.worldmodel.families.jepa_ts import JepaConfig, JepaTimeSeriesModel, TrainingReport
+from sbp.worldmodel.families.koopman import KoopmanConfig, KoopmanModel, latent_shift_mmd
 
-__all__ = ["KoopmanConfig", "KoopmanModel"]
+__all__ = [
+    "JepaConfig",
+    "JepaTimeSeriesModel",
+    "KoopmanConfig",
+    "KoopmanModel",
+    "TrainingReport",
+    "latent_shift_mmd",
+]

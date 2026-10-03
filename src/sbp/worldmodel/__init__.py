@@ -20,17 +20,28 @@ from sbp.worldmodel.base import (
     WorldModel,
     WorldModelMeta,
 )
-from sbp.worldmodel.families import KoopmanConfig, KoopmanModel
+from sbp.worldmodel.families import (
+    JepaConfig,
+    JepaTimeSeriesModel,
+    KoopmanConfig,
+    KoopmanModel,
+    TrainingReport,
+    latent_shift_mmd,
+)
 
 __all__ = [
     "Attribution",
+    "JepaConfig",
+    "JepaTimeSeriesModel",
     "KoopmanConfig",
     "KoopmanModel",
     "LatentLevel",
     "LatentSpec",
     "LatentState",
     "ModelHealth",
+    "TrainingReport",
     "Trajectory",
     "WorldModel",
     "WorldModelMeta",
+    "latent_shift_mmd",
 ]
