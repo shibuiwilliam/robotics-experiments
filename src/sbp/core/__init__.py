@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from sbp.core.assertion import SCHEMA_VERSION, Assertion, SemVer
+from sbp.core.audit import AuditMask, MaskedEvidence, no_audit
 from sbp.core.belief import (
     Belief,
     BooleanBelief,
@@ -35,6 +36,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "AllenRelation",
     "Assertion",
+    "AuditMask",
     "Belief",
     "BooleanBelief",
     "CategoricalBelief",
@@ -44,6 +46,7 @@ __all__ = [
     "Evidence",
     "Interval",
     "Iri",
+    "MaskedEvidence",
     "Modality",
     "NumericBelief",
     "ProbeEvidence",
@@ -57,6 +60,7 @@ __all__ = [
     "allen_relation",
     "ensure_utc",
     "new_event_id",
+    "no_audit",
     "now",
     "site_iri",
     "topic_name",

@@ -20,6 +20,8 @@ from sbp.worldmodel.base import (
     WorldModel,
     WorldModelMeta,
 )
+from sbp.worldmodel.context import ConditioningSpec, EntityContext
+from sbp.worldmodel.context import build as build_context
 from sbp.worldmodel.families import (
     JepaConfig,
     JepaTimeSeriesModel,
@@ -28,9 +30,21 @@ from sbp.worldmodel.families import (
     TrainingReport,
     latent_shift_mmd,
 )
+from sbp.worldmodel.registry import (
+    CompatibilityEntry,
+    DriftAlert,
+    ModelRegistry,
+    ModelStatus,
+    RegisteredModel,
+    evaluate_drift,
+)
 
 __all__ = [
     "Attribution",
+    "CompatibilityEntry",
+    "ConditioningSpec",
+    "DriftAlert",
+    "EntityContext",
     "JepaConfig",
     "JepaTimeSeriesModel",
     "KoopmanConfig",
@@ -39,9 +53,14 @@ __all__ = [
     "LatentSpec",
     "LatentState",
     "ModelHealth",
+    "ModelRegistry",
+    "ModelStatus",
+    "RegisteredModel",
     "TrainingReport",
     "Trajectory",
     "WorldModel",
     "WorldModelMeta",
+    "build_context",
+    "evaluate_drift",
     "latent_shift_mmd",
 ]

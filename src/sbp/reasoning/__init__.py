@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from sbp.reasoning.audit import AuditMask, MaskedEvidence, no_audit
+from sbp.core.audit import AuditMask, MaskedEvidence, no_audit
 from sbp.reasoning.belief import (
     BeliefFilter,
     BeliefUpdate,

@@ -30,19 +30,19 @@ from typing import TYPE_CHECKING, Final
 import numpy as np
 
 from sbp.core.assertion import Assertion
+from sbp.core.audit import MaskedEvidence
 from sbp.core.belief import BooleanBelief
 from sbp.core.errors import ReasoningError
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.time import ensure_utc
-from sbp.reasoning.audit import MaskedEvidence
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sbp.core.audit import AuditMask
     from sbp.core.records import PlanItem, Record
     from sbp.integration.reliability import ReliabilityModel
-    from sbp.reasoning.audit import AuditMask
 
 __all__ = [
     "BeliefFilter",
