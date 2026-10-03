@@ -38,6 +38,16 @@ from sbp.worldmodel.registry import (
     RegisteredModel,
     evaluate_drift,
 )
+from sbp.worldmodel.train import (
+    EpochRecord,
+    LossWeights,
+    TermValues,
+    TrainingProvenance,
+    exclusivity_penalty,
+    smoothness_penalty,
+    stage_gate_passed,
+    train_latent_predictor,
+)
 
 __all__ = [
     "Attribution",
@@ -45,6 +55,7 @@ __all__ = [
     "ConditioningSpec",
     "DriftAlert",
     "EntityContext",
+    "EpochRecord",
     "JepaConfig",
     "JepaTimeSeriesModel",
     "KoopmanConfig",
@@ -52,15 +63,22 @@ __all__ = [
     "LatentLevel",
     "LatentSpec",
     "LatentState",
+    "LossWeights",
     "ModelHealth",
     "ModelRegistry",
     "ModelStatus",
     "RegisteredModel",
+    "TermValues",
+    "TrainingProvenance",
     "TrainingReport",
     "Trajectory",
     "WorldModel",
     "WorldModelMeta",
     "build_context",
     "evaluate_drift",
+    "exclusivity_penalty",
     "latent_shift_mmd",
+    "smoothness_penalty",
+    "stage_gate_passed",
+    "train_latent_predictor",
 ]
