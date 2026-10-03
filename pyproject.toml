@@ -156,6 +156,24 @@ source_modules = [
 forbidden_modules = ["anthropic", "openai", "google"]
 
 [[tool.importlinter.contracts]]
+# ゲート G6 の静的検査（不変条件 11）。LLM は概念提案・文書抽出・説明の文章化・NL→クエリ変換に
+# 限る。信念更新・照合・事象昇格から呼ぶと、ホットパスの決定性と再現性が失われる
+# （同じ入力で違う信念が出る）。sbp.reasoning 全体ではなくホットパスのモジュールを名指しする
+# ——discovery と explain は LLM を使ってよい。
+name = "LLM をホットパス（信念更新・照合・事象昇格）から呼ばない（不変条件 11）"
+type = "forbidden"
+source_modules = [
+  "sbp.reasoning.belief",
+  "sbp.reasoning.coupling",
+  "sbp.reasoning.reconciliation",
+  "sbp.reasoning.rules",
+  "sbp.bridge.lifting",
+  "sbp.bridge.probes",
+  "sbp.bridge.calibration",
+]
+forbidden_modules = ["sbp.llm"]
+
+[[tool.importlinter.contracts]]
 name = "worldmodel は記号を決めない（bridge / reasoning を参照しない）"
 type = "forbidden"
 source_modules = ["sbp.worldmodel"]

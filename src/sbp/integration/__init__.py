@@ -9,6 +9,13 @@
 from __future__ import annotations
 
 from sbp.integration.connectors import Connector, RawRecord, SchemaFingerprint
+from sbp.integration.extraction import (
+    EvidenceSpan,
+    ExtractedField,
+    ExtractionResult,
+    NormExtraction,
+    verify_spans,
+)
 from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected
 from sbp.integration.mappings import Mapping, MappingRegistry, MappingResult
 from sbp.integration.plans import NormRule, plan_item_from_record, to_planned_assertion
@@ -37,6 +44,9 @@ __all__ = [
     "ConfusionMatrix",
     "Connector",
     "EntityResolver",
+    "EvidenceSpan",
+    "ExtractedField",
+    "ExtractionResult",
     "IngestResult",
     "IngestionPipeline",
     "Mapping",
@@ -44,6 +54,7 @@ __all__ = [
     "MappingRegistry",
     "MappingResult",
     "MasterDataResolver",
+    "NormExtraction",
     "NormRule",
     "RawRecord",
     "ReliabilityModel",
@@ -60,4 +71,5 @@ __all__ = [
     "plan_item_from_record",
     "resolve_subject",
     "to_planned_assertion",
+    "verify_spans",
 ]

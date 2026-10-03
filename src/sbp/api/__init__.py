@@ -12,13 +12,23 @@ from __future__ import annotations
 
 from sbp.api.app import create_app, is_read_only_sparql
 from sbp.api.schema import BeliefReader, BeliefSource, BeliefType, Query, build_schema
+from sbp.api.translate import (
+    QueryLanguage,
+    TranslatedQuery,
+    TranslationIssue,
+    review_translation,
+)
 
 __all__ = [
     "BeliefReader",
     "BeliefSource",
     "BeliefType",
     "Query",
+    "QueryLanguage",
+    "TranslatedQuery",
+    "TranslationIssue",
     "build_schema",
     "create_app",
     "is_read_only_sparql",
+    "review_translation",
 ]
