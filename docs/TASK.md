@@ -201,17 +201,31 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 
 目的: 信念 → アクション → 期待 → 検証 → 学習のループを閉じ、外部（API）から安全に使えるようにする。
 
-- [ ] **M5-01** ActionType 基盤 — `actions/*.yaml` 読込 + pydantic 検証（§9.1 形式）、compensation 未定義は登録拒否
-- [ ] **M5-02** 意味契約の前提検証 — 記号（SHACL/Datalog）・物理（信念クエリ閾値）・規範（Norm 規則）の三面チェック
-- [ ] **M5-03** 承認・実行・補償 — riskClass ≥ medium の承認必須、人の上書きは来歴、レート制限、`ActionEvent` 発行、失敗時補償
-- [ ] **M5-04** `Expectation` 検証器 — 付録 A.3 準拠の状態機械、conformal 被覆 / Bayes 因子、記号側期待と潜在側期待の分離検証
-- [ ] **M5-05** 予測サービス — SOSA `Forecast`（`horizon_origin` / `lead_time` / `conditionedOn`）、起点別 CRPS・被覆率を `metrics` へ、計画変更時の再予測トリガ
-- [ ] **M5-06** What-if / シナリオ — 介入エンコーダ → rollout → `hypothetical` + `scenario` 格納、`promote_scenario()`、反実仮想の妥当性スコア
-- [ ] **M5-07** API — FastAPI + strawberry GraphQL（`asOf`/`validAt`/`modality`/`minConfidence` 引数）、SPARQL プロキシ（拡張 SERVICE）、ストリーム購読、コマンド API
-- [ ] **M5-08** ワーカー実体化 — `services/`（bridge- / belief- / reconcile- / scheduler-worker）、SIGTERM graceful shutdown、起動時疎通検査
-- [ ] **M5-09** 統合テスト G5 — ワークドエグザンプル §14 を合成データで完走: 不一致起票 → アクション提案 → 承認 → dry-run 書き戻し → Expectation 生成 → 検証 → 学習信号
+- [x] **M5-01** ActionType 基盤 — `actions/*.yaml` 読込 + pydantic 検証（§9.1 形式）、compensation 未定義は登録拒否、補償の相互参照をロード時に検証
+- [x] **M5-02** 意味契約の前提検証 — 記号・物理（信念クエリ閾値）・規範の三面チェック。どの面で落ちたかを残す
+- [x] **M5-03** 承認・実行・補償 — riskClass ≥ medium の承認必須、上書きは理由付きで来歴、対象別レート制限、`ActionEvent` 発行
+- [x] **M5-04** `Expectation` 検証器 — 付録 A.3 準拠の状態機械、conformal / Bayes 因子、記号側と潜在側の分離検証
+- [x] **M5-05** 予測サービス — `Forecast`（`horizon_origin` / `lead_time` / `conditionedOn`）、先行時間別 CRPS・被覆率、`metrics` 行、計画変更での再予測判定
+- [x] **M5-06** What-if / シナリオ — 介入エンコーダ → rollout → `hypothetical` + シナリオグラフ、`promote_scenario()`、反実仮想の妥当性スコア
+- [x] **M5-07** API — FastAPI + strawberry GraphQL（`asOf`/`validAt`/`modality`/`minConfidence`）、SPARQL プロキシ（読み取り専用）、ストリーム購読、コマンド API
+- [x] **M5-08** ワーカー実体化 — `services/runtime.py` + `belief_worker`、SIGTERM graceful shutdown、起動時疎通検査、結合の周期実行
+- [x] **M5-09** 統合テスト G5 — ワークドエグザンプル §14 を合成データで完走
 
-**ゲート G5**: G4 維持 + M5-09 緑 + 予測被覆率 ≥ 0.85（合成データ）。
+**ゲート G5**: ✅ **通過（2026-10-03）**
+- 条件 1 G4 維持 + `make check` 緑: 単体・性質・契約 798 件
+- 条件 2 M5-09 緑: 統合 69 件（G0 の 9 + G1 の 8 + G2 の 9 + G3 の 11 + G4 の 17 + G5 の 15）
+- 条件 3 **予測被覆率 ≥ 0.85**: 先行 60 秒で 0.9500、先行 300 秒で 0.8667（conformal 較正）
+
+| 先行時間 | 被覆率 | CRPS | 区間幅 |
+|---|---|---|---|
+| 60 s | 0.9500 | 0.0372 | 0.0338 |
+| 300 s | 0.8667 | 0.1548 | 0.9801 |
+
+**被覆率だけではゲートにならないことが実測で出た。** 先行 300 秒の区間幅は 0.98——ほぼ [0,1]
+全域で、被覆率 0.87 はそれで買っている。CRPS と `reliable_lead_time`（60 秒）が「実際に使える
+地平は 60 秒まで」を示す。設計書 §8.3 が「地平ごとの信頼できる先行時間を公開する」と言っている
+のはこのためで、**被覆率を単独の合格条件にすると無情報な予測が通る**。G6 以降のゲートに数値条件
+を足すときは、同じ落とし穴（指標を 1 つだけ見る）を避ける。
 
 ### M6 進化 — 概念発見・能動観測・LLM 連携
 
