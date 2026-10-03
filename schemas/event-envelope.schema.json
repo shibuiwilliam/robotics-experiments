@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sbp.example/schemas/event-envelope.schema.json",
   "title": "EventEnvelope",
-  "description": "全イベント共通のエンベロープ。生成物（make gen）であり手編集しない。生成元オントロジー版 0.1.0。",
+  "description": "全イベント共通のエンベロープ。生成物（make gen）であり手編集しない。生成元オントロジー版 0.2.0。",
   "type": "object",
   "properties": {
     "event_id": {

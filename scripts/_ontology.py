@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Final
 
 from rdflib import Graph, Namespace, URIRef
-from rdflib.namespace import OWL, RDF, RDFS, SKOS
+from rdflib.namespace import OWL, RDF, RDFS, SKOS, SOSA
 
 ONTOLOGY_DIR: Final = Path(__file__).resolve().parent.parent / "ontology"
 SCHEMAS_DIR: Final = Path(__file__).resolve().parent.parent / "schemas"
@@ -108,6 +108,8 @@ def collect_terms(graph: Graph) -> list[Term]:
         (SBP.FluentType, "fluent_type"),
         (SBP.EventType, "event_type"),
         (SBP.DataSource, "individual"),
+        # 観測可能量（SOSA）。プローブの定義と Observation の記述からコードが参照する。
+        (SOSA.ObservableProperty, "observable_property"),
     ]
     seen: dict[str, Term] = {}
     for rdf_type, kind in kinds:

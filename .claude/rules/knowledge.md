@@ -16,7 +16,11 @@ paths:
 - 公開関数は `assert_(...)`, `retract(assertion_id, at)`, `query(as_of=None, valid_at=None, modality=None, min_confidence=None, ...)` のみ。SPARQL の文字列はこのモジュール内に閉じる。
 - 訂正は `tx_to` を閉じて新文を追加する。物理削除の API を作らない（法令上の消去は別途 ADR）。
 - 名前付きグラフ: `urn:sbp:g:<modality>:<site>:<ontology_version>`。`hypothetical` は `urn:sbp:scenario:<scenario_id>` に隔離する。
-- 文メタデータは RDF-star（`<< s p o >> sbp:txFrom ...`）。pyoxigraph の Quad / Triple term を使う。rdflib は TTL の読み書きにだけ使う。
+- 文メタデータは RDF 1.2 の triple term + `rdf:reifies`（`<assertion/{id}> rdf:reifies <<( s p o )>> ; sbp:txFrom ...`）。
+  旧 RDF-star の「引用三つ組を主語に置く」記法は pyoxigraph 0.5 では使えない（ADR-0005）。
+  開いている区間は `validTo` / `txTo` のトリプルを**置かない**ことで表す（null リテラルを使わない）。
+  pyoxigraph は実行時のグラフ操作に、rdflib は TTL の読み書きにだけ使う。
+- 埋め込み pyoxigraph と Compose の oxigraph サーバは同じ版（0.5.11）に固定する。記法のサポートが版で変わるため。
 - 予測は `horizon_origin` 違いで共存させる。既定クエリは最新起点、精度追跡は全起点を返す。
 - `query` は必ず `ontology_version` を返す。呼び出し側が版を無視して比較しないようにする。
 

@@ -8,6 +8,26 @@ semver の判定基準（CLAUDE.md「オントロジー変更の手順」）:
 
 非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 
+## 0.2.0 — 2026-10-03
+
+semver 判定: **MINOR**（加法的追加のみ。削除・意味変更なし）。既存プローブ・クエリは無いため
+後方互換の破壊はなく、再接地も不要。
+
+### 追加（L1 中核 — 信念メタデータの述語。ADR-0005）
+
+RDF 1.2 の triple term と `rdf:reifies` でアサーションを表すため、reifier に付ける述語を定義した。
+開いている区間は `validTo` / `txTo` のトリプルを**置かない**ことで表す（null リテラルを使わない）。
+
+- 二時制: `validFrom`, `validTo`, `txFrom`, `txTo`
+- 身分と確信度: `modality`, `confidence`
+- 来歴: `provenance`, `sourceReliability`, `ontologyVersion`
+- 予測: `horizonOrigin`, `leadTime`
+- 隔離と文脈: `scenario`, `inSituation`
+- 様相の個体（`modality` の値域、不変条件 3 の 6 値）: `Observed`, `Inferred`, `Predicted`,
+  `Planned`, `Normative`, `Hypothetical`
+
+用語数は 78 → 91。
+
 ## 0.1.0 — 2026-10-03
 
 初版。semver 判定: 初版のため該当なし。

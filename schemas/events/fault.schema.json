@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sbp.example/schemas/events/fault.schema.json",
   "title": "Fault",
-  "description": "故障。設備の故障。Running を終了し Faulted を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.1.0。",
+  "description": "故障。設備の故障。Running を終了し Faulted を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.2.0。",
   "allOf": [
     {
       "$ref": "../event-envelope.schema.json"

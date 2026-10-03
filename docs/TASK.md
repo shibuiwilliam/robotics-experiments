@@ -82,11 +82,11 @@
 - [x] **M0-05** `sbp.core` 中核型 — `IRI`, `Modality`（様相格子）, `Belief`（boolean/categorical/numeric）, `Assertion`, `EventEnvelope`（pydantic v2、設計書 §3.5 / §6.1 / 付録 A.1 準拠） → 完了（Modality 格子・Belief 3 種・Assertion・EventEnvelope）
 - [x] **M0-06** オントロジー最小セット — `ontology/imports/` 取得スクリプト（固定版同梱）、`ontology/core/*.ttl`（L1 接続概念 + 必須注釈）、`shapes/`、`process/*.lp` の骨格、`VERSION` / `CHANGELOG.md` → 完了（オントロジー 0.1.0: 78 用語、SHACL 8 形状、事象計算 .lp）
 - [x] **M0-07** 生成パイプライン — `make gen`（ontology → `vocab.py`、EventType → `schemas/*.json`）と `make ontology-check`（TTL 構文 / SHACL 自己検証 / .lp 対応 / semver 互換 / 生成物差分） → 完了（make gen / make ontology-check 7 項目）
-- [ ] **M0-08** `infra/compose.yaml` — redpanda / timescaledb-ha / oxigraph / minio（platform・healthcheck・mem_limit、計 6 GB 以内）、名前付きボリューム、`make up/down/nuke`
-- [ ] **M0-09** `make seed` — トピック作成（`scripts/topics.py`）、alembic 初期マイグレーション（`processed_events`、`latent_index` 雛形、hypertable）、MinIO バケット
-- [ ] **M0-10** `sbp.eventlog` — producer（EventEnvelope のみ・送信前 JSON Schema 検証）、consumer（at-least-once、`processed_events` による冪等化、リトライ、graceful shutdown）。単体はモックブローカー
-- [ ] **M0-11** `sbp.knowledge.assertions` — 二時制 API（`assert_` / `retract` / `query(as_of, valid_at, modality, min_confidence)`）、RDF-star メタデータ、名前付きグラフ戦略、`ontology_version` 必須返却。単体は pyoxigraph 組み込み
-- [ ] **M0-12** 性質・契約テスト一式 — 二時制 as-of/valid-at、様相格子、冪等性（hypothesis）、`schemas/*.json` ↔ pydantic 往復
+- [x] **M0-08** `infra/compose.yaml` — redpanda / timescaledb-ha / oxigraph / minio（platform・healthcheck・mem_limit、計 6 GB 以内）、名前付きボリューム、`make up/down/nuke` → 完了（4 サービス稼働。ADR-0003/0004）
+- [x] **M0-09** `make seed` — トピック作成（`scripts/topics.py`）、alembic 初期マイグレーション（`processed_events`、`latent_index` 雛形、hypertable）、MinIO バケット → 完了（トピック 11・alembic・バケット・オントロジー投入。冪等）
+- [x] **M0-10** `sbp.eventlog` — producer（EventEnvelope のみ・送信前 JSON Schema 検証）、consumer（at-least-once、`processed_events` による冪等化、リトライ、graceful shutdown）。単体はモックブローカー → 完了（producer/consumer・スキーマ検証・冪等化・有限リトライ。単体 20 件）
+- [x] **M0-11** `sbp.knowledge.assertions` — 二時制 API（`assert_` / `retract` / `query(as_of, valid_at, modality, min_confidence)`）、RDF-star メタデータ、名前付きグラフ戦略、`ontology_version` 必須返却。単体は pyoxigraph 組み込み → 完了（assert_/retract/query。ADR-0005 で RDF 1.2 記法に。単体 23 件）
+- [x] **M0-12** 性質・契約テスト一式 — 二時制 as-of/valid-at、様相格子、冪等性（hypothesis）、`schemas/*.json` ↔ pydantic 往復 → 完了（性質 14 件: 二時制・区間代数 / 契約: スキーマ往復・語彙・semver）
 - [ ] **M0-13** 統合テスト G0 — Compose 上で produce → consume → assert_ → as-of query の往復（`-m integration`）
 
 **ゲート G0**: `make check` 緑 + M0-13 緑。`make bootstrap` から新規環境で 30 分以内に再現できる。

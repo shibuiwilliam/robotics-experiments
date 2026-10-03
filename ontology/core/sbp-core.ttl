@@ -26,7 +26,7 @@
 <https://sbp.example/core>
     a owl:Ontology ;
     rdfs:label "SBP 中核オントロジー"@ja , "SBP core ontology"@en ;
-    owl:versionInfo "0.1.0" ;
+    owl:versionInfo "0.2.0" ;
     skos:definition "物理世界の観測と業務世界の記録を同じ語彙・時間軸・確信度で突き合わせるための接続概念を定義する。"@ja ;
     dcterms:publisher "sbp-platform-team" .
 
@@ -481,5 +481,168 @@ sbp:validInterval
     rdfs:range time:Interval ;
     rdfs:label "有効区間"@ja , "valid interval"@en ;
     skos:definition "主張が有効な時間区間。右開 [start, end) として扱う（不変条件 8）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 信念メタデータの述語（設計書 §3.5、付録 A.1、ADR-0005）
+# =============================================================================
+# アサーション 1 件は「reifier IRI + rdf:reifies による triple term + これらの述語」で表す。
+# 開いている区間は validTo / txTo のトリプルを置かないことで表す（null リテラルを使わない）。
+
+sbp:validFrom
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "有効開始"@ja , "valid from"@en ;
+    skos:definition "現実にそうであった期間の始端（この時刻を含む）。右開区間 [valid_from, valid_to) の左端。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:validTo
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "有効終了"@ja , "valid to"@en ;
+    skos:definition "現実にそうであった期間の終端（この時刻を含まない）。継続中はこのトリプルを置かない。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:txFrom
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "記録開始"@ja , "transaction from"@en ;
+    skos:definition "基盤がそう信じ始めた時刻。as-of クエリはこの値で絞る。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:txTo
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "記録終了"@ja , "transaction to"@en ;
+    skos:definition "基盤がそう信じるのをやめた時刻。訂正はこのトリプルの追加で表し、文を削除しない（不変条件 2）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:modality
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "様相"@ja , "modality"@en ;
+    skos:definition "事実の身分。observed / inferred / predicted / planned / normative / hypothetical の 6 値のみ（不変条件 3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:confidence
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:double ;
+    rdfs:label "確信度"@ja , "confidence"@en ;
+    skos:definition "較正済みの確信度。真偽フルーエントでは成立確率。生スコアは証拠側に置く（不変条件 7）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:provenance
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "来歴"@ja , "provenance"@en ;
+    skos:definition "生成活動・エージェント・モデル版・証拠集合をまとめた PROV バンドルの参照。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:sourceReliability
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "情報源信頼性"@ja , "source reliability"@en ;
+    skos:definition "適用した信頼性モデルの参照。記録由来の確信度の根拠になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:ontologyVersion
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:string ;
+    rdfs:label "オントロジー版"@ja , "ontology version"@en ;
+    skos:definition "この文を作ったときのオントロジー版。版を無視した比較を防ぐためクエリは必ずこれを返す。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:horizonOrigin
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "予測起点"@ja , "horizon origin"@en ;
+    skos:definition "予測を行った時点。同一対象・同一有効時間に異なる起点の予測が共存する（設計書 §6.4）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:leadTime
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:duration ;
+    rdfs:label "先行時間"@ja , "lead time"@en ;
+    skos:definition "予測起点から対象時刻までの長さ。地平別の精度追跡に使う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:scenario
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "シナリオ"@ja , "scenario"@en ;
+    skos:definition "What-if シナリオの識別子。hypothetical の文はこれを必ず持ち、主信念から隔離される（不変条件 3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:inSituation
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range sbp:Situation ;
+    rdfs:label "所属状況"@ja , "in situation"@en ;
+    skos:definition "この文が属する Situation。類似状況検索と説明の文脈に使う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# 様相の個体（sbp:modality の値域）。不変条件 3 の 6 値と一対一に対応する。
+
+sbp:Observed
+    a owl:NamedIndividual ;
+    rdfs:label "観測"@ja , "Observed"@en ;
+    skos:definition "センサまたは人が直接観測した。最上位の事実性。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Inferred
+    a owl:NamedIndividual ;
+    rdfs:label "推定"@ja , "Inferred"@en ;
+    skos:definition "プローブ・規則・LLM・エージェント・信念更新の出力。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Predicted
+    a owl:NamedIndividual ;
+    rdfs:label "予測"@ja , "Predicted"@en ;
+    skos:definition "地平付きの予測。horizonOrigin と leadTime を必須とする。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Planned
+    a owl:NamedIndividual ;
+    rdfs:label "計画"@ja , "Planned"@en ;
+    skos:definition "計画・スケジュール（こうする予定）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Normative
+    a owl:NamedIndividual ;
+    rdfs:label "規範"@ja , "Normative"@en ;
+    skos:definition "規程・契約・安全規則（こうあるべき）。事実性の鎖と直交する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Hypothetical
+    a owl:NamedIndividual ;
+    rdfs:label "仮説"@ja , "Hypothetical"@en ;
+    skos:definition "What-if シナリオ。promote_scenario() 以外で主信念に入らない。"@ja ;
     sbp:layer "L1" ;
     sbp:owner "sbp-platform-team" .

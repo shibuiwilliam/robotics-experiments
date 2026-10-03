@@ -6,14 +6,14 @@
 - ``vocab.core.<LocalName>`` — L1 中核（``https://sbp.example/core#``）
 - ``vocab.ent.<LocalName>`` — ドメイン・企業層（``https://sbp.example/ent#``）
 
-生成元オントロジー版: 0.1.0
+生成元オントロジー版: 0.2.0
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-ONTOLOGY_VERSION: Final = "0.1.0"
+ONTOLOGY_VERSION: Final = "0.2.0"
 """この語彙を生成したオントロジーの版（アサーションの ``ontology_version`` に入れる）。"""
 
 CORE_NAMESPACE: Final = "https://sbp.example/core#"
@@ -223,6 +223,12 @@ class _Core:
     予測が条件付けられた計画項目またはアサーション。計画変更時の再予測トリガに使う。
     """
 
+    confidence: Final = "https://sbp.example/core#confidence"
+    """確信度（property, L1）
+
+    較正済みの確信度。真偽フルーエントでは成立確率。生スコアは証拠側に置く（不変条件 7）。
+    """
+
     containedIn: Final = "https://sbp.example/core#containedIn"
     """含まれる（property, L1）
 
@@ -265,6 +271,18 @@ class _Core:
     Situation または事象に参加する物理実体。役割付きで修飾できる。
     """
 
+    horizonOrigin: Final = "https://sbp.example/core#horizonOrigin"
+    """予測起点（property, L1）
+
+    予測を行った時点。同一対象・同一有効時間に異なる起点の予測が共存する（設計書 §6.4）。
+    """
+
+    inSituation: Final = "https://sbp.example/core#inSituation"
+    """所属状況（property, L1）
+
+    この文が属する Situation。類似状況検索と説明の文脈に使う。
+    """
+
     initiates: Final = "https://sbp.example/core#initiates"
     """開始する（property, L1）
 
@@ -277,16 +295,34 @@ class _Core:
     概念が属するオントロジー層（L1 中核 / L2 ドメイン標準 / L3 企業 / L4 アプリ）。変更頻度とオーナーを規定する。
     """
 
+    leadTime: Final = "https://sbp.example/core#leadTime"
+    """先行時間（property, L1）
+
+    予測起点から対象時刻までの長さ。地平別の精度追跡に使う。
+    """
+
     locatedIn: Final = "https://sbp.example/core#locatedIn"
     """位置する（property, L1）
 
     物理実体の空間位置。位置分布と Zone 幾何の包含確率から導かれる確率的述語（設計書 §5.5）。
     """
 
+    modality: Final = "https://sbp.example/core#modality"
+    """様相（property, L1）
+
+    事実の身分。observed / inferred / predicted / planned / normative / hypothetical の 6 値のみ（不変条件 3）。
+    """
+
     mutuallyExclusiveWith: Final = "https://sbp.example/core#mutuallyExclusiveWith"
     """排他である（property, L1）
 
     同一有効時間に共に成立できないフルーエント型の対。衝突は拒否ではなく不一致候補（類型 2）の証拠になる。
+    """
+
+    ontologyVersion: Final = "https://sbp.example/core#ontologyVersion"
+    """オントロジー版（property, L1）
+
+    この文を作ったときのオントロジー版。版を無視した比較を防ぐためクエリは必ずこれを返す。
     """
 
     owner: Final = "https://sbp.example/core#owner"
@@ -301,16 +337,34 @@ class _Core:
     プローブの身分（candidate / active / deprecated）。active 化は昇格ゲートの AND 条件を要する。
     """
 
+    provenance: Final = "https://sbp.example/core#provenance"
+    """来歴（property, L1）
+
+    生成活動・エージェント・モデル版・証拠集合をまとめた PROV バンドルの参照。
+    """
+
     quantity: Final = "https://sbp.example/core#quantity"
     """数量（property, L1）
 
     単位付きの数量。QUDT の QuantityValue を用い、裸の数値を使わない。
     """
 
+    scenario: Final = "https://sbp.example/core#scenario"
+    """シナリオ（property, L1）
+
+    What-if シナリオの識別子。hypothetical の文はこれを必ず持ち、主信念から隔離される（不変条件 3）。
+    """
+
     sku: Final = "https://sbp.example/core#sku"
     """SKU（property, L1）
 
     在庫管理単位の識別子。
+    """
+
+    sourceReliability: Final = "https://sbp.example/core#sourceReliability"
+    """情報源信頼性（property, L1）
+
+    適用した信頼性モデルの参照。記録由来の確信度の根拠になる。
     """
 
     subjectType: Final = "https://sbp.example/core#subjectType"
@@ -331,10 +385,34 @@ class _Core:
     事象型がフルーエント型を不成立にする事象計算の規則。
     """
 
+    txFrom: Final = "https://sbp.example/core#txFrom"
+    """記録開始（property, L1）
+
+    基盤がそう信じ始めた時刻。as-of クエリはこの値で絞る。
+    """
+
+    txTo: Final = "https://sbp.example/core#txTo"
+    """記録終了（property, L1）
+
+    基盤がそう信じるのをやめた時刻。訂正はこのトリプルの追加で表し、文を削除しない（不変条件 2）。
+    """
+
+    validFrom: Final = "https://sbp.example/core#validFrom"
+    """有効開始（property, L1）
+
+    現実にそうであった期間の始端（この時刻を含む）。右開区間 [valid_from, valid_to) の左端。
+    """
+
     validInterval: Final = "https://sbp.example/core#validInterval"
     """有効区間（property, L1）
 
     主張が有効な時間区間。右開 [start, end) として扱う（不変条件 8）。
+    """
+
+    validTo: Final = "https://sbp.example/core#validTo"
+    """有効終了（property, L1）
+
+    現実にそうであった期間の終端（この時刻を含まない）。継続中はこのトリプルを置かない。
     """
 
 
@@ -360,6 +438,12 @@ class _Ent:
     """異常発現（event_type, L2）
 
     振動異常の発現。VibrationAnomaly を開始する。
+    """
+
+    BearingTemperature: Final = "https://sbp.example/ent#BearingTemperature"
+    """軸受温度（observable_property, L2）
+
+    軸受の温度。劣化の遅い時間スケール（L-slow 潜在）に対応する。
     """
 
     CmmsSource: Final = "https://sbp.example/ent#CmmsSource"
@@ -428,6 +512,12 @@ class _Ent:
     製造実行システム。稼働実績の時刻ずれは ±5 分程度（設計書 §3.6）。
     """
 
+    MotorCurrent: Final = "https://sbp.example/ent#MotorCurrent"
+    """電動機電流（observable_property, L2）
+
+    電動機の電流。稼働・停止の主要な観測量。
+    """
+
     OperationLog: Final = "https://sbp.example/ent#OperationLog"
     """稼働実績（class, L3）
 
@@ -494,6 +584,12 @@ class _Ent:
     振動が正常域を外れている状態。設計書 §14 で停止原因の切り分けに用いられる補助フルーエント。
     """
 
+    VibrationRms: Final = "https://sbp.example/ent#VibrationRms"
+    """振動実効値（observable_property, L2）
+
+    振動加速度の実効値。異常の早期指標であり、停止原因（StopCmd か Fault か）の切り分けに使う。
+    """
+
     WorkOrder: Final = "https://sbp.example/ent#WorkOrder"
     """作業指示（class, L3）
 
@@ -543,6 +639,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#boundTo",
         "https://sbp.example/core#concerns",
         "https://sbp.example/core#conditionedOn",
+        "https://sbp.example/core#confidence",
         "https://sbp.example/core#containedIn",
         "https://sbp.example/core#discrepancyKind",
         "https://sbp.example/core#evidenceFor",
@@ -550,21 +647,34 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#geometry",
         "https://sbp.example/core#groundedBy",
         "https://sbp.example/core#hasParticipant",
+        "https://sbp.example/core#horizonOrigin",
+        "https://sbp.example/core#inSituation",
         "https://sbp.example/core#initiates",
         "https://sbp.example/core#layer",
+        "https://sbp.example/core#leadTime",
         "https://sbp.example/core#locatedIn",
+        "https://sbp.example/core#modality",
         "https://sbp.example/core#mutuallyExclusiveWith",
+        "https://sbp.example/core#ontologyVersion",
         "https://sbp.example/core#owner",
         "https://sbp.example/core#probeStatus",
+        "https://sbp.example/core#provenance",
         "https://sbp.example/core#quantity",
+        "https://sbp.example/core#scenario",
         "https://sbp.example/core#sku",
+        "https://sbp.example/core#sourceReliability",
         "https://sbp.example/core#subjectType",
         "https://sbp.example/core#targets",
         "https://sbp.example/core#terminates",
+        "https://sbp.example/core#txFrom",
+        "https://sbp.example/core#txTo",
+        "https://sbp.example/core#validFrom",
         "https://sbp.example/core#validInterval",
+        "https://sbp.example/core#validTo",
         "https://sbp.example/ent#Accessible",
         "https://sbp.example/ent#AnomalyCleared",
         "https://sbp.example/ent#AnomalyOnset",
+        "https://sbp.example/ent#BearingTemperature",
         "https://sbp.example/ent#CmmsSource",
         "https://sbp.example/ent#ErpSource",
         "https://sbp.example/ent#Fault",
@@ -576,6 +686,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/ent#MaintStart",
         "https://sbp.example/ent#MaintenancePlan",
         "https://sbp.example/ent#MesSource",
+        "https://sbp.example/ent#MotorCurrent",
         "https://sbp.example/ent#OperationLog",
         "https://sbp.example/ent#Present",
         "https://sbp.example/ent#ProductionLine",
@@ -587,6 +698,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/ent#StopCmd",
         "https://sbp.example/ent#UnderMaintenance",
         "https://sbp.example/ent#VibrationAnomaly",
+        "https://sbp.example/ent#VibrationRms",
         "https://sbp.example/ent#WorkOrder",
     )
 )
