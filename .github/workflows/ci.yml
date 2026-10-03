@@ -165,3 +165,8 @@ jobs:
       - name: ビルドが通ること
         working-directory: apps/ui
         run: npm run build
+
+      - name: npm audit（X-05）
+        working-directory: apps/ui
+        # ビルドの後に置く。脆弱性で落ちたときも「ビルドは通っていた」ことが分かる
+        run: npm audit --audit-level=moderate

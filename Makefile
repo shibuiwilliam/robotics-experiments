@@ -102,6 +102,13 @@ ui-check: ## apps/ui の型検査とテスト（ADR-0008。依存が少ないの
 ui-build: ## apps/ui を dist/ にビルド（compose の ui profile が配る）
 	cd apps/ui && npm run build
 
+# `audit` と同じ理由で `check` には入れない（ネットワークが必要）。
+# **moderate 以上で落とす。** 開発サーバの脆弱性は本番バンドルには入らないが、
+# 開発者が信頼できない網で `npm run dev` を動かす経路は実在する。
+.PHONY: ui-audit
+ui-audit: ## apps/ui の npm 依存の脆弱性照会（X-05。ネットワークが必要）
+	cd apps/ui && npm audit --audit-level=moderate
+
 .PHONY: ui-dev
 ui-dev: ## apps/ui の開発サーバ（:5173、ホットリロード）
 	cd apps/ui && npm run dev
