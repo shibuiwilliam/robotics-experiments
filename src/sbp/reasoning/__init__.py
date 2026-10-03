@@ -24,12 +24,28 @@ from sbp.reasoning.coupling import (
     SituationLink,
     propagate,
 )
+from sbp.reasoning.expectation import (
+    Expectation,
+    ExpectationStatus,
+    ExpectedEffect,
+    VerificationInputs,
+    VerificationMethod,
+    VerificationResult,
+    verify_expectation,
+)
 from sbp.reasoning.explain import (
     Explanation,
     LatentSide,
     SymbolicSide,
     explain_belief,
     explain_discrepancy,
+)
+from sbp.reasoning.prediction import (
+    AccuracyReport,
+    Forecast,
+    ForecastPoint,
+    reliable_lead_time,
+    score_forecasts,
 )
 from sbp.reasoning.rules import (
     Derivation,
@@ -40,8 +56,18 @@ from sbp.reasoning.rules import (
     RuleResult,
     propagate_confidence,
 )
+from sbp.reasoning.whatif import (
+    InterventionEncoding,
+    Scenario,
+    ScenarioKind,
+    ValidityScore,
+    encode_intervention,
+    promote_scenario,
+    run_scenario,
+)
 
 __all__ = [
+    "AccuracyReport",
     "AggregationRule",
     "AuditMask",
     "BeliefFilter",
@@ -49,8 +75,14 @@ __all__ = [
     "CouplingResult",
     "Derivation",
     "DwellTime",
+    "Expectation",
+    "ExpectationStatus",
+    "ExpectedEffect",
     "Explanation",
     "Fact",
+    "Forecast",
+    "ForecastPoint",
+    "InterventionEncoding",
     "LatentSide",
     "MaskedEvidence",
     "NormRule",
@@ -58,14 +90,26 @@ __all__ = [
     "Propagation",
     "RuleProgram",
     "RuleResult",
+    "Scenario",
+    "ScenarioKind",
     "SituationLink",
     "SourceContribution",
     "SymbolicSide",
     "TransitionPrior",
+    "ValidityScore",
+    "VerificationInputs",
+    "VerificationMethod",
+    "VerificationResult",
+    "encode_intervention",
     "explain_belief",
     "explain_discrepancy",
     "no_audit",
+    "promote_scenario",
     "propagate",
     "propagate_confidence",
+    "reliable_lead_time",
+    "run_scenario",
+    "score_forecasts",
     "update_belief",
+    "verify_expectation",
 ]
