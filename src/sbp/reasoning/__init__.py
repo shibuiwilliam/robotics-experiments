@@ -17,6 +17,13 @@ from sbp.reasoning.belief import (
     TransitionPrior,
     update_belief,
 )
+from sbp.reasoning.coupling import (
+    AggregationRule,
+    CouplingResult,
+    PartWhole,
+    SituationLink,
+    propagate,
+)
 from sbp.reasoning.explain import (
     Explanation,
     LatentSide,
@@ -26,18 +33,23 @@ from sbp.reasoning.explain import (
 )
 
 __all__ = [
+    "AggregationRule",
     "AuditMask",
     "BeliefFilter",
     "BeliefUpdate",
+    "CouplingResult",
     "DwellTime",
     "Explanation",
     "LatentSide",
     "MaskedEvidence",
+    "PartWhole",
+    "SituationLink",
     "SourceContribution",
     "SymbolicSide",
     "TransitionPrior",
     "explain_belief",
     "explain_discrepancy",
     "no_audit",
+    "propagate",
     "update_belief",
 ]

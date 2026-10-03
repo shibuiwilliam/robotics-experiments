@@ -37,6 +37,18 @@ class _Core:
     実行可能なアクションの型。前提・期待効果・リスク級・必要承認・補償を持つ意味契約（設計書 §9.1）。
     """
 
+    AggregateAll: Final = "https://sbp.example/core#AggregateAll"
+    """全部分集約（individual, L1）
+
+    全部分で成立して初めて全体で成立する（稼働のような「全系が揃って初めて成り立つ」状態）。
+    """
+
+    AggregateAny: Final = "https://sbp.example/core#AggregateAny"
+    """部分和集約（individual, L1）
+
+    いずれかの部分で成立すれば全体で成立する（故障・異常のような「どこか一つ壊れれば全体が壊れている」状態）。
+    """
+
     AggregationRule: Final = "https://sbp.example/core#AggregationRule"
     """集約規則（class, L1）
 
@@ -624,6 +636,8 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
     (
         "https://sbp.example/core#ActionEvent",
         "https://sbp.example/core#ActionType",
+        "https://sbp.example/core#AggregateAll",
+        "https://sbp.example/core#AggregateAny",
         "https://sbp.example/core#AggregationRule",
         "https://sbp.example/core#Anchor",
         "https://sbp.example/core#Assertion",
