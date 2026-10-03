@@ -1,0 +1,172 @@
+[project]
+name = "sbp"
+version = "0.1.0"
+description = "Semantic Bridge Platform — World Model x Ontology による信念維持システム"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic>=2.9",
+  "pydantic-settings>=2.5",
+  "structlog>=24.4",
+  "uuid6>=2024.7.10",
+  "numpy>=2.1",
+  "rdflib>=7.1",
+  "pyoxigraph>=0.4",
+  "pyshacl>=0.26",
+  "clingo>=5.7",
+  "aiokafka>=0.11",
+  "httpx>=0.27",
+  "psycopg[binary]>=3.2",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-socket>=0.7",
+  "hypothesis>=6.112",
+  "freezegun>=1.5",
+  "ruff>=0.7",
+  "pyright>=1.1.385",
+  "import-linter>=2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sbp"]
+
+[tool.uv]
+default-groups = []
+
+# ---- ruff -------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",    # pycodestyle
+  "F",         # pyflakes
+  "I",         # isort
+  "N",         # pep8-naming
+  "UP",        # pyupgrade
+  "B",         # bugbear
+  "A",         # builtins shadowing
+  "C4",        # comprehensions
+  "DTZ",       # flake8-datetimez — 不変条件 8（timezone-aware UTC 強制）
+  "T20",       # print 禁止（CLAUDE.md コーディング規約）
+  "RET",       # return 簡潔化
+  "SIM",       # 簡潔化
+  "ARG",       # 未使用引数
+  "PTH",       # pathlib
+  "ERA",       # コメントアウトされたコード
+  "PL",        # pylint 相当
+  "RUF",
+]
+ignore = [
+  "PLR0913",  # 引数数上限 — pydantic モデルと科学計算で頻出
+  "PLR2004",  # magic value — テストの閾値比較で頻出
+  # docstring・コメントは日本語で書く（CLAUDE.md）。全角括弧等を
+  # 「曖昧な Unicode」として弾く規則はこの方針と両立しない。
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# テストでは長い parametrize と多分岐を許す
+"tests/**" = ["PLR0915", "PLR0912"]
+# 例外名は CLAUDE.md の「不変条件」と SHACL の Violation に合わせた意図的な命名
+"src/sbp/core/errors.py" = ["N818"]
+# vocab.py は生成物
+"src/sbp/core/vocab.py" = ["E501", "ERA001", "RUF001"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sbp"]
+required-imports = ["from __future__ import annotations"]
+
+# ---- pyright ----------------------------------------------------------------
+[tool.pyright]
+include = ["src", "tests", "services", "scripts"]
+exclude = ["**/__pycache__", ".venv"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+reportUnknownMemberType = false      # pyoxigraph / clingo に型スタブが無い
+reportUnknownVariableType = false
+reportUnknownArgumentType = false
+reportMissingParameterType = "error"
+
+# ---- import-linter ----------------------------------------------------------
+# CLAUDE.md「層と依存の向き（違反禁止）」と不変条件 10（オラクル境界）の機械検査。
+[tool.importlinter]
+root_packages = ["sbp"]
+# 外部パッケージ（各社 LLM SDK）の禁止契約を評価するために必要。
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "層の依存は下から上への一方向のみ"
+type = "layers"
+layers = [
+  "sbp.api",
+  "sbp.actions",
+  "sbp.reasoning",
+  "sbp.bridge",
+  "sbp.integration | sbp.worldmodel",
+  "sbp.knowledge",
+  "sbp.eventlog",
+  "sbp.core",
+]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "真値（オラクル）は sbp.testing の外から読まない（不変条件 10）"
+type = "forbidden"
+source_modules = [
+  "sbp.core", "sbp.eventlog", "sbp.knowledge", "sbp.integration",
+  "sbp.worldmodel", "sbp.bridge", "sbp.reasoning", "sbp.actions",
+  "sbp.llm", "sbp.api",
+]
+forbidden_modules = ["sbp.testing"]
+
+[[tool.importlinter.contracts]]
+name = "LLM SDK は sbp.llm 以外から呼ばない（LLM 利用ポリシー）"
+type = "forbidden"
+source_modules = [
+  "sbp.core", "sbp.eventlog", "sbp.knowledge", "sbp.integration",
+  "sbp.worldmodel", "sbp.bridge", "sbp.reasoning", "sbp.actions",
+  "sbp.api", "sbp.testing",
+]
+forbidden_modules = ["anthropic", "openai", "google"]
+
+[[tool.importlinter.contracts]]
+name = "worldmodel は記号を決めない（bridge / reasoning を参照しない）"
+type = "forbidden"
+source_modules = ["sbp.worldmodel"]
+forbidden_modules = ["sbp.bridge", "sbp.reasoning", "sbp.actions", "sbp.api"]
+
+[[tool.importlinter.contracts]]
+name = "bridge は永続化しない（knowledge を直接触らない）"
+type = "forbidden"
+source_modules = ["sbp.bridge"]
+forbidden_modules = ["sbp.knowledge"]
+
+# ---- pytest -----------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# ネットワーク遮断を既定にする（CLAUDE.md テスト方針）。統合テストは
+# @pytest.mark.enable_socket で明示的に解禁する。
+addopts = "--strict-markers -q --disable-socket --allow-unix-socket"
+asyncio_mode = "auto"
+markers = [
+  "unit: 外部 I/O 不要の単体テスト（既定）",
+  "integration: Compose 必須の統合テスト",
+  "slow: 実行に時間がかかるテスト",
+  "llm_live: 実 LLM を呼ぶテスト（CI では走らせない）",
+]
+filterwarnings = ["error::DeprecationWarning:sbp.*"]

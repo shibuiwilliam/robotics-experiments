@@ -75,7 +75,7 @@
 
 目的: 以後の全レイヤーが依存する「core の型」「イベントが流れる」「信念が二時制で永続化される」を最小で成立させ、`make check` を緑にする。
 
-- [ ] **M0-01** リポジトリ独立化の判断と実施 — `git init`（親 repo から分離）、`.gitignore`（`.env`, `__pycache__`, `.DS_Store` 等）、初回コミット。独立しない場合は ADR に理由を残す
+- [x] **M0-01** リポジトリ独立化の判断と実施 — `git init`（親 repo から分離）、`.gitignore`（`.env`, `__pycache__`, `.DS_Store` 等）、初回コミット。独立しない場合は ADR に理由を残す → 完了（ADR-0001、2026-10-03）
 - [ ] **M0-02** プロジェクト基盤 — `pyproject.toml`（uv, Python 3.12, ruff, pyright strict, pytest + markers, pytest-socket, hypothesis, freezegun）、`Makefile`（help/bootstrap/test/lint/typecheck 他、全ターゲット .PHONY + 1 行説明）
 - [ ] **M0-03** `sbp.core.errors` / `sbp.core.config` — 例外階層、`Settings`（pydantic-settings, `SBP_` プレフィクス）。`.env.example` と同期
 - [ ] **M0-04** `sbp.core.time` / `sbp.core.ids` — UTC 強制（naive 拒否）、右開区間型 `Interval`、Allen 区間関係、UUIDv7。性質テスト（区間代数）同時作成
@@ -246,8 +246,8 @@
 
 ## 7. 未決事項（決まり次第 ADR 化して本節から消す）
 
-1. **リポジトリ独立化**（M0-01）— 親 `robotics-experiments` から分離するか。推奨: 分離。
-2. **初期ドメインの選定** — 設計書 §1.2 の 4 候補（製造・設備保全 / 倉庫・在庫 / 施設・エネルギー / 物流ヤード）のどれを SynthWorld の題材にするか。推奨: 製造・設備保全（ワークドエグザンプル §14 と一致し、M3/M5 のゲート検証がそのまま使える）。
+1. ~~**リポジトリ独立化**（M0-01）~~ → 決定済み: 独立リポジトリ化（ADR-0001、2026-10-03）
+2. ~~**初期ドメインの選定**~~ → 決定済み: 製造・設備保全（ADR-0002、2026-10-03）
 3. **CI 基盤** — GitHub Actions か ローカル `make check` のみか（X-01 着手時に判断）。
 4. **UI の技術選定**（M7-04）— フレームワークは着手時に ADR。
 5. **法令上の消去要求への対応** — 追記専用原則との両立（knowledge ルールで「別途 ADR」とされている）。運用開始前までに。
