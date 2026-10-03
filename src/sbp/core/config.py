@@ -103,6 +103,20 @@ class ReasoningSettings(BaseSettings):
     max_human_queries_per_hour: int = Field(default=4, ge=0)
     """エピステミック・スケジューラが人に発する質問の頻度上限。"""
 
+    filter_step_s: float = Field(default=10.0, gt=0.0)
+    """前向きフィルタの刻み幅（秒）。SynthWorld の標本間隔（10 秒）に合わせた既定。
+
+    **滞在時間分布と同じ尺度でなければならない。** 刻みを変えると半マルコフの継続確率が
+    変わり、同じ観測列でも事後が変わる（`sbp.reasoning.belief.TransitionPrior`）。
+    """
+
+    batch_size: int = Field(default=100, ge=1, le=10_000)
+    """ワーカーが 1 ループで取るイベントの最大件数。
+
+    大きくすると取り込みは速いが、停止要求への応答が 1 バッチ分だけ遅れる（graceful shutdown は
+    バッチの境界で効く）。
+    """
+
 
 class WorldModelSettings(BaseSettings):
     """WM 層の閾値（設計書 §4.8）。"""
