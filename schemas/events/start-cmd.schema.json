@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sbp.example/schemas/events/start-cmd.schema.json",
   "title": "StartCmd",
-  "description": "起動指令。設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。稼働中は人が近づけないため Accessible を終了する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.3.0。",
+  "description": "起動指令。設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。稼働中は人が近づけないため Accessible を終了する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.4.0。",
   "allOf": [
     {
       "$ref": "../event-envelope.schema.json"

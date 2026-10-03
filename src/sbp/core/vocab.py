@@ -6,14 +6,14 @@
 - ``vocab.core.<LocalName>`` — L1 中核（``https://sbp.example/core#``）
 - ``vocab.ent.<LocalName>`` — ドメイン・企業層（``https://sbp.example/ent#``）
 
-生成元オントロジー版: 0.3.0
+生成元オントロジー版: 0.4.0
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-ONTOLOGY_VERSION: Final = "0.3.0"
+ONTOLOGY_VERSION: Final = "0.4.0"
 """この語彙を生成したオントロジーの版（アサーションの ``ontology_version`` に入れる）。"""
 
 CORE_NAMESPACE: Final = "https://sbp.example/core#"
@@ -35,6 +35,12 @@ class _Core:
     """アクション型（class, L1）
 
     実行可能なアクションの型。前提・期待効果・リスク級・必要承認・補償を持つ意味契約（設計書 §9.1）。
+    """
+
+    AggregationRule: Final = "https://sbp.example/core#AggregationRule"
+    """集約規則（class, L1）
+
+    部分−全体の集約の型。個体は sbp:AggregateAll と sbp:AggregateAny の 2 つのみ。
     """
 
     Anchor: Final = "https://sbp.example/core#Anchor"
@@ -199,6 +205,12 @@ class _Core:
     述語的な領域（危険区域、保管区画）。位置分布との包含確率から locatedIn を導く（設計書 §5.5）。
     """
 
+    aggregatesAs: Final = "https://sbp.example/core#aggregatesAs"
+    """集約規則（property, L1）
+
+    部分のフルーエントが全体のフルーエントへどう集約されるか。all（全部分が成立して初めて全体が成立）または any（いずれかの部分で全体が成立）。設計書 §8.1 の関係制約の因子ポテンシャルを決める。
+    """
+
     assetId: Final = "https://sbp.example/core#assetId"
     """資産 ID（property, L1）
 
@@ -329,6 +341,12 @@ class _Core:
     """オーナー（property, L1）
 
     概念の定義・採否・非推奨に責任を持つ主体。L1 は基盤オントロジスト、L2/L3 は概念オーナー（設計書 §11.3）。
+    """
+
+    partOf: Final = "https://sbp.example/core#partOf"
+    """部分である（property, L1）
+
+    物理実体の部分−全体関係。BFO の part of の下位プロパティとして宣言し、再定義しない（設計原則 P10）。信念更新では「強い関係」として実体間結合の因子になる（設計書 §8.1）。
     """
 
     probeStatus: Final = "https://sbp.example/core#probeStatus"
@@ -606,6 +624,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
     (
         "https://sbp.example/core#ActionEvent",
         "https://sbp.example/core#ActionType",
+        "https://sbp.example/core#AggregationRule",
         "https://sbp.example/core#Anchor",
         "https://sbp.example/core#Assertion",
         "https://sbp.example/core#Asset",
@@ -633,6 +652,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#UnidentifiedPhysicalObject",
         "https://sbp.example/core#WorldModelVersion",
         "https://sbp.example/core#Zone",
+        "https://sbp.example/core#aggregatesAs",
         "https://sbp.example/core#assetId",
         "https://sbp.example/core#boundTo",
         "https://sbp.example/core#concerns",
@@ -655,6 +675,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#mutuallyExclusiveWith",
         "https://sbp.example/core#ontologyVersion",
         "https://sbp.example/core#owner",
+        "https://sbp.example/core#partOf",
         "https://sbp.example/core#probeStatus",
         "https://sbp.example/core#provenance",
         "https://sbp.example/core#quantity",

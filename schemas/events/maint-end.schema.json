@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sbp.example/schemas/events/maint-end.schema.json",
   "title": "MaintEnd",
-  "description": "保全終了。保全作業の終了。UnderMaintenance を終了し、Faulted も解消して Inspected を開始する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.3.0。",
+  "description": "保全終了。保全作業の終了。UnderMaintenance を終了し、Faulted も解消して Inspected を開始する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.4.0。",
   "allOf": [
     {
       "$ref": "../event-envelope.schema.json"
