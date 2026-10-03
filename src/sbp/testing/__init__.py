@@ -9,6 +9,12 @@ SynthWorld.oracle への参照が sbp.testing の外に漏れないことは imp
 
 from __future__ import annotations
 
+from sbp.testing.injection import (
+    InjectedDiscrepancy,
+    InjectionKind,
+    InjectionPlan,
+    inject_discrepancies,
+)
 from sbp.testing.synth import (
     LATENT_DIM,
     Fluent,
@@ -22,7 +28,11 @@ __all__ = [
     "LATENT_DIM",
     "Fluent",
     "GroundTruth",
+    "InjectedDiscrepancy",
+    "InjectionKind",
+    "InjectionPlan",
     "ObservationWindow",
     "SynthConfig",
     "SynthWorld",
+    "inject_discrepancies",
 ]

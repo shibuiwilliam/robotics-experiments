@@ -165,6 +165,69 @@ class TestSuppressionScope:
         candidate = _candidate(kind=DiscrepancyKind.TIME, evidence=())
         assert explain_as_systematic(candidate, records={}, reliability=reliability, at=T0) is None
 
+    def test_a_deviation_larger_than_the_bias_is_not_explained(
+        self, reliability: ReliabilityRegistry
+    ) -> None:
+        """偏りが存在することと、その偏りがこのずれを説明することは別である。
+
+        MES はシフト境界での丸め（規模 8 時間）を持つ。6 時間のずれは説明しうるが、
+        48 時間のずれは説明しない。規模を見ずに抑制すると、どんな大きさのずれも消える。
+        """
+        record = Record(
+            record_type=vocab.ent.OperationLog,
+            source=vocab.ent.MesSource,
+            external_id="OL-700",
+            is_about=PUMP,
+            recorded_at=T0,
+            occurred_at=T0,
+            ontology_version=VERSION,
+        )
+        within_shift = _candidate(
+            kind=DiscrepancyKind.TIME, evidence=("record:OL-700",), minutes=6 * 60
+        )
+        beyond_shift = _candidate(
+            kind=DiscrepancyKind.TIME, evidence=("record:OL-700",), minutes=48 * 60
+        )
+        records = {"record:OL-700": record}
+        assert (
+            explain_as_systematic(within_shift, records=records, reliability=reliability, at=T0)
+            is not None
+        )
+        assert (
+            explain_as_systematic(beyond_shift, records=records, reliability=reliability, at=T0)
+            is None
+        )
+
+    def test_an_open_ended_discrepancy_is_not_explained_away(
+        self, reliability: ReliabilityRegistry
+    ) -> None:
+        """終端の無い不一致はいつまで続くか分からない。規模で覆えたと主張しない。"""
+        record = Record(
+            record_type=vocab.ent.OperationLog,
+            source=vocab.ent.MesSource,
+            external_id="OL-701",
+            is_about=PUMP,
+            recorded_at=T0,
+            occurred_at=T0,
+            ontology_version=VERSION,
+        )
+        open_ended = Discrepancy(
+            kind=DiscrepancyKind.TIME,
+            subjects=(PUMP,),
+            evidence=("record:OL-701",),
+            detected_at=T0,
+            interval=Interval(T0),
+            severity=Severity(score=0.5, value_at_stake=1.0, confidence=0.9, persistence_s=600.0),
+            detector="test",
+            ontology_version=VERSION,
+        )
+        assert (
+            explain_as_systematic(
+                open_ended, records={"record:OL-701": record}, reliability=reliability, at=T0
+            )
+            is None
+        )
+
     def test_a_lag_beyond_the_bias_is_not_explained(self, reliability: ReliabilityRegistry) -> None:
         """月末一括計上は 31 日まで。半年遅れは別の問題である。"""
         record = _late_work_order(lag=timedelta(days=180))

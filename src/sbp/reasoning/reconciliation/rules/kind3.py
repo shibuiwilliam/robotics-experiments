@@ -98,9 +98,15 @@ def _detect_order_violations(
     found: list[Discrepancy] = []
     for subject, group in by_subject.items():
         for first, second in combinations(group, 2):
-            observed_order = ensure_utc(first.observed_at) < ensure_utc(second.observed_at)
-            recorded_order = ensure_utc(first.recorded_at) < ensure_utc(second.recorded_at)
-            if observed_order == recorded_order:
+            first_observed = ensure_utc(first.observed_at)
+            second_observed = ensure_utc(second.observed_at)
+            first_recorded = ensure_utc(first.recorded_at)
+            second_recorded = ensure_utc(second.recorded_at)
+            # 同時刻の対には矛盾しうる「順序」が無い。等号を「より前」と扱うと、
+            # 片側だけが同時の対がすべて順序違反になる（順序を発明してしまう）
+            if first_observed == second_observed or first_recorded == second_recorded:
+                continue
+            if (first_observed < second_observed) == (first_recorded < second_recorded):
                 continue
             start = min(ensure_utc(first.observed_at), ensure_utc(second.observed_at))
             end = max(ensure_utc(first.recorded_at), ensure_utc(second.recorded_at))

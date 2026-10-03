@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from sbp.core.logging import get_logger
@@ -35,7 +36,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sbp.core.records import Record
-    from sbp.integration.reliability import ReliabilityRegistry
+    from sbp.integration.reliability import ReliabilityRegistry, SystematicBias
 
 __all__ = ["ReconciliationOutcome", "reconcile"]
 
@@ -108,6 +109,40 @@ _BIAS_APPLIES_TO: dict[str, frozenset[DiscrepancyKind]] = {
 }
 """系統誤差の種別ごとに、抑制してよい不一致の類型（設計書 §8.2 の抑制規則の限定）。"""
 
+_BIAS_MAGNITUDE_UNIT: dict[str, timedelta] = {
+    # magnitude の単位は種別ごとに違う（reliability/*.yaml のコメントに書いてある通り）。
+    # month_end_batch は日数、shift_boundary はシフト長（時間）。
+    "month_end_batch": timedelta(days=1),
+    "shift_boundary": timedelta(hours=1),
+}
+"""時間不一致の抑制で、``magnitude`` をどの単位の時間として読むか。"""
+
+
+def _bias_covers_the_deviation(bias: SystematicBias, discrepancy: Discrepancy) -> bool:
+    """系統誤差の規模が、実際のずれの大きさを覆っているか。
+
+    **偏りが存在することと、その偏りがこのずれを説明することは別である。** シフト境界の
+    丸め（8 時間）は 6 時間のずれを説明しうるが、48 時間のずれは説明しない。規模を見ずに
+    「既知の偏りがあるから」で抑制すると、どんな大きさのずれも消える。
+
+    時間以外の類型（数量の丸めなど）はここで時間に換算できないため、規模の照合は行わず
+    ``SystematicBias.explains`` の判定にゆだねる。
+
+    Args:
+        bias: 説明に使おうとしている系統誤差。
+        discrepancy: 判定対象の不一致。
+    """
+    if discrepancy.kind is not DiscrepancyKind.TIME:
+        return True
+    unit = _BIAS_MAGNITUDE_UNIT.get(bias.kind)
+    if unit is None:
+        return True
+    deviation = discrepancy.interval.duration
+    if deviation is None:
+        # 終端の無い不一致はいつまで続くか分からない。規模で覆えたと主張しない
+        return False
+    return deviation <= bias.magnitude * unit
+
 
 def explain_as_systematic(
     discrepancy: Discrepancy,
@@ -118,10 +153,12 @@ def explain_as_systematic(
 ) -> Suppression | None:
     """信頼性モデルの系統誤差で説明できるかを判定する。
 
-    抑制には**二つの条件**が要る。(1) その系統誤差が当該類型を説明しうる種別であること
+    抑制には**三つの条件**が要る。(1) その系統誤差が当該類型を説明しうる種別であること
     （:data:`_BIAS_APPLIES_TO`）、(2) 当該記録が実際にその偏りに当てはまること
-    （``SystematicBias.explains``）。片方だけで抑制すると、「月末に入力する運用だから」という
-    理由で状態の食い違いまで消えてしまう。
+    （``SystematicBias.explains``）、(3) 偏りの**規模がずれの大きさを覆っている**こと
+    （:func:`_bias_covers_the_deviation`）。どれか 1 つでも落とすと抑制が万能になる——
+    (1) を落とせば「月末に入力する運用だから」で状態の食い違いまで消え、(3) を落とせば
+    8 時間のシフト丸めが 48 時間のずれを説明してしまう。
 
     証拠に記録が無い不一致（純粋に物理観測だけで出たもの）は抑制できない——記録の癖で説明
     できないのだから、それは本物の食い違いである。
@@ -144,6 +181,14 @@ def explain_as_systematic(
             if discrepancy.kind not in _BIAS_APPLIES_TO.get(bias.kind, frozenset()):
                 continue
             if not bias.explains(record):
+                continue
+            if not _bias_covers_the_deviation(bias, discrepancy):
+                log.info(
+                    "reconciliation.bias_too_small_to_explain",
+                    discrepancy=str(discrepancy.discrepancy_id),
+                    bias=bias.kind,
+                    magnitude=bias.magnitude,
+                )
                 continue
             return Suppression(
                 bias_kind=bias.kind,
