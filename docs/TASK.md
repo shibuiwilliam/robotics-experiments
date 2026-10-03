@@ -171,17 +171,31 @@
 
 目的: 合成潜在を実モデルに差し替える。接地層 IF は M2 で固定済みのため、WM 側だけを入れ替えられることを証明する。
 
-- [ ] **M4-01** `WorldModel` Protocol — `encode/step/rollout/probe/explain/embed/health`、`LatentState(z, cov|ensemble, level, ts, wm_version)`
-- [ ] **M4-02** `koopman` 族 — 線形潜在遷移、SynthWorld 時系列で学習、MPS 対応・数百万パラメータ以下
-- [ ] **M4-03** `jepa_ts` 族 — 時系列潜在予測（並行可: M4-02 と独立）
-- [ ] **M4-04** 学習パイプライン — `train/`、合成損失 `L_pred + λ_phys + λ_probe + λ_logic + λ_align`（各項個別ログ、λ_align 後期スケジュール）、`seed` 必須
-- [ ] **M4-05** 記号条件付け — `context.build(entity, mask: AuditMask)`、実例グラフ k-hop 埋め込み
-- [ ] **M4-06** レジストリ — `WorldModelVersion` のオントロジー登録、重み `minio://models/<id>/<version>/`、version 指定ロード（latest 禁止）、プローブ互換性行列
-- [ ] **M4-07** `health()` とドリフト監視 — 潜在シフト（MMD/PSI）、予測誤差、整合残差。閾値は Settings、超過でイベント発行
-- [ ] **M4-08** 潜在索引の実運用 — `latent_index` への書き込み、HNSW、ハイブリッドクエリ `hybrid.plan()`
-- [ ] **M4-09** 統合テスト G4 — SynthWorld 観測 → koopman encode → M2 のプローブ/昇格がそのまま動作し、整合残差が計測できる。合成潜在版と指標比較
+- [x] **M4-01** `WorldModel` Protocol — `encode/step/rollout/embed/health/attribute`、`LatentState(z, cov|ensemble, level, ts, wm_version)`。`probe`/`explain` は外した（**ADR-0007**）
+- [x] **M4-02** `koopman` 族 — 線形潜在遷移（DMD with control、numpy）、SynthWorld 時系列で同定、582 パラメータ
+- [x] **M4-03** `jepa_ts` 族 — 潜在予測（torch / MPS）、VICReg 系の崩壊防止、6304 パラメータ
+- [x] **M4-04** 学習パイプライン — `train/`、合成損失（各項個別ログ、λ_align 後期スケジュール）、`seed` 必須、段階ゲート
+- [x] **M4-05** 記号条件付け — `context.build(entity, mask: AuditMask)`。決定的な特徴化（GNN 埋め込みは将来 ADR）
+- [x] **M4-06** レジストリ — 版指定ロード（`latest` 禁止）、プローブ互換性行列、candidate → canary → active
+- [x] **M4-07** `health()` とドリフト監視 — 潜在シフト（MMD）、予測誤差、整合残差。単発超過は shadow_evaluate、持続で retrain
+- [x] **M4-08** 潜在索引の実運用 — 次元別テーブル + `latent_index_registry`、HNSW、`hybrid.plan()`
+- [x] **M4-09** 統合テスト G4 — SynthWorld 観測 → encode → M2 のプローブ／昇格がそのまま動作、合成潜在版と指標比較
 
-**ゲート G4**: G3 維持 + M4-09 緑 + 2 モデル族が同一 Protocol で差し替え可能（レジストリ経由の切替テスト）。
+**ゲート G4**: ✅ **通過（2026-10-03）**
+- 条件 1 G3 維持 + `make check` 緑: 単体・性質・契約 665 件
+- 条件 2 M4-09 緑: 統合 54 件（G0 の 9 + G1 の 8 + G2 の 9 + G3 の 11 + G4 の 17）
+- 条件 3 **2 モデル族が同一 Protocol で差し替え可能**: レジストリ経由で koopman を退役 →
+  jepa_ts をカナリアに切り替え、接地層のコードを変えずに通った
+
+| 潜在 | 次元 | パラメータ | AUROC | ECE | 整合残差 | 潜在シフト | 1 刻み誤差 | 学習時間 |
+|---|---|---|---|---|---|---|---|---|
+| 合成（G2 基準） | 64 | — | 1.0000 | 0.0069 | 0.0000 | — | — | — |
+| koopman | 24 | 582 | 0.9999 | 0.0065 | 0.0000 | 0.0303 | 0.0805 | 0.04 s |
+| jepa_ts | 16 | 6304 | 1.0000 | 0.0048 | 0.0000 | 0.0431 | 0.1220 | 3.0 s (MPS) |
+
+実モデルは合成潜在の 1/3 以下の次元で基準と同等。**G2 の「AUROC 1.0 は合成潜在が線形分離
+できる設計による」という注記は、実モデルでも落ちなかったことで一度確認できた**——ただし
+SynthWorld の難度自体が低いことは変わらない（実機データでの再測定が M7 以降の課題）。
 
 ### M5 閉ループ — アクションと検証可能な期待
 
