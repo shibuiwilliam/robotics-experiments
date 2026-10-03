@@ -252,8 +252,17 @@ class LinearProbe:
         self._trained = False
 
     @property
+    def dim(self) -> int:
+        """このプローブが期待する潜在次元。
+
+        プローブが WM について知るのはこれだけである（ADR-0007 の境界）。モデル族を
+        差し替えても、次元が合えばプローブはそのまま動く。
+        """
+        return self._dim
+
+    @property
     def weights(self) -> NDArray[np.float64]:
-        """学習した重み（潜在の各次元の寄与）。"""
+        """学習した重み（潜在の各次元の寄与）。WM の帰属計算にそのまま渡せる。"""
         return self._weights.copy()
 
     @property
