@@ -255,6 +255,21 @@ def check_version(report: Report) -> None:
             f"ontology/CHANGELOG.md has no section for version {version} "
             "(every version change must record its semver judgement)",
         )
+    # owl:versionInfo が VERSION とずれていると、グラフに載った版と生成物の版が食い違う。
+    # アサーションの ontology_version は生成物（vocab.py）から来るので、ストアに投入された
+    # オントロジーだけが古い版を名乗る状態になり、as-of の照合が狂う。
+    for path in sorted(ONTOLOGY_DIR.glob("*/*.ttl")):
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "owl:versionInfo" not in line:
+                continue
+            declared = line.split('"')[1] if '"' in line else ""
+            if declared != version:
+                report.fail(
+                    "version",
+                    f"{path.relative_to(ONTOLOGY_DIR)} declares owl:versionInfo "
+                    f"{declared!r} but ontology/VERSION is {version!r}",
+                )
     report.note(f"version: {version}")
 
 

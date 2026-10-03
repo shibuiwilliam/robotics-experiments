@@ -111,6 +111,9 @@ def collect_terms(graph: Graph) -> list[Term]:
         # 集約規則の個体（AggregateAll / AggregateAny）。実体間結合がここから向きを読む
         # ので、コードが参照できなければオントロジーに置いた意味が無い（不変条件 5）。
         (SBP.AggregationRule, "individual"),
+        # アクション型と承認ロールの個体。意味契約（actions/*.yaml）とコードがこれを参照する。
+        (SBP.ActionType, "individual"),
+        (SBP.Role, "individual"),
         # 観測可能量（SOSA）。プローブの定義と Observation の記述からコードが参照する。
         (SOSA.ObservableProperty, "observable_property"),
     ]

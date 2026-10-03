@@ -26,7 +26,7 @@
 <https://sbp.example/core>
     a owl:Ontology ;
     rdfs:label "SBP 中核オントロジー"@ja , "SBP core ontology"@en ;
-    owl:versionInfo "0.3.0" ;
+    owl:versionInfo "0.5.0" ;
     skos:definition "物理世界の観測と業務世界の記録を同じ語彙・時間軸・確信度で突き合わせるための接続概念を定義する。"@ja ;
     dcterms:publisher "sbp-platform-team" .
 
@@ -338,6 +338,23 @@ sbp:terminates
     rdfs:range sbp:FluentType ;
     rdfs:label "終了する"@ja , "terminates"@en ;
     skos:definition "事象型がフルーエント型を不成立にする事象計算の規則。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Role
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000023 ;
+    rdfs:label "ロール"@ja , "Role"@en ;
+    skos:definition "承認・配賦の宛先になる業務ロール。BFO の role の下位クラスとして宣言し、再定義しない（設計原則 P10）。承認者を個人ではなくロールで指定するのは、担当交代でアクションが実行不能にならないようにするためである（設計書 §9.3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:compensatedBy
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:ActionType ;
+    rdfs:range sbp:ActionType ;
+    rdfs:label "補償される"@ja , "compensated by"@en ;
+    skos:definition "このアクション型を取り消すアクション型。補償が宣言されていないアクション型は登録を拒否する（設計書 §9.1、アクション層ルール）。"@ja ;
     sbp:layer "L1" ;
     sbp:owner "sbp-platform-team" .
 

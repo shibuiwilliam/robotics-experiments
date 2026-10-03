@@ -6,14 +6,14 @@
 - ``vocab.core.<LocalName>`` — L1 中核（``https://sbp.example/core#``）
 - ``vocab.ent.<LocalName>`` — ドメイン・企業層（``https://sbp.example/ent#``）
 
-生成元オントロジー版: 0.4.0
+生成元オントロジー版: 0.5.0
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-ONTOLOGY_VERSION: Final = "0.4.0"
+ONTOLOGY_VERSION: Final = "0.5.0"
 """この語彙を生成したオントロジーの版（アサーションの ``ontology_version`` に入れる）。"""
 
 CORE_NAMESPACE: Final = "https://sbp.example/core#"
@@ -187,6 +187,12 @@ class _Core:
     伝票・作業指示・検査票など業務システムの記録。誤りうる主張として扱い、信頼性モデルを適用する（設計書 §7.3）。
     """
 
+    Role: Final = "https://sbp.example/core#Role"
+    """ロール（class, L1）
+
+    承認・配賦の宛先になる業務ロール。BFO の role の下位クラスとして宣言し、再定義しない（設計原則 P10）。承認者を個人ではなくロールで指定するのは、担当交代でアクションが実行不能にならないようにするためである（設計書 §9.3）。
+    """
+
     Situation: Final = "https://sbp.example/core#Situation"
     """状況（class, L1）
 
@@ -233,6 +239,12 @@ class _Core:
     """束縛される（property, L1）
 
     トラックが束縛された物理実体。必ず IdentityClaim を経由し、撤回可能であること。
+    """
+
+    compensatedBy: Final = "https://sbp.example/core#compensatedBy"
+    """補償される（property, L1）
+
+    このアクション型を取り消すアクション型。補償が宣言されていないアクション型は登録を拒否する（設計書 §9.1、アクション層ルール）。
     """
 
     concerns: Final = "https://sbp.example/core#concerns"
@@ -475,10 +487,28 @@ class _Ent:
     軸受の温度。劣化の遅い時間スケール（L-slow 潜在）に対応する。
     """
 
+    CancelWorkOrder: Final = "https://sbp.example/ent#CancelWorkOrder"
+    """作業指示の取消し（individual, L3）
+
+    起票済みの作業指示を取り消す。緊急点検起票の補償アクション。
+    """
+
     CmmsSource: Final = "https://sbp.example/ent#CmmsSource"
     """CMMS（individual, L3）
 
     保全管理システム。作業指示の完了記録は実作業より遅れて入力されることがある。
+    """
+
+    CorrectOperationLog: Final = "https://sbp.example/ent#CorrectOperationLog"
+    """稼働実績の訂正（individual, L3）
+
+    物理観測が正しいと判断された不一致に対し、MES の稼働実績を訂正する。補償は訂正の差し戻し。
+    """
+
+    CreateEmergencyInspection: Final = "https://sbp.example/ent#CreateEmergencyInspection"
+    """緊急点検の起票（individual, L3）
+
+    不一致の解決のために点検作業指示を CMMS に起票する。物理的に近づけること（Accessible）が前提で、補償は作業指示の取消し（設計書 §9.1 の例）。
     """
 
     ErpSource: Final = "https://sbp.example/ent#ErpSource"
@@ -529,6 +559,12 @@ class _Ent:
     保全作業の開始。UnderMaintenance と Accessible を開始する。
     """
 
+    MaintenanceLead: Final = "https://sbp.example/ent#MaintenanceLead"
+    """保全リーダ（individual, L3）
+
+    保全作業の承認権限を持つロール。緊急点検の起票を承認する。
+    """
+
     MaintenancePlan: Final = "https://sbp.example/ent#MaintenancePlan"
     """保全計画（class, L3）
 
@@ -565,10 +601,22 @@ class _Ent:
     設備が設置される生産ラインの区画。停止コストの算定単位であり深刻度モデルに影響する。
     """
 
+    ProductionSupervisor: Final = "https://sbp.example/ent#ProductionSupervisor"
+    """生産監督（individual, L3）
+
+    生産ラインの停止・再開を承認するロール。
+    """
+
     Pump: Final = "https://sbp.example/ent#Pump"
     """ポンプ（class, L3）
 
     流体を移送する回転機。設計書 §14 のワークドエグザンプルの対象（P-101）。
+    """
+
+    RevertOperationLogCorrection: Final = "https://sbp.example/ent#RevertOperationLogCorrection"
+    """稼働実績訂正の差し戻し（individual, L3）
+
+    稼働実績の訂正を元に戻す。訂正アクションの補償。
     """
 
     RotatingEquipment: Final = "https://sbp.example/ent#RotatingEquipment"
@@ -661,6 +709,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#PlanItem",
         "https://sbp.example/core#Probe",
         "https://sbp.example/core#Record",
+        "https://sbp.example/core#Role",
         "https://sbp.example/core#Situation",
         "https://sbp.example/core#Track",
         "https://sbp.example/core#UnidentifiedPhysicalObject",
@@ -669,6 +718,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/core#aggregatesAs",
         "https://sbp.example/core#assetId",
         "https://sbp.example/core#boundTo",
+        "https://sbp.example/core#compensatedBy",
         "https://sbp.example/core#concerns",
         "https://sbp.example/core#conditionedOn",
         "https://sbp.example/core#confidence",
@@ -708,7 +758,10 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/ent#AnomalyCleared",
         "https://sbp.example/ent#AnomalyOnset",
         "https://sbp.example/ent#BearingTemperature",
+        "https://sbp.example/ent#CancelWorkOrder",
         "https://sbp.example/ent#CmmsSource",
+        "https://sbp.example/ent#CorrectOperationLog",
+        "https://sbp.example/ent#CreateEmergencyInspection",
         "https://sbp.example/ent#ErpSource",
         "https://sbp.example/ent#Fault",
         "https://sbp.example/ent#Faulted",
@@ -717,13 +770,16 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/ent#Inspected",
         "https://sbp.example/ent#MaintEnd",
         "https://sbp.example/ent#MaintStart",
+        "https://sbp.example/ent#MaintenanceLead",
         "https://sbp.example/ent#MaintenancePlan",
         "https://sbp.example/ent#MesSource",
         "https://sbp.example/ent#MotorCurrent",
         "https://sbp.example/ent#OperationLog",
         "https://sbp.example/ent#Present",
         "https://sbp.example/ent#ProductionLine",
+        "https://sbp.example/ent#ProductionSupervisor",
         "https://sbp.example/ent#Pump",
+        "https://sbp.example/ent#RevertOperationLogCorrection",
         "https://sbp.example/ent#RotatingEquipment",
         "https://sbp.example/ent#Running",
         "https://sbp.example/ent#SparePart",

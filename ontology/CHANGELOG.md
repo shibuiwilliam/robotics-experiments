@@ -8,6 +8,28 @@ semver の判定基準（CLAUDE.md「オントロジー変更の手順」）:
 
 非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 
+## 0.5.0 — 2026-10-03
+
+MINOR（加法的な追加）。既存のクラス・関係・形状に変更はない。
+
+### 追加（中核 — `ontology/core/sbp-core.ttl`）
+
+- `sbp:Role`（Class）: 承認・配賦の宛先になる業務ロール。BFO の role（BFO_0000023）の**下位
+  クラス**として宣言し、再定義しない（設計原則 P10）。承認者を個人ではなくロールで指定するのは、
+  担当交代でアクションが実行不能にならないようにするためである（設計書 §9.3）。
+- `sbp:compensatedBy`（ObjectProperty）: ActionType → ActionType。補償が宣言されていない
+  アクション型は登録を拒否する（アクション層ルール）ため、**関係をオントロジー側に持つ**。
+  YAML 側だけに持つと、補償の有無がオントロジーから読めない。
+
+### 追加（ドメイン — `ontology/domain/equipment-maintenance.ttl`）
+
+- アクション型 4 個体: `CreateEmergencyInspection` ⇄ `CancelWorkOrder`、
+  `CorrectOperationLog` ⇄ `RevertOperationLogCorrection`（互いに補償関係）。
+- ロール 2 個体: `MaintenanceLead`, `ProductionSupervisor`。
+
+意味契約の本体（前提・期待効果・リスク級・承認条件）は `actions/*.yaml` に置く。閾値の調整が
+オントロジーの版上げになるのを避けるためで、オントロジーに置くのは「存在」と「補償関係」だけ。
+
 ## 0.4.0 — 2026-10-03
 
 MINOR（加法的な追加）。既存のフルーエント型・事象型・形状に変更はないため、プローブ・

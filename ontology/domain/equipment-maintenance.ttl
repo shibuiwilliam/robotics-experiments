@@ -18,7 +18,7 @@
 <https://sbp.example/ent>
     a owl:Ontology ;
     rdfs:label "設備保全ドメインオントロジー"@ja , "Equipment maintenance domain ontology"@en ;
-    owl:versionInfo "0.3.0" ;
+    owl:versionInfo "0.5.0" ;
     owl:imports <https://sbp.example/core> ;
     skos:definition "回転機の稼働・保全と、その業務記録（CMMS 作業指示・MES 稼働実績・保全計画）を結ぶ概念。"@ja ;
     dcterms:publisher "maintenance-domain-owner" .
@@ -283,5 +283,58 @@ ent:ErpSource
     a sbp:DataSource ;
     rdfs:label "ERP"@ja , "ERP"@en ;
     skos:definition "基幹システム。予備品在庫を管理する。入庫は同日内に計上されるが月末一括計上の系統誤差を持つ。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# ---- アクション型（設計書 §9.1）---------------------------------------------
+# 意味契約の本体（前提・期待効果・リスク級・承認・補償）は actions/*.yaml に書く。
+# オントロジーに置くのは「このアクション型が存在する」という宣言と、補償関係である。
+# 契約の細部を TTL に持つと、閾値の調整がオントロジーの版上げになってしまう。
+
+ent:CreateEmergencyInspection
+    a sbp:ActionType ;
+    rdfs:label "緊急点検の起票"@ja , "Create emergency inspection"@en ;
+    skos:definition "不一致の解決のために点検作業指示を CMMS に起票する。物理的に近づけること（Accessible）が前提で、補償は作業指示の取消し（設計書 §9.1 の例）。"@ja ;
+    sbp:compensatedBy ent:CancelWorkOrder ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:CancelWorkOrder
+    a sbp:ActionType ;
+    rdfs:label "作業指示の取消し"@ja , "Cancel work order"@en ;
+    skos:definition "起票済みの作業指示を取り消す。緊急点検起票の補償アクション。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:CorrectOperationLog
+    a sbp:ActionType ;
+    rdfs:label "稼働実績の訂正"@ja , "Correct operation log"@en ;
+    skos:definition "物理観測が正しいと判断された不一致に対し、MES の稼働実績を訂正する。補償は訂正の差し戻し。"@ja ;
+    sbp:compensatedBy ent:RevertOperationLogCorrection ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:RevertOperationLogCorrection
+    a sbp:ActionType ;
+    rdfs:label "稼働実績訂正の差し戻し"@ja , "Revert operation log correction"@en ;
+    skos:definition "稼働実績の訂正を元に戻す。訂正アクションの補償。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# ---- ロール（承認の宛先）-----------------------------------------------------
+# riskClass ≥ medium のアクションは承認が要る（設計書 §9.3）。承認者はロールで指定する
+# ——個人を指定すると、担当交代でアクションが実行不能になる。
+
+ent:MaintenanceLead
+    a sbp:Role ;
+    rdfs:label "保全リーダ"@ja , "Maintenance lead"@en ;
+    skos:definition "保全作業の承認権限を持つロール。緊急点検の起票を承認する。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:ProductionSupervisor
+    a sbp:Role ;
+    rdfs:label "生産監督"@ja , "Production supervisor"@en ;
+    skos:definition "生産ラインの停止・再開を承認するロール。"@ja ;
     sbp:layer "L3" ;
     sbp:owner "maintenance-domain-owner" .
