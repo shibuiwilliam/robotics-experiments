@@ -1,0 +1,147 @@
+# アクションの意味契約（設計書 §9.1）。
+#
+# 契約は「このアクションを実行してよい条件」と「実行したら何が起こるべきか」を宣言する。
+# 要点は三つある。
+#
+# 1. **前提は三面**（記号・物理・規範）。記号だけ見ると「帳簿上は問題ないが物理的に危険」
+#    なアクションが通る。物理だけ見ると「安全だが規程違反」が通る。
+# 2. **効果は期限付きの分布**。「点検されるはず」ではなく「24 時間以内に P(Inspected) ≥ 0.9」。
+#    期限と閾値が無いと検証できず、Expectation が永遠に Active のままになる。
+# 3. **補償は必須**。取り消せないアクションを基盤から出さない（アクション層ルール）。
+#
+# 閾値をここに書くのは、オントロジーではなく運用で動かす値だからである。オントロジーに
+# 置くと、閾値の調整が版上げと再接地を伴ってしまう。
+
+actions:
+  # ---- 緊急点検の起票（設計書 §9.1 の例）------------------------------------
+  - action_type: ent:CreateEmergencyInspection
+    targets: ent:Pump
+    risk_class: medium
+    compensation: ent:CancelWorkOrder
+    preconditions:
+      symbolic:
+        # 同じ対象に未完了の点検作業指示があるなら二重起票しない
+        - kind: absent_record
+          record_type: ent:WorkOrder
+          where: { work_type: Inspection, status: Open }
+          description: 対象に未完了の点検作業指示が無いこと
+      physical:
+        # 人が近づけない設備に点検を起票しても作業できない
+        - kind: belief_at_least
+          fluent: ent:Accessible
+          threshold: 0.8
+          description: 物理的に近づけること（確信度 0.8 以上）
+        - kind: belief_at_most
+          fluent: ent:UnderMaintenance
+          threshold: 0.2
+          description: すでに保全中でないこと（確信度 0.2 以下）
+      normative:
+        # 稼働中なら LOTO（ロックアウト・タグアウト）が必要。規程の参照だけを宣言し、
+        # 判定は規則エンジン（clingo）が行う
+        - kind: norm_applies
+          rule_ref: no_access_while_running
+          description: 稼働中は立入禁止の規程に反しないこと
+    effects:
+      business:
+        - kind: record_created
+          record_type: ent:WorkOrder
+          where: { work_type: Inspection, status: Open }
+          within: PT5M
+          description: 5 分以内に点検作業指示が起票される
+      physical:
+        - kind: belief_at_least
+          fluent: ent:Inspected
+          threshold: 0.9
+          within: PT24H
+          description: 24 時間以内に点検済みになる（確信度 0.9 以上）
+    approvals:
+      required_if: severity_at_least_high
+      role: ent:MaintenanceLead
+    rate_limit:
+      # 同一対象への反復を抑える（設計書 §9.3）。同じポンプに点検を 10 分おきに起票しない
+      per_target_window: PT1H
+      per_target_max: 1
+
+  # ---- 作業指示の取消し（補償アクション）------------------------------------
+  # 補償アクションにも補償が要る。取消しの取消しは「再起票」である。
+  - action_type: ent:CancelWorkOrder
+    targets: ent:Pump
+    risk_class: low
+    compensation: ent:CreateEmergencyInspection
+    preconditions:
+      symbolic:
+        - kind: present_record
+          record_type: ent:WorkOrder
+          where: { status: Open }
+          description: 取り消す対象の作業指示が存在すること
+      physical: []
+      normative: []
+    effects:
+      business:
+        - kind: record_updated
+          record_type: ent:WorkOrder
+          where: { status: Cancelled }
+          within: PT5M
+          description: 5 分以内に作業指示が取消し状態になる
+      physical: []
+    approvals:
+      required_if: never
+      role: ent:MaintenanceLead
+
+  # ---- 稼働実績の訂正（不一致の解決から出る書き戻し）------------------------
+  - action_type: ent:CorrectOperationLog
+    targets: ent:Pump
+    risk_class: medium
+    compensation: ent:RevertOperationLogCorrection
+    preconditions:
+      symbolic:
+        - kind: present_record
+          record_type: ent:OperationLog
+          where: {}
+          description: 訂正対象の稼働実績が存在すること
+      physical:
+        # 物理観測が「停止」を確信していなければ、訂正の根拠が無い
+        - kind: belief_at_most
+          fluent: ent:Running
+          threshold: 0.2
+          description: 物理観測が停止を確信していること（稼働の確信度 0.2 以下）
+      normative: []
+    effects:
+      business:
+        - kind: record_updated
+          record_type: ent:OperationLog
+          where: { running: 0 }
+          within: PT5M
+          description: 5 分以内に稼働実績が訂正される
+      physical: []
+    approvals:
+      required_if: always
+      role: ent:ProductionSupervisor
+    rate_limit:
+      per_target_window: PT15M
+      per_target_max: 2
+
+  # ---- 訂正の差し戻し（補償アクション）--------------------------------------
+  - action_type: ent:RevertOperationLogCorrection
+    targets: ent:Pump
+    risk_class: low
+    compensation: ent:CorrectOperationLog
+    preconditions:
+      symbolic:
+        - kind: present_record
+          record_type: ent:OperationLog
+          where: {}
+          description: 差し戻す対象の稼働実績が存在すること
+      physical: []
+      normative: []
+    effects:
+      business:
+        - kind: record_updated
+          record_type: ent:OperationLog
+          where: { running: 1 }
+          within: PT5M
+          description: 5 分以内に訂正前の値に戻る
+      physical: []
+    approvals:
+      required_if: never
+      role: ent:ProductionSupervisor
