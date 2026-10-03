@@ -5,9 +5,17 @@
 ``make check`` に入れる。**コミット前に落とすのが要点である**——一度コミットしたシークレットは
 履歴から消えず、無効化して配り直す以外に回収手段が無い。
 
-走査の対象は追跡対象のファイルだけ（``git ls-files``）。``.env`` は gitignore 済みなので
-そもそも出てこないが、**``.env`` に見える名前のファイルが追跡されていたらそれ自体を報告する**
-——gitignore の書き漏れがここで分かる。
+走査の対象は**追跡済み ＋ gitignore されていない未追跡**ファイル
+（``git ls-files --cached --others --exclude-standard``）。
+
+**未追跡を含めるのが要点である。** 当初は追跡済みだけを見ていたが、それでは
+``git add`` される前のファイルが見えない。実際にそれで漏らした——``.envrc``（direnv、
+実際の API キー入り）が未追跡のまま置かれ、``make check`` は緑、その後の ``git add -A`` で
+staging に入り、そのままコミットされた。**走査が見ていない場所にファイルがある間は、緑は
+「漏れていない」を意味しない。**
+
+gitignore されたファイルは除く（``--exclude-standard``）。``.env`` を読まないのはそのためで、
+**``.env`` に見える名前が gitignore から漏れていればここで報告される**。
 
 誤検知について: 鍵の形をした文字列は fixture や docstring にも現れうる。``# noqa: secret`` を
 行末に書けば除外するが、**理由を同じ行に書くこと**を求める（除外の理由が残らないと、次の人が
@@ -66,16 +74,21 @@ class Finding:
         return f"{self.path}:{self.line_no}: {self.kind}（先頭 8 文字 {self.excerpt!r}…）"
 
 
-def tracked_files() -> list[str]:
-    """git が追跡しているファイル。"""
+def scannable_files() -> list[str]:
+    """走査対象のファイル（追跡済み + gitignore されていない未追跡）。
+
+    ``--others`` で未追跡を、``--exclude-standard`` で gitignore 済みの除外を効かせる。
+    **未追跡を含めないと、``git add`` される前のファイルを見逃す**（モジュールの docstring 参照）。
+    """
     result = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=True,
     )
-    return [name for name in result.stdout.split("\0") if name]
+    # 追跡済みと未追跡で同じ名前が二度出ることはないが、念のため重複を落とす
+    return sorted({name for name in result.stdout.split("\0") if name})
 
 
 def should_scan(name: str) -> bool:
@@ -102,11 +115,14 @@ def scan_line(path: str, line_no: int, line: str) -> list[Finding]:
 def scan() -> list[Finding]:
     """追跡対象の全ファイルを走査する。"""
     findings: list[Finding] = []
-    for name in tracked_files():
+    for name in scannable_files():
         # .env そのものが追跡されていたら、中身を読む前にそれを報告する（gitignore の書き漏れ）
         base = Path(name).name
         if base == ".env" or (base.startswith(".env.") and base != ".env.example"):
             findings.append(Finding(name, 0, "gitignore されていない .env ファイル", base))
+            continue
+        if base == ".envrc" or base.startswith(".envrc."):
+            findings.append(Finding(name, 0, "gitignore されていない .envrc ファイル", base))
             continue
         if not should_scan(name):
             continue
@@ -128,7 +144,7 @@ def main() -> int:
     findings = scan()
     if not findings:
         sys.stdout.write(
-            f"✅ secret scan: {len(tracked_files())} 件の追跡ファイルに疑わしい値なし\n"
+            f"✅ secret scan: {len(scannable_files())} 件（追跡済み + 未追跡）に疑わしい値なし\n"
         )
         return 0
     sys.stderr.write(f"❌ secret scan: {len(findings)} 件検出（不変条件 12）\n")

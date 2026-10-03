@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import pytest
-from scripts.scan_secrets import Finding, scan_line, should_scan, tracked_files
+from scripts.scan_secrets import Finding, scan_line, scannable_files, should_scan
 
 # 形式だけ本物に似せた偽の値（どれも実在しない）
 _FAKE_ANTHROPIC = "sk-ant-" + "A" * 40
@@ -86,6 +86,7 @@ class TestScope:
         [
             ("src/sbp/api/app.py", True),
             (".env.example", True),
+            (".envrc", True),
             ("schemas/physical-event.json", False),
             ("src/sbp/core/vocab.py", False),
             ("ontology/imports/prov.ttl", False),
@@ -98,24 +99,39 @@ class TestScope:
         assert should_scan(name) is scanned
 
     def test_repository_is_actually_scanned(self) -> None:
-        """追跡ファイルが実際に列挙できる（走査が空振りしていないこと）。"""
-        files = tracked_files()
+        """ファイルが実際に列挙できる（走査が空振りしていないこと）。"""
+        files = scannable_files()
         assert len(files) > 50
         assert "CLAUDE.md" in files
 
-    def test_env_itself_is_not_tracked(self) -> None:
-        """``.env`` が追跡されていないこと（不変条件 12）。
+    def test_untracked_files_are_in_scope(self) -> None:
+        """**未追跡ファイルも走査対象である。**
+
+        追跡済みだけを見ていたせいで ``.envrc``（実際の API キー入り）を漏らした。
+        ``git add`` される前に見えなければ、``make check`` の緑は「漏れていない」を意味しない。
+        gitignore 済みは除くので、``.env`` は出てこない。
+        """
+        files = set(scannable_files())
+        # gitignore されたものは入らない
+        assert ".env" not in files
+        assert ".envrc" not in files
+        # 未追跡を含める指定が効いていること（--others が無ければこの一覧は追跡済みのみになる）
+        assert "CLAUDE.md" in files
+
+    def test_secret_bearing_dotfiles_are_gitignored(self) -> None:
+        """``.env`` と ``.envrc`` が gitignore されていること（不変条件 12）。
 
         ここは走査ロジックではなくリポジトリの状態を見ている。gitignore の書き漏れは
-        正規表現では防げない。
+        正規表現では防げない。``.envrc`` を加えたのは**実際にそこから漏らした**ため。
         """
-        tracked = set(tracked_files())
-        assert ".env" not in tracked
+        visible = set(scannable_files())
+        assert ".env" not in visible
+        assert ".envrc" not in visible
         offenders = [
             name
-            for name in tracked
-            if name.rsplit("/", 1)[-1].startswith(".env.")
-            and name.rsplit("/", 1)[-1] != ".env.example"
+            for name in visible
+            if (base := name.rsplit("/", 1)[-1]).startswith((".env.", ".envrc."))
+            and base != ".env.example"
         ]
         assert offenders == []
 
