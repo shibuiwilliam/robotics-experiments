@@ -170,6 +170,24 @@ class Mapping(BaseModel):
             )
         return self
 
+    def column_for(self, payload_key: str) -> str | None:
+        """``Record.payload`` のキーから業務側の列名を引く（写像の逆向き）。
+
+        記録訂正の書き戻し（設計書 §7.6）に必要になる。``fields`` は 1 列 1 キーの対応なので
+        逆引きできるが、同じキーに複数列が対応する写像を将来許す場合はここで曖昧になる——
+        そのときは逆向きを宣言で持たせる（ADR-0006 の未決事項 Δ_F）。
+
+        Args:
+            payload_key: ``Record.payload`` のキー。
+
+        Returns:
+            対応する業務側の列名。無ければ ``None``。
+        """
+        for column, key in self.fields.items():
+            if key == payload_key:
+                return column
+        return None
+
     def external_id_for(self, fields: dict[str, Any]) -> str:
         """業務側の行から ``external_id`` を組む。
 
@@ -345,6 +363,28 @@ class MappingRegistry:
             raise MappingError(
                 f"expected exactly one mapping for table {table!r}, found {len(found)}"
             )
+        return found[0]
+
+    def for_record_type(self, record_type: str) -> Mapping | None:
+        """記録型で写像を引く（書き戻しの宛先テーブルを求めるのに使う）。
+
+        該当が複数あるときは ``None`` を返す。どのテーブルに書くか決められないまま業務
+        システムを触らないためで、呼び出し側は訂正提案を作らずに記録に残す。
+
+        Args:
+            record_type: 記録型 IRI。
+
+        Returns:
+            一意に決まる写像。無い・複数あるなら ``None``。
+        """
+        found = [m for m in self._mappings.values() if m.record_type == record_type]
+        if len(found) != 1:
+            log.info(
+                "mappings.record_type_not_uniquely_mapped",
+                record_type=record_type,
+                candidates=len(found),
+            )
+            return None
         return found[0]
 
     def names(self) -> tuple[str, ...]:

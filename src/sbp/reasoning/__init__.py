@@ -17,15 +17,27 @@ from sbp.reasoning.belief import (
     TransitionPrior,
     update_belief,
 )
+from sbp.reasoning.explain import (
+    Explanation,
+    LatentSide,
+    SymbolicSide,
+    explain_belief,
+    explain_discrepancy,
+)
 
 __all__ = [
     "AuditMask",
     "BeliefFilter",
     "BeliefUpdate",
     "DwellTime",
+    "Explanation",
+    "LatentSide",
     "MaskedEvidence",
     "SourceContribution",
+    "SymbolicSide",
     "TransitionPrior",
+    "explain_belief",
+    "explain_discrepancy",
     "no_audit",
     "update_belief",
 ]
