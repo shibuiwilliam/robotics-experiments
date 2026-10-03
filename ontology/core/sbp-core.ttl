@@ -341,6 +341,46 @@ sbp:terminates
     sbp:layer "L1" ;
     sbp:owner "sbp-platform-team" .
 
+sbp:partOf
+    a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:subPropertyOf bfo:BFO_0000050 ;
+    rdfs:domain sbp:PhysicalEntity ;
+    rdfs:range sbp:PhysicalEntity ;
+    rdfs:label "部分である"@ja , "part of"@en ;
+    skos:definition "物理実体の部分−全体関係。BFO の part of の下位プロパティとして宣言し、再定義しない（設計原則 P10）。信念更新では「強い関係」として実体間結合の因子になる（設計書 §8.1）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:aggregatesAs
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:FluentType ;
+    rdfs:range sbp:AggregationRule ;
+    rdfs:label "集約規則"@ja , "aggregates as"@en ;
+    skos:definition "部分のフルーエントが全体のフルーエントへどう集約されるか。all（全部分が成立して初めて全体が成立）または any（いずれかの部分で全体が成立）。設計書 §8.1 の関係制約の因子ポテンシャルを決める。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregationRule
+    a owl:Class ;
+    rdfs:label "集約規則"@ja , "Aggregation rule"@en ;
+    skos:definition "部分−全体の集約の型。個体は sbp:AggregateAll と sbp:AggregateAny の 2 つのみ。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregateAll
+    a sbp:AggregationRule ;
+    rdfs:label "全部分集約"@ja , "aggregate all"@en ;
+    skos:definition "全部分で成立して初めて全体で成立する（稼働のような「全系が揃って初めて成り立つ」状態）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregateAny
+    a sbp:AggregationRule ;
+    rdfs:label "部分和集約"@ja , "aggregate any"@en ;
+    skos:definition "いずれかの部分で成立すれば全体で成立する（故障・異常のような「どこか一つ壊れれば全体が壊れている」状態）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
 sbp:mutuallyExclusiveWith
     a owl:ObjectProperty , owl:SymmetricProperty ;
     rdfs:domain sbp:FluentType ;

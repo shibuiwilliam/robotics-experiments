@@ -8,6 +8,29 @@ semver の判定基準（CLAUDE.md「オントロジー変更の手順」）:
 
 非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 
+## 0.4.0 — 2026-10-03
+
+MINOR（加法的な追加）。既存のフルーエント型・事象型・形状に変更はないため、プローブ・
+クエリ・`schemas/` の後方互換は保たれる（契約テスト `test_ontology_compat.py` で確認）。
+
+### 追加（中核 — `ontology/core/sbp-core.ttl`）
+
+実体間結合（設計書 §8.1「関係制約」）を宣言で持つために必要な 2 プロパティ + 1 クラス +
+2 個体。コード側（`sbp.reasoning.coupling`）は結合の構造をここから読む。
+
+- `sbp:partOf`（ObjectProperty, TransitiveProperty）: 物理実体の部分−全体関係。BFO の
+  `part of`（BFO_0000050）の**下位プロパティ**として宣言し、再定義しない（設計原則 P10）。
+  設計書 §8.1 の「強い関係」の一方である。
+- `sbp:aggregatesAs`（ObjectProperty）: FluentType → AggregationRule。部分の状態が全体へ
+  どう集約されるかを**フルーエント型ごとに**宣言する。`Running` は all（全部が動いて初めて
+  系が動いている）、`Faulted` は any（どこか一つ壊れれば系は壊れている）——この違いを
+  コードの条件分岐ではなくオントロジーに置く。
+- `sbp:AggregationRule`（Class）と個体 `sbp:AggregateAll` / `sbp:AggregateAny`。
+
+### 追加（ドメイン — `ontology/domain/equipment-maintenance.ttl`）
+
+- 既存 7 フルーエント型に `sbp:aggregatesAs` を付与（注釈的追加。型は増やさない）。
+
 ## 0.3.0 — 2026-10-03
 
 semver 判定: **MINOR**（``initiates`` / ``terminates`` の加法的追加のみ。既存の型・関係の

@@ -122,6 +122,7 @@ ent:Running
     skos:definition "設備が稼働している状態。UnderMaintenance と排他（設計書 §3.8）。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
     sbp:mutuallyExclusiveWith ent:UnderMaintenance ;
+    sbp:aggregatesAs sbp:AggregateAll ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -131,6 +132,7 @@ ent:UnderMaintenance
     skos:definition "設備が保全作業中の状態。作業指示の完了記録が弱ラベルになる。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
     sbp:mutuallyExclusiveWith ent:Running ;
+    sbp:aggregatesAs sbp:AggregateAny ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -139,6 +141,7 @@ ent:Faulted
     rdfs:label "故障中"@ja , "Faulted"@en ;
     skos:definition "設備が故障して停止している状態。StopCmd による計画停止と区別する。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAny ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -147,6 +150,7 @@ ent:VibrationAnomaly
     rdfs:label "振動異常"@ja , "Vibration anomaly"@en ;
     skos:definition "振動が正常域を外れている状態。設計書 §14 で停止原因の切り分けに用いられる補助フルーエント。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAny ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -155,6 +159,7 @@ ent:Accessible
     rdfs:label "接近可能"@ja , "Accessible"@en ;
     skos:definition "人が安全に接近できる状態。アクションの物理前提（設計書 §9.1）に用いる。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAll ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -163,6 +168,7 @@ ent:Inspected
     rdfs:label "点検済み"@ja , "Inspected"@en ;
     skos:definition "点検が完了した状態。緊急点検アクションの期待効果（Expectation）の対象。"@ja ;
     sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAll ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
@@ -171,6 +177,7 @@ ent:Present
     rdfs:label "存在する"@ja , "Present"@en ;
     skos:definition "物品が指定の場所に存在する状態。存在不一致（類型 1、幽霊在庫）の判定対象。"@ja ;
     sbp:subjectType sbp:MaterialItem ;
+    sbp:aggregatesAs sbp:AggregateAll ;
     sbp:layer "L2" ;
     sbp:owner "maintenance-domain-owner" .
 
