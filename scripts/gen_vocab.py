@@ -8,8 +8,10 @@ Python からは ``vocab.ent.Running`` のように参照する（CLAUDE.md 命�
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from scripts._ontology import (
     NAMESPACES,
@@ -117,6 +119,20 @@ def render(terms: list[Term], version: str) -> str:
     return "".join(parts)
 
 
+def _normalize(path: Path) -> None:
+    """生成したファイルを ruff で整形して出力を正規化する。
+
+    整形を生成の一部にしないと、``make lint`` の整形で生成物が書き換わり、
+    ``make ontology-check`` の鮮度チェックが毎回「古い」と報告する循環に陥る。
+    """
+    subprocess.run(
+        [sys.executable, "-m", "ruff", "format", "--quiet", str(path)],
+        cwd=path.parents[4],
+        capture_output=True,
+        check=False,
+    )
+
+
 def main() -> int:
     """vocab.py を生成して差分の有無を標準出力に示す。"""
     graph = load_ontology()
@@ -124,7 +140,8 @@ def main() -> int:
     content = render(terms, ontology_version())
     previous = VOCAB_PATH.read_text(encoding="utf-8") if VOCAB_PATH.exists() else None
     VOCAB_PATH.write_text(content, encoding="utf-8")
-    changed = previous != content
+    _normalize(VOCAB_PATH)
+    changed = previous != VOCAB_PATH.read_text(encoding="utf-8")
     sys.stdout.write(
         f"gen_vocab: {len(terms)} terms -> {VOCAB_PATH.relative_to(VOCAB_PATH.parents[4])}"
         f" ({'changed' if changed else 'unchanged'})\n"

@@ -87,9 +87,13 @@
 - [x] **M0-10** `sbp.eventlog` — producer（EventEnvelope のみ・送信前 JSON Schema 検証）、consumer（at-least-once、`processed_events` による冪等化、リトライ、graceful shutdown）。単体はモックブローカー → 完了（producer/consumer・スキーマ検証・冪等化・有限リトライ。単体 20 件）
 - [x] **M0-11** `sbp.knowledge.assertions` — 二時制 API（`assert_` / `retract` / `query(as_of, valid_at, modality, min_confidence)`）、RDF-star メタデータ、名前付きグラフ戦略、`ontology_version` 必須返却。単体は pyoxigraph 組み込み → 完了（assert_/retract/query。ADR-0005 で RDF 1.2 記法に。単体 23 件）
 - [x] **M0-12** 性質・契約テスト一式 — 二時制 as-of/valid-at、様相格子、冪等性（hypothesis）、`schemas/*.json` ↔ pydantic 往復 → 完了（性質 14 件: 二時制・区間代数 / 契約: スキーマ往復・語彙・semver）
-- [ ] **M0-13** 統合テスト G0 — Compose 上で produce → consume → assert_ → as-of query の往復（`-m integration`）
+- [x] **M0-13** 統合テスト G0 — Compose 上で produce → consume → assert_ → as-of query の往復（`-m integration`） → 完了（統合 9 件緑）
 
-**ゲート G0**: `make check` 緑 + M0-13 緑。`make bootstrap` から新規環境で 30 分以内に再現できる。
+**ゲート G0**: ✅ **通過（2026-10-03）**
+- 条件 1 `make check` 緑: lint / pyright strict / 層依存 5 契約 / ontology-check 7 項目 / 単体・性質・契約 168 件
+- 条件 2 M0-13 緑: 統合 9 件（produce → consume → assert_ → as-of query、再配送の冪等性、シナリオ隔離、スタック疎通）
+- 条件 3 再現性: 4 サービス稼働（oxigraph は ADR-0004 により Health 欄が空欄で正常）、`make seed` は冪等、全イメージ固定版で匿名取得可
+- 実装中に判明した外部要因・仕様差は ADR-0003/0004/0005 に記録し、CLAUDE.md・層別ルール・設計書へ反映済み
 
 主要リスク: pyoxigraph の RDF-star API 制約（詰まったら ADR で回避策）、arm64 イメージの互換。
 

@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import RDF, RDFS, SKOS
 from scripts._ontology import (
     ENT,
     SBP,
+    VOCAB_PATH,
     collect_terms,
     event_types,
     fluent_types,
@@ -20,6 +23,7 @@ from scripts._ontology import (
 from scripts.ontology_check import (
     Report,
     check_annotations,
+    check_generated_artifacts,
     check_process_rules,
     check_shacl_warning_for_exclusives,
 )
@@ -152,3 +156,38 @@ class TestOntologyContents:
         for term in fluent_types(graph):
             subject_types = list(graph.objects(URIRef(term.iri), SBP.subjectType))
             assert subject_types, f"{term.local_name} has no subjectType"
+
+
+class TestGeneratedArtifactFreshness:
+    """生成物の鮮度チェック（``make ontology-check`` の項目 6）。"""
+
+    def test_in_sync_artifacts_pass(self) -> None:
+        """現在の生成物は同期済み（回帰防止）。"""
+        report = Report()
+        check_generated_artifacts(report)
+        assert report.failures == []
+        assert any("in sync" in n for n in report.notes)
+
+    def test_stale_vocab_is_detected(self, tmp_path: Path) -> None:
+        """生成物が古いまま残っていたら検出される。
+
+        ``vocab.py`` を一時的に改変し、``make gen`` 相当の再生成で内容が変わることを
+        検査が捕まえられるかを見る。改変は必ず元に戻す。
+        """
+        original = VOCAB_PATH.read_bytes()
+        backup = tmp_path / "vocab.py.bak"
+        backup.write_bytes(original)
+        try:
+            VOCAB_PATH.write_text(
+                original.decode("utf-8") + '\n_STALE_MARKER = "injected"\n', encoding="utf-8"
+            )
+            report = Report()
+            check_generated_artifacts(report)
+            assert any("stale" in f for f in report.failures), "改変された生成物を検出できていない"
+        finally:
+            VOCAB_PATH.write_bytes(backup.read_bytes())
+
+        # 復元後は再び緑になること（検査が後に影響を残さない）
+        report = Report()
+        check_generated_artifacts(report)
+        assert report.failures == []

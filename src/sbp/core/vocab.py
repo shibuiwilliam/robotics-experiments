@@ -416,7 +416,6 @@ class _Core:
     """
 
 
-
 class _Ent:
     """ドメイン・企業層の語彙（``https://sbp.example/ent#``）。"""
 
@@ -595,7 +594,6 @@ class _Ent:
 
     CMMS の作業指示。完了記録は弱ラベル（UnderMaintenance の時間バッグ）の生成元になる（設計書 §5.2）。
     """
-
 
 
 core: Final = _Core()

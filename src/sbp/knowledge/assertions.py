@@ -262,6 +262,7 @@ class AssertionStore:
         min_confidence: float | None = None,
         scenario: str | None = None,
         include_closed: bool = False,
+        all_sites: bool = False,
     ) -> list[AssertionRow]:
         """二時制クエリ。
 
@@ -279,6 +280,8 @@ class AssertionStore:
                 主信念グラフだけを見る（``hypothetical`` は混ざらない。不変条件 3）。
             include_closed: 真にすると ``tx_to`` が閉じた文も返す（精度追跡・監査用）。
                 ``as_of`` を指定した場合はそちらの条件が優先される。
+            all_sites: 既定ではこのストアの拠点のグラフだけを見る（設計書 §6.3 のパーティション）。
+                真にすると全拠点を横断する。中央のフェデレーション層だけが使う。
 
         Returns:
             条件に合う文のリスト。各行は ``ontology_version`` を必ず持つ。
@@ -309,10 +312,13 @@ class AssertionStore:
         # シナリオグラフ（hypothetical の隔離先）を混ぜない（不変条件 3）。
         if scenario is not None:
             graph_clause = f"GRAPH {_iri(scenario_graph(scenario))} {{"
-            scenario_filter = ""
+            graph_filters = ""
         else:
             graph_clause = "GRAPH ?g {"
-            scenario_filter = "  FILTER (!STRSTARTS(STR(?g), 'urn:sbp:scenario:'))\n"
+            graph_filters = "  FILTER (!STRSTARTS(STR(?g), 'urn:sbp:scenario:'))\n"
+            if not all_sites:
+                # 拠点スコープ。グラフ IRI は urn:sbp:g:<modality>:<site>:<version>。
+                graph_filters += f"  FILTER (CONTAINS(STR(?g), ':{self._site_id}:'))\n"
 
         sparql = (
             f"{_PREFIXES}\n"
@@ -330,7 +336,7 @@ class AssertionStore:
             "    OPTIONAL { ?a sbp:validTo ?validTo }\n"
             "    OPTIONAL { ?a sbp:txTo ?txTo }\n"
             "  }\n"
-            f"{scenario_filter}" + "".join(f"  {f}\n" for f in filters) + "}\nORDER BY ?txFrom ?a"
+            f"{graph_filters}" + "".join(f"  {f}\n" for f in filters) + "}\nORDER BY ?txFrom ?a"
         )
         rows = self._store.query(sparql)
         return [self._to_row(row) for row in rows]

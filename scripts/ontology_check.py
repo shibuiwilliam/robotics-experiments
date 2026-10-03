@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -242,22 +243,24 @@ def check_version(report: Report) -> None:
     report.note(f"version: {version}")
 
 
-def _git_status(paths: list[Path]) -> list[str]:
-    existing = [str(p.relative_to(_REPO_ROOT)) for p in paths if p.exists()]
-    if not existing:
-        return []
-    result = subprocess.run(
-        ["git", "status", "--porcelain", "--", *existing],
-        cwd=_REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return [line for line in result.stdout.splitlines() if line.strip()]
+def _artifact_digest() -> dict[str, str]:
+    """生成物の内容ハッシュを返す。
+
+    git の作業ツリー状態（staged / untracked）に依存せず、「いま生成し直したら同じ内容になるか」
+    だけを見る。新規クローンでも CI でも同じ判定になる。
+    """
+    digests: dict[str, str] = {}
+    targets: list[Path] = [VOCAB_PATH, *sorted(SCHEMAS_DIR.rglob("*.json"))]
+    for path in targets:
+        if path.exists():
+            digests[str(path.relative_to(_REPO_ROOT))] = hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
+    return digests
 
 
 def check_generated_artifacts(report: Report) -> None:
-    """6. 生成物の差分。
+    """6. 生成物の鮮度。
 
     ``make gen`` を実行し直しても ``vocab.py`` / ``schemas/`` が変化しないことを確認する。
     生成物がオントロジーより古いまま commit されるのを防ぐ。
@@ -271,7 +274,7 @@ def check_generated_artifacts(report: Report) -> None:
         )
         return
 
-    before = _git_status([VOCAB_PATH, SCHEMAS_DIR])
+    before = _artifact_digest()
     for module in ("scripts.gen_vocab", "scripts.gen_schemas"):
         result = subprocess.run(
             [sys.executable, "-m", module],
@@ -283,16 +286,22 @@ def check_generated_artifacts(report: Report) -> None:
         if result.returncode != 0:
             report.fail("generated", f"{module} failed: {result.stderr.strip()}")
             return
-    after = _git_status([VOCAB_PATH, SCHEMAS_DIR])
-    if after != before:
-        new_changes = sorted(set(after) - set(before))
+    after = _artifact_digest()
+
+    changed = sorted(
+        name for name in before.keys() | after.keys() if before.get(name) != after.get(name)
+    )
+    if changed:
         report.fail(
             "generated",
-            "generated artifacts are stale; run `make gen` and commit the result "
-            f"(changed: {new_changes})",
+            "generated artifacts were stale; `make gen` changed them. "
+            f"Commit the regenerated files: {changed}",
         )
     else:
-        report.note("generated: vocab.py and schemas/ are in sync with ontology/")
+        report.note(
+            f"generated: {len(after)} artifact(s) are in sync with ontology/ "
+            "(regeneration produced identical content)"
+        )
 
 
 def main() -> int:
