@@ -128,11 +128,17 @@ class Resolution(BaseModel):
 class LearningSignals(BaseModel):
     """学習信号（付録 A.2 の ``learning``）。
 
+    付録 A.2 の ``learning`` に ``corrections_proposed`` を加えている（加法的な拡張）。
+    設計書 §8.2 の表は「物理が正しい → 記録訂正（書き戻し提案）」を第一の処置に挙げており、
+    **訂正提案は学習信号である**。これを数えないと、訂正提案だけを生んだ解決が「何も学ばなかった」
+    ことになり ``Learned`` に進めない（実際に G5 の統合テストがこれで落ちた）。
+
     Attributes:
         labels_emitted: 生成した弱ラベル（``TimeBag`` など）の IRI。
         reliability_updates: 更新した信頼性モデルの鍵。
         concept_candidates: 提案した概念候補の IRI。
         observation_requests: エピステミック・スケジューラへ積んだ観測要求の IRI。
+        corrections_proposed: 業務システムへの訂正提案（``command_id``）。
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -141,6 +147,7 @@ class LearningSignals(BaseModel):
     reliability_updates: tuple[str, ...] = ()
     concept_candidates: tuple[str, ...] = ()
     observation_requests: tuple[str, ...] = ()
+    corrections_proposed: tuple[str, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -150,6 +157,7 @@ class LearningSignals(BaseModel):
             or self.reliability_updates
             or self.concept_candidates
             or self.observation_requests
+            or self.corrections_proposed
         )
 
 

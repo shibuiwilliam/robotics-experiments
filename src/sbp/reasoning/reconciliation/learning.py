@@ -192,6 +192,7 @@ def convert_resolution(
         observation_requests=tuple(
             f"{request.entity}#observe-{request.discrepancy_id}" for request in requests
         ),
+        corrections_proposed=tuple(str(command.command_id) for command in corrections_out),
     )
     log.info(
         "reconciliation.learning_signals_built",

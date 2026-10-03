@@ -78,6 +78,40 @@ def continuous_ranked_probability_score(samples: NDArray[np.float64], observed: 
     return accuracy - 0.5 * spread
 
 
+def conformal_halfwidth(residuals: Sequence[float], *, level: float) -> float:
+    """残差から予測区間の半幅を較正する（conformal、設計書 §8.5）。
+
+    **固定幅の区間は状態が変わる時点で必ず外れる。** 持続予測の区間幅を手で決めると、遷移を
+    またぐ地平で被覆率が名目を下回る——そして「幅を広げて通す」のは較正ではなく調整である。
+    conformal 予測は較正データの残差分位点を半幅にするので、**交換可能性の仮定の下で有限標本でも
+    名目被覆を保証する**。手で決める余地が無いのが利点である。
+
+    有限標本補正に ``ceil((n+1)·level) / n`` 番目の分位点を使う（単純に ``level`` 分位点を取ると
+    名目をわずかに下回る）。
+
+    Args:
+        residuals: 較正データでの絶対残差。
+        level: 名目被覆（0.9 なら 90%）。
+
+    Returns:
+        区間の半幅。
+
+    Raises:
+        ReasoningError: 残差が空、または ``level`` が範囲外の場合。
+    """
+    if not residuals:
+        raise ReasoningError(
+            "conformal calibration needs residuals from a calibration split; without them the "
+            "interval width would be a guess"
+        )
+    if not 0.0 < level < 1.0:
+        raise ReasoningError(f"level must be in (0, 1), got {level}")
+    ordered = np.sort(np.abs(np.asarray(residuals, dtype=np.float64)))
+    count = ordered.size
+    index = int(np.ceil((count + 1) * level)) - 1
+    return float(ordered[min(index, count - 1)])
+
+
 def interval_coverage(
     observations: Sequence[float], lowers: Sequence[float], uppers: Sequence[float]
 ) -> float:
