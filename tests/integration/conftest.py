@@ -10,6 +10,7 @@ healthcheck なので、省略すると検査が完全に消える。
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import psycopg
@@ -22,6 +23,9 @@ from sbp.knowledge import AssertionStore, HttpGraphStore
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+"""リポジトリのルート（mappings/ と reliability/ を読むため）。"""
 
 pytestmark = [pytest.mark.integration, pytest.mark.enable_socket]
 

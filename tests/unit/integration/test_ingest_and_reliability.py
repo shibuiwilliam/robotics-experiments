@@ -20,6 +20,7 @@ from sbp.integration import (
     MasterDataResolver,
     ReliabilityRegistry,
 )
+from sbp.integration.connectors import SchemaFingerprint
 from sbp.integration.mock import MockBusinessSystem
 from sbp.integration.mock.business_system import build_default_scenario
 from sbp.integration.reliability import ConfusionMatrix, ReliabilityModel, TimeOffsetProfile
@@ -330,3 +331,45 @@ class TestSystematicBias:
             ontology_version=VERSION,
         )
         assert model.explains_as_systematic(record) is None
+
+
+class TestSchemaDrift:
+    """スキーマ指紋とドリフト検知（M1-04、設計書 §7.2）。"""
+
+    async def test_added_column_is_reported_as_non_breaking(
+        self, pipeline: IngestionPipeline
+    ) -> None:
+        """列の追加は写像を壊さない（宣言した列が残っているため）。"""
+        with MockBusinessSystem(table="work_order") as mock:
+            await pipeline.check_drift(mock)  # 基準を取る
+            mock.add_column("priority")
+            drift = await pipeline.check_drift(mock)
+
+        assert len(drift) == 1
+        assert drift[0].diff["added"] == ["priority"]
+        assert drift[0].diff["removed"] == []
+        assert not drift[0].is_breaking, "列の追加だけなら写像は壊れない"
+
+    async def test_drift_is_reported_only_once_per_change(
+        self, pipeline: IngestionPipeline
+    ) -> None:
+        """同じ変更を繰り返し報告しない（検知後は新しい指紋が基準になる）。"""
+        with MockBusinessSystem(table="operation_log") as mock:
+            await pipeline.check_drift(mock)
+            mock.add_column("note")
+            assert len(await pipeline.check_drift(mock)) == 1
+            assert await pipeline.check_drift(mock) == [], "2 回目は報告しない"
+
+    def test_fingerprint_diff_classifies_changes(self) -> None:
+        """差分が追加・削除・型変更に分類される。"""
+
+        before = SchemaFingerprint(
+            source="s", table="t", columns=(("a", "TEXT"), ("b", "INTEGER"), ("c", "TEXT"))
+        )
+        after = SchemaFingerprint(
+            source="s", table="t", columns=(("a", "TEXT"), ("b", "TEXT"), ("d", "TEXT"))
+        )
+        diff = after.diff(before)
+        assert diff["added"] == ["d"]
+        assert diff["removed"] == ["c"]
+        assert diff["retyped"] == ["b"]

@@ -11,6 +11,7 @@ from __future__ import annotations
 from sbp.integration.connectors import Connector, RawRecord, SchemaFingerprint
 from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected
 from sbp.integration.mappings import Mapping, MappingRegistry, MappingResult
+from sbp.integration.plans import NormRule, plan_item_from_record, to_planned_assertion
 from sbp.integration.reliability import (
     ConfusionMatrix,
     ReliabilityModel,
@@ -24,6 +25,13 @@ from sbp.integration.resolver import (
     ResolutionOutcome,
     resolve_subject,
 )
+from sbp.integration.writeback import (
+    WritebackCommand,
+    WritebackExecutor,
+    WritebackOutcome,
+    WritebackResult,
+    WritebackTarget,
+)
 
 __all__ = [
     "ConfusionMatrix",
@@ -36,6 +44,7 @@ __all__ = [
     "MappingRegistry",
     "MappingResult",
     "MasterDataResolver",
+    "NormRule",
     "RawRecord",
     "ReliabilityModel",
     "ReliabilityRegistry",
@@ -43,5 +52,12 @@ __all__ = [
     "SchemaFingerprint",
     "SystematicBias",
     "TimeOffsetProfile",
+    "WritebackCommand",
+    "WritebackExecutor",
+    "WritebackOutcome",
+    "WritebackResult",
+    "WritebackTarget",
+    "plan_item_from_record",
     "resolve_subject",
+    "to_planned_assertion",
 ]

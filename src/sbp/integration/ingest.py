@@ -27,10 +27,11 @@ from sbp.core.events import (
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.records import Record, UnresolvedRef
+from sbp.integration.connectors import SchemaFingerprint
 from sbp.integration.resolver import resolve_subject
 
 if TYPE_CHECKING:
-    from sbp.integration.connectors import Connector, RawRecord, SchemaFingerprint
+    from sbp.integration.connectors import Connector, RawRecord
     from sbp.integration.mappings import MappingRegistry
     from sbp.integration.reliability import ReliabilityRegistry
     from sbp.integration.resolver import EntityResolver
@@ -125,7 +126,8 @@ class IngestionPipeline:
         self._resolver = resolver
         self._reliability = reliability
         self._ontology_version = ontology_version
-        self._fingerprints: dict[tuple[str, str], str] = {}
+        # 列単位の差分を出すには digest だけでは足りないので、指紋そのものを保持する。
+        self._fingerprints: dict[tuple[str, str], SchemaFingerprint] = {}
 
     async def check_drift(self, connector: Connector) -> list[MappingDriftDetected]:
         """スキーマ指紋を比較して変更を検知する（起動時・取り込み前）。
@@ -140,29 +142,28 @@ class IngestionPipeline:
         fingerprints: tuple[SchemaFingerprint, ...] = tuple(await connector.fingerprints())
         for fingerprint in fingerprints:
             key = (fingerprint.source, fingerprint.table)
-            current = fingerprint.digest()
             previous = self._fingerprints.get(key)
-            if previous is not None and previous != current:
-                # 差分を出すために前回の列構成が必要。指紋だけでは差分が取れないため、
-                # ここでは digest の変化を報告し、列単位の差分は呼び出し側が
-                # 2 つの SchemaFingerprint を渡して diff() を取る。
-                detected.append(
-                    MappingDriftDetected(
-                        source=fingerprint.source,
-                        table=fingerprint.table,
-                        previous_digest=previous,
-                        current_digest=current,
-                        diff={"added": [], "removed": [], "retyped": []},
-                    )
+            if previous is not None and previous.digest() != fingerprint.digest():
+                drift = MappingDriftDetected(
+                    source=fingerprint.source,
+                    table=fingerprint.table,
+                    previous_digest=previous.digest(),
+                    current_digest=fingerprint.digest(),
+                    diff=fingerprint.diff(previous),
                 )
+                detected.append(drift)
                 log.warning(
                     "integration.mapping_drift",
                     source=fingerprint.source,
                     table=fingerprint.table,
-                    previous=previous,
-                    current=current,
+                    previous=drift.previous_digest,
+                    current=drift.current_digest,
+                    added=drift.diff["added"],
+                    removed=drift.diff["removed"],
+                    retyped=drift.diff["retyped"],
+                    breaking=drift.is_breaking,
                 )
-            self._fingerprints[key] = current
+            self._fingerprints[key] = fingerprint
         return detected
 
     def ingest_rows(self, rows: list[RawRecord]) -> IngestResult:

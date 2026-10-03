@@ -261,6 +261,20 @@ class MockBusinessSystem:
         log.debug("mock.scenario_applied", scenario=scenario.name, table=self._table, steps=applied)
         return applied
 
+    def add_column(self, name: str, sql_type: str = "TEXT") -> None:
+        """テーブルに列を追加する（業務側のスキーマ変更を再現する）。
+
+        業務システムのスキーマは基盤の都合とは無関係に変わる。ドリフト検知
+        （設計書 §7.2）を検証するには、その変化を起こせる必要がある。
+
+        Args:
+            name: 追加する列名。
+            sql_type: SQLite の型名。
+        """
+        self._connection.execute(f"ALTER TABLE {self._table} ADD COLUMN {name} {sql_type}")
+        self._connection.commit()
+        log.debug("mock.column_added", table=self._table, column=name, type=sql_type)
+
     def upsert(self, values: dict[str, Any]) -> None:
         """1 行を挿入または更新する。
 
