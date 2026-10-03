@@ -27,12 +27,22 @@ from sbp.core.events import (
     topic_name,
 )
 from sbp.core.ids import EventId, Iri, new_event_id, site_iri
+from sbp.core.metrics import (
+    METRICS,
+    MetricDomain,
+    MetricName,
+    MetricSample,
+    MetricUnit,
+    metric,
+    prometheus_exposition,
+)
 from sbp.core.modality import INFERENCE_OUTPUT_MODALITY, MAIN_BELIEF_MODALITIES, Modality
 from sbp.core.time import AllenRelation, Interval, UtcDatetime, allen_relation, ensure_utc, now
 
 __all__ = [
     "INFERENCE_OUTPUT_MODALITY",
     "MAIN_BELIEF_MODALITIES",
+    "METRICS",
     "SCHEMA_VERSION",
     "AllenRelation",
     "Assertion",
@@ -47,6 +57,10 @@ __all__ = [
     "Interval",
     "Iri",
     "MaskedEvidence",
+    "MetricDomain",
+    "MetricName",
+    "MetricSample",
+    "MetricUnit",
     "Modality",
     "NumericBelief",
     "ProbeEvidence",
@@ -59,9 +73,11 @@ __all__ = [
     "ValidTime",
     "allen_relation",
     "ensure_utc",
+    "metric",
     "new_event_id",
     "no_audit",
     "now",
+    "prometheus_exposition",
     "site_iri",
     "topic_name",
 ]

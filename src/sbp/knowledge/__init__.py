@@ -14,11 +14,23 @@ from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
 from sbp.knowledge.hybrid import plan as plan_hybrid
 from sbp.knowledge.latent import LatentIndex, LatentNeighbour, LatentRegistration
+from sbp.knowledge.regrounding import (
+    CompatibilityMatrix,
+    DiffEntry,
+    RegroundingPlan,
+    RegroundingReport,
+    RegroundingTrigger,
+    ScopeEstimate,
+)
+from sbp.knowledge.regrounding import plan as plan_regrounding
+from sbp.knowledge.regrounding import summarise as summarise_regrounding
 from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 
 __all__ = [
     "AssertionRow",
     "AssertionStore",
+    "CompatibilityMatrix",
+    "DiffEntry",
     "EmbeddedGraphStore",
     "GraphStore",
     "HttpGraphStore",
@@ -27,10 +39,16 @@ __all__ = [
     "LatentNeighbour",
     "LatentRegistration",
     "PlanStrategy",
+    "RegroundingPlan",
+    "RegroundingReport",
+    "RegroundingTrigger",
+    "ScopeEstimate",
     "Selectivity",
     "belief_graph",
     "is_scenario_graph",
     "plan_hybrid",
+    "plan_regrounding",
     "scenario_graph",
     "schema_graph",
+    "summarise_regrounding",
 ]
