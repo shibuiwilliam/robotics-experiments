@@ -1,0 +1,33 @@
+# 用途別のプロバイダとプロンプト版（LLM 利用ポリシー）。
+#
+# **モデル ID はここに書かない。** `.env` の ANTHROPIC_MODEL / OPENAI_MODEL / GEMINI_MODEL から
+# 読む（コードにも設定にもモデル ID を埋めない、という規約）。ここで決めるのは「どの用途を
+# どのプロバイダに回すか」と「どのプロンプト版を使うか」である。
+#
+# プロンプト版を上げたら hash が変わり、fixture も別のものを要求する。これは意図した挙動で、
+# 「プロンプトを変えたのにテストが通る」状態を防ぐ。
+
+tasks:
+  # 概念提案は定義の質が要るので既定プロバイダ（.env の SBP_LLM_DEFAULT）に回す
+  concept_proposal:
+    provider: default
+    prompt_version: 1.0.0
+
+  # 文書抽出は根拠スパンの正確さが要る。長文を扱うので同じく既定
+  document_extraction:
+    provider: default
+    prompt_version: 1.0.0
+
+  # 説明の文章化は内容を変えないので、安価なプロバイダでよい
+  explanation_narrative:
+    provider: default
+    prompt_version: 1.0.0
+
+  # NL → クエリ変換
+  query_translation:
+    provider: default
+    prompt_version: 1.0.0
+
+embeddings:
+  # 埋め込みは .env の SBP_EMBEDDINGS で選ぶ（openai / gemini / local）
+  provider: default
