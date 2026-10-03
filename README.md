@@ -29,6 +29,7 @@ make check       # lint + typecheck + ontology-check + test（コミット前に
 | `docs/development-rules.md` | ディレクトリ構成・ファイルの役割・開発規約の統合整理 |
 | `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M7 タスク分解・運用・リスク） |
 | `docs/PROMPT.md` | 開発遂行用プロンプト集（セッション運営・タスク実行・マイルストーン別・横断・運用・リカバリ） |
+| `docs/PROGRESS.md` | 開発経過の記録（実装中に判明した事実、ADR に至らなかった判断、既知の制約） |
 | `docs/adr/` | 設計判断の記録（MADR 形式。テンプレは `0000-template.md`） |
 | `docs/STATUS.md` | マイルストーン進捗（M0〜M7）。進捗はここだけに書く |
 | `.claude/rules/*.md` | 層別の詳細ルール（paths 連動で該当ファイルを開くと自動読込） |

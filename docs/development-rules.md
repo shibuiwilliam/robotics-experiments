@@ -298,5 +298,6 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 | `docs/adr/0000-template.md` | ADR テンプレート | §8-4 |
 | `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M7 分解・運用・リスク） | §8-1 |
 | `docs/PROMPT.md` | 開発遂行用プロンプト集（TASK.md を 1 セッションずつ消化するための定型指示文） | §8 |
+| `docs/PROGRESS.md` | 開発経過（実装中に判明した事実、ADR に至らなかった判断、既知の制約） | §8 |
 | `docs/STATUS.md` | マイルストーン進捗サマリ（現在: M0 着手前） | §2.2, §8-1 |
 | `.env.example` | 全環境変数の一覧（Kafka/PG/SPARQL/S3/MPS/LLM/書き戻し） | §7 |
