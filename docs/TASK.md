@@ -122,11 +122,11 @@
 
 目的: 接地層の全 IF を、`SynthWorld` が生成する合成潜在系列で先に完成させる（WM 本体は M4）。
 
-- [ ] **M2-01** `sbp.testing.synth.SynthWorld(seed)` — 事象計算規則からの状態系列生成、合成潜在（既知の線形構造 + ノイズ）、`oracle`（真値。testing 外から import 禁止の lint 境界も同時に）
-- [ ] **M2-02** `ProbeSpec` と線形プローブ — 登録メタデータ（§5.2）、分類/回帰、学習（弱教師）、非線形必要時のログと WM 改善候補登録
-- [ ] **M2-03** `TimeBag` と MIL 損失 — 記録由来の弱ラベル生成（Record → 概念×実体×時間バッグ）、信頼性由来の重み
-- [ ] **M2-04** `Calibrator` — 温度スケーリング / conformal、ECE 計測、認識的・偶然的不確実性の分離
-- [ ] **M2-05** `promote()` ゲート — AUROC ≥ 0.85 ∧ ECE ≤ 0.05 ∧ 整合残差 ≤ 既存 active 中央値の AND。満たさなければ例外
+- [x] **M2-01** `sbp.testing.synth.SynthWorld(seed)` — 事象計算規則からの状態系列生成、合成潜在（既知の線形構造 + ノイズ）、`oracle`（真値。testing 外から import 禁止の lint 境界も同時に） → 完了（真値・観測・階層潜在。cycles で変化点を複数に。oracle は lint 境界で保護）
+- [x] **M2-02** `ProbeSpec` と線形プローブ — 登録メタデータ（§5.2）、分類/回帰、学習（弱教師）、非線形必要時のログと WM 改善候補登録 → 完了（線形プローブ。未較正の予測を例外で拒否。有効ドメイン判定つき）
+- [x] **M2-03** `TimeBag` と MIL 損失 — 記録由来の弱ラベル生成（Record → 概念×実体×時間バッグ）、信頼性由来の重み → 完了（TimeBag + noisy-OR MIL。重みは信頼性由来。勾配は解析的）
+- [x] **M2-04** `Calibrator` — 温度スケーリング / conformal、ECE 計測、認識的・偶然的不確実性の分離 → 完了（温度スケーリング + conformal。ECE 0.082→0.015 を実測、順位は不変）
+- [x] **M2-05** `promote()` ゲート — AUROC ≥ 0.85 ∧ ECE ≤ 0.05 ∧ 整合残差 ≤ 既存 active 中央値の AND。満たさなければ例外 → 完了（AND ゲート。AUROC 1.0 でも ECE・整合残差で拒否することをテストで保証）
 - [ ] **M2-06** 事象昇格パイプライン — BOCPD（自前 `bocpd.py`）→ ヒステリシス → 最小持続 → clingo 逆写像 → 重複抑制 → `TypedProbabilisticEvent`（`uncertainty_s` 必須）
 - [ ] **M2-07** 同一性束縛 — Track → `UnidentifiedPhysicalObject` 登録、`linear_sum_assignment`、`IdentityClaim`（撤回時 kind=4 起票は M3 と接続）
 - [ ] **M2-08** 空間束縛 — shapely ゾーン包含、位置 `(mean, cov)` → `locatedIn` 確率、包含階層の導出
