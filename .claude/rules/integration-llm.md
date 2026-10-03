@@ -10,7 +10,11 @@ paths:
 - 取り込んだ生レコードは `Record`（ICE）として保持し、`BusinessEvent` に変換する。`is_about` の対象解決は `resolver.py`。未解決は `UnresolvedRef` として残す（捨てない）。
 
 ## 写像（`mappings/`）
-- RML / R2RML（`*.rml.ttl`）。写像ごとに `tests/contract/test_mapping_<name>.py` でキー保存・必須制約・多重度を検査する。
+- 写像 DSL（`mappings/*.yaml`、ADR-0006）。既存の Python 製 RML プロセッサは pyoxigraph 0.5 と依存衝突する
+  か保守停止しているため、最小の自前 DSL にした。写像ごとに `tests/contract/test_mapping_<name>.py` で
+  キー保存・必須制約・多重度を検査する（3 つの保存性は宣言の一部として持つ）。
+- CURIE（`ent:WorkOrder`）で語彙を参照し、読み込み時に IRI へ展開する。写像が参照する記録型・情報源が
+  オントロジーに存在することを契約テストで検査する。
 - 業務スキーマの変更は起動時のスキーマ指紋比較で検知し、例外ではなく `MappingDriftDetected` イベントとして出す。
 
 ## 情報源信頼性モデル（`reliability.py`）

@@ -101,12 +101,12 @@
 
 目的: 業務記録・計画・規範が「信頼性メタ付きの主張」としてイベントログと知識グラフに入る。
 
-- [ ] **M1-01** `Record` / `BusinessEvent` / `PlanItem` / `Norm` の core 型とオントロジー定義（EventType → schema 生成を含む。オントロジー変更手順を先行）
-- [ ] **M1-02** `Connector` Protocol と業務モック — `mock/`（SQLite + 台本）。CDC/API ポーリングの共通 IF（`pull(since)`, `stream()`）
-- [ ] **M1-03** RML 写像基盤 — `mappings/*.rml.ttl` の実行器、写像ごとの契約テスト（キー保存・必須制約・多重度）
-- [ ] **M1-04** スキーマ指紋とドリフト検知 — 起動時比較、`MappingDriftDetected` イベント（例外にしない）
-- [ ] **M1-05** `is_about` 解決 — `resolver.py`、未解決は `UnresolvedRef` として保持（捨てない）
-- [ ] **M1-06** 情報源信頼性モデル — `reliability/*.yaml` 初期値、`likelihood(record, state) -> log p`、`update_from_resolution()` の骨格
+- [x] **M1-01** `Record` / `BusinessEvent` / `PlanItem` / `Norm` の core 型とオントロジー定義（EventType → schema 生成を含む。オントロジー変更手順を先行） → 完了（Record / PlanItem / Norm / UnresolvedRef。オントロジーは 0.2.0 で既存）
+- [x] **M1-02** `Connector` Protocol と業務モック — `mock/`（SQLite + 台本）。CDC/API ポーリングの共通 IF（`pull(since)`, `stream()`） → 完了（Connector Protocol + SQLite モック。§14 の台本で意図的な誤りを仕込める）
+- [x] **M1-03** RML 写像基盤 — `mappings/*.rml.ttl` の実行器、写像ごとの契約テスト（キー保存・必須制約・多重度） → 完了（写像 DSL 4 本。ADR-0006。契約テスト 17 件で 3 保存性を検査）
+- [~] **M1-04** スキーマ指紋とドリフト検知 — 起動時比較、`MappingDriftDetected` イベント（例外にしない） → 指紋比較と検知は実装済み。列単位の差分（added/removed/retyped）の算出が未了（前回の列構成の永続化が必要）
+- [x] **M1-05** `is_about` 解決 — `resolver.py`、未解決は `UnresolvedRef` として保持（捨てない） → 完了（MasterDataResolver。未解決は UnresolvedRef として残しイベントも出す）
+- [x] **M1-06** 情報源信頼性モデル — `reliability/*.yaml` 初期値、`likelihood(record, state) -> log p`、`update_from_resolution()` の骨格 → 完了（時刻ずれ分布・混同行列・系統誤差・継続推定。設計書 §3.6 の値を初期値に）
 - [ ] **M1-07** 計画・規範の取込 — PlanItem → `planned` アサーション（遵守率事前分布）、Norm → `.lp` 規則 + 出典来歴
 - [ ] **M1-08** 書き戻し dry-run — 冪等 `command_id`、応答の BusinessEvent 化、`SBP_WRITEBACK_MODE=dry` 既定、補償定義の検証
 - [ ] **M1-09** 統合テスト G1 — モック業務システムの台本 → 写像 → BusinessEvent → 知識グラフに `planned` / 記録由来アサーションが載る

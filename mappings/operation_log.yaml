@@ -1,0 +1,28 @@
+# MES の稼働実績 → ent:OperationLog
+#
+# 「稼働中」という業務側の主張。物理観測と食い違えば状態不一致（類型 2）になる。
+# 時刻ずれの許容は ±5 分（設計書 §3.6）で、信頼性モデルがその分布を持つ。
+mapping: operation_log
+version: 1.0.0
+source: ent:MesSource
+table: operation_log
+record_type: ent:OperationLog
+
+key:
+  columns: [log_id]
+  external_id: "{log_id}"
+
+subject_ref:
+  column: asset_tag
+  kind: asset
+
+required: [log_id, asset_tag, running, logged_at, recorded_at]
+cardinality: one_to_one
+
+time:
+  recorded_at: recorded_at
+  occurred_at: logged_at
+
+fields:
+  running: running
+  shift: shift

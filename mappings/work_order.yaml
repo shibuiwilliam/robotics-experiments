@@ -1,0 +1,29 @@
+# CMMS の作業指示 → ent:WorkOrder（ADR-0006 の写像 DSL）
+#
+# 完了記録は弱ラベル（UnderMaintenance の時間バッグ）の生成元になる（設計書 §5.2）。
+# completed_at と recorded_at のずれが遅延記帳であり、時間不一致（類型 3）の材料になる。
+mapping: work_order
+version: 1.0.0
+source: ent:CmmsSource
+table: work_order
+record_type: ent:WorkOrder
+
+key:
+  columns: [wo_number]
+  external_id: "{wo_number}"
+
+subject_ref:
+  column: asset_tag
+  kind: asset
+
+required: [wo_number, asset_tag, wo_type, status, recorded_at]
+cardinality: one_to_one
+
+time:
+  recorded_at: recorded_at
+  occurred_at: completed_at
+
+fields:
+  wo_type: work_order_type
+  status: status
+  planned_date: planned_date
