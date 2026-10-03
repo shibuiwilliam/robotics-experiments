@@ -29,6 +29,7 @@ dev = [
   "ruff>=0.7",
   "pyright>=1.1.385",
   "import-linter>=2.1",
+  "jsonschema>=4.26.0",
 ]
 
 [build-system]
@@ -82,8 +83,9 @@ ignore = [
 "tests/**" = ["PLR0915", "PLR0912"]
 # 例外名は CLAUDE.md の「不変条件」と SHACL の Violation に合わせた意図的な命名
 "src/sbp/core/errors.py" = ["N818"]
-# vocab.py は生成物
-"src/sbp/core/vocab.py" = ["E501", "ERA001", "RUF001"]
+# vocab.py は生成物。属性名はオントロジーのローカル名と一致させる（CLAUDE.md 命名規約）ため
+# mixedCase を許す。
+"src/sbp/core/vocab.py" = ["E501", "ERA001", "N815", "N816"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["sbp"]

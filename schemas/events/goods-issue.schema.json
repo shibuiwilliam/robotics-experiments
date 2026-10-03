@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sbp.example/schemas/events/goods-issue.schema.json",
+  "title": "GoodsIssue",
+  "description": "出庫。予備品の出庫。Present を終了する。在庫記録と物理観測の食い違いの起点になる。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.1.0。",
+  "allOf": [
+    {
+      "$ref": "../event-envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "https://sbp.example/ent#GoodsIssue"
+    }
+  },
+  "required": [
+    "type"
+  ]
+}

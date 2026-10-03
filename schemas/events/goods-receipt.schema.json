@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sbp.example/schemas/events/goods-receipt.schema.json",
+  "title": "GoodsReceipt",
+  "description": "入庫。予備品の入庫。Present を開始する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.1.0。",
+  "allOf": [
+    {
+      "$ref": "../event-envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "https://sbp.example/ent#GoodsReceipt"
+    }
+  },
+  "required": [
+    "type"
+  ]
+}

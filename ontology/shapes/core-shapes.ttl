@@ -1,0 +1,173 @@
+# SHACL 形状。検証は**拒否ではなく証拠生成**として設計する（設計書 §3.9、ontology ルール）。
+#
+#   sh:Violation = 構造制約 → 登録しない。隔離キューに回して人が確認する。
+#   sh:Warning   = 整合制約 → 登録したうえで不一致候補（Discrepancy）を生成する。
+#
+# 排他フルーエントの衝突は Warning であって Violation ではない。「物理と業務が食い違っている」
+# ことは異常データではなく製品（設計原則 P5）だからである。
+
+@prefix sbp:  <https://sbp.example/core#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+# =============================================================================
+# 構造制約（sh:Violation → 隔離キュー）
+# =============================================================================
+
+sbp:AssetShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:Asset ;
+    rdfs:label "資産の構造制約"@ja ;
+    skos:definition "資産は必ず場所を持つ。場所の無い資産は照合の対象にできない（設計書 §3.9）。"@ja ;
+    sh:property [
+        sh:path sbp:locatedIn ;
+        sh:minCount 1 ;
+        sh:class sbp:Location ;
+        sh:severity sh:Violation ;
+        sh:message "Asset must have at least one locatedIn (design §3.9); quarantine for human review." ;
+    ] ;
+    sh:property [
+        sh:path sbp:assetId ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "Asset must carry exactly one assetId to derive a stable IRI." ;
+    ] .
+
+sbp:IdentityClaimShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:IdentityClaim ;
+    rdfs:label "同一性主張の構造制約"@ja ;
+    skos:definition "同一性主張はトラックと実体の双方を持ち、撤回可能であるために有効区間を持つ。"@ja ;
+    sh:property [
+        sh:path sbp:boundTo ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "IdentityClaim must bind exactly one physical entity." ;
+    ] ;
+    sh:property [
+        sh:path sbp:validInterval ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "IdentityClaim must carry a valid interval so it can be revoked." ;
+    ] .
+
+sbp:FluentTypeShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:FluentType ;
+    rdfs:label "フルーエント型の構造制約"@ja ;
+    skos:definition "フルーエント型は適用対象のクラスを宣言する。主体型が無いと接地も検証もできない。"@ja ;
+    sh:property [
+        sh:path sbp:subjectType ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "FluentType must declare a subjectType." ;
+    ] .
+
+sbp:EventTypeShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:EventType ;
+    rdfs:label "事象型の構造制約"@ja ;
+    skos:definition "事象型は少なくとも 1 つのフルーエントを開始または終了する。状態を何も変えない事象型は事象計算に乗らない。"@ja ;
+    sh:sparql [
+        sh:severity sh:Violation ;
+        sh:message "EventType must initiate or terminate at least one FluentType (design §3.8)." ;
+        sh:prefixes <https://sbp.example/core> ;
+        sh:select """
+            SELECT $this WHERE {
+              FILTER NOT EXISTS {
+                $this <https://sbp.example/core#initiates> ?f .
+              }
+              FILTER NOT EXISTS {
+                $this <https://sbp.example/core#terminates> ?g .
+              }
+            }
+        """ ;
+    ] .
+
+sbp:DiscrepancyShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:Discrepancy ;
+    rdfs:label "不一致の構造制約"@ja ;
+    skos:definition "不一致は五類型のいずれかに属し、対象を少なくとも 1 つ持つ。"@ja ;
+    sh:property [
+        sh:path sbp:discrepancyKind ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype xsd:integer ;
+        sh:minInclusive 1 ;
+        sh:maxInclusive 5 ;
+        sh:severity sh:Violation ;
+        sh:message "Discrepancy kind must be one of the five types (1..5, design §8.2)." ;
+    ] ;
+    sh:property [
+        sh:path sbp:concerns ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Discrepancy must concern at least one assertion or physical entity." ;
+    ] .
+
+sbp:ProbeShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:Probe ;
+    rdfs:label "プローブの構造制約"@ja ;
+    skos:definition "プローブは身分（candidate / active / deprecated）を持つ。active 化は昇格ゲートを通ること。"@ja ;
+    sh:property [
+        sh:path sbp:probeStatus ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "candidate" "active" "deprecated" ) ;
+        sh:severity sh:Violation ;
+        sh:message "Probe status must be candidate, active, or deprecated." ;
+    ] .
+
+# =============================================================================
+# 整合制約（sh:Warning → 登録して不一致候補を生成）
+# =============================================================================
+
+sbp:MutuallyExclusiveFluentShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:FluentType ;
+    rdfs:label "排他フルーエントの整合制約"@ja ;
+    skos:definition "排他宣言は対称でなければならない。片側だけの宣言は衝突検出の穴になる。"@ja ;
+    sh:sparql [
+        sh:severity sh:Warning ;
+        sh:message "mutuallyExclusiveWith must be declared symmetrically; add the reverse statement." ;
+        sh:prefixes <https://sbp.example/core> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://sbp.example/core#mutuallyExclusiveWith> ?other .
+              FILTER NOT EXISTS {
+                ?other <https://sbp.example/core#mutuallyExclusiveWith> $this .
+              }
+            }
+        """ ;
+    ] .
+
+sbp:ExclusiveFluentCollisionShape
+    a sh:NodeShape ;
+    sh:targetClass sbp:Assertion ;
+    rdfs:label "排他フルーエントの同時成立"@ja ;
+    skos:definition "排他フルーエントが同一有効時間に共に確信度 > 0.5 で成立したら不一致候補（類型 2）を生成する。拒否はしない（設計書 §3.9, §5.7）。"@ja ;
+    sh:sparql [
+        sh:severity sh:Warning ;
+        sh:message "Mutually exclusive fluents both hold with confidence > 0.5; emit discrepancy candidate (kind 2)." ;
+        sh:prefixes <https://sbp.example/core> ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://sbp.example/core#subject> ?entity ;
+                    <https://sbp.example/core#predicate> ?fluent ;
+                    <https://sbp.example/core#confidence> ?c .
+              ?other <https://sbp.example/core#subject> ?entity ;
+                     <https://sbp.example/core#predicate> ?otherFluent ;
+                     <https://sbp.example/core#confidence> ?oc .
+              ?fluent <https://sbp.example/core#mutuallyExclusiveWith> ?otherFluent .
+              FILTER (?c > 0.5 && ?oc > 0.5)
+              FILTER ($this != ?other)
+            }
+        """ ;
+    ] .

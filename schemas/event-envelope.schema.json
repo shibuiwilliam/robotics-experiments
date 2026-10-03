@@ -1,0 +1,444 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sbp.example/schemas/event-envelope.schema.json",
+  "title": "EventEnvelope",
+  "description": "全イベント共通のエンベロープ。生成物（make gen）であり手編集しない。生成元オントロジー版 0.1.0。",
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv7。重複排除の鍵（不変条件 4）。"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.\\-]+)?$"
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$",
+      "description": "主体実体の IRI。パーティションキーであり順序保証の単位。"
+    },
+    "valid_time": {
+      "$ref": "#/$defs/validTime"
+    },
+    "tx_time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "modality": {
+      "enum": [
+        "observed",
+        "inferred",
+        "predicted",
+        "planned",
+        "normative",
+        "hypothetical"
+      ],
+      "description": "事実の身分（不変条件 3）。"
+    },
+    "belief": {
+      "$ref": "#/$defs/belief"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "producer": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "causation_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "correlation_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "situation": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ontology_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.\\-]+)?$"
+    }
+  },
+  "required": [
+    "event_id",
+    "schema_version",
+    "type",
+    "subject",
+    "valid_time",
+    "tx_time",
+    "modality",
+    "belief",
+    "producer",
+    "ontology_version"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "validTime": {
+      "type": "object",
+      "description": "有効時間。右開区間 [start, end) と変化点の不確実幅。点時刻のイベントを出さないため uncertainty_s は必須（不変条件 8）。",
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainty_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "start",
+        "uncertainty_s"
+      ],
+      "additionalProperties": false
+    },
+    "belief": {
+      "description": "較正済みの確信度。kind で判別する（設計書 §3.5、付録 A.1）。",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "calibrated": {
+              "const": true,
+              "description": "較正済みであることの明示（不変条件 7）。"
+            },
+            "uncertainty": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "description": "認識的／偶然的不確実性の分解（設計書 §5.6）。",
+                  "properties": {
+                    "epistemic": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "aleatoric": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "epistemic",
+                    "aleatoric"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "p"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "categorical"
+            },
+            "pmf": {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "calibrated": {
+              "const": true,
+              "description": "較正済みであることの明示（不変条件 7）。"
+            },
+            "uncertainty": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "description": "認識的／偶然的不確実性の分解（設計書 §5.6）。",
+                  "properties": {
+                    "epistemic": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "aleatoric": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "epistemic",
+                    "aleatoric"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "pmf"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "numeric"
+            },
+            "mean": {
+              "type": "number"
+            },
+            "var": {
+              "type": "number",
+              "minimum": 0
+            },
+            "quantiles": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "number"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "calibrated": {
+              "const": true,
+              "description": "較正済みであることの明示（不変条件 7）。"
+            },
+            "uncertainty": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "description": "認識的／偶然的不確実性の分解（設計書 §5.6）。",
+                  "properties": {
+                    "epistemic": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "aleatoric": {
+                      "type": "number",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "epistemic",
+                    "aleatoric"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "mean",
+            "var"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "probe"
+            },
+            "probe_id": {
+              "type": "string",
+              "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+            },
+            "wm_version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "window": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/validTime"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "raw_score": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "probe_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "record"
+            },
+            "record": {
+              "type": "string",
+              "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+            },
+            "source": {
+              "type": "string",
+              "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+            },
+            "source_reliability": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "record",
+            "source"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "rule"
+            },
+            "rule": {
+              "type": "string",
+              "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+            },
+            "norm": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(?:[a-zA-Z][a-zA-Z0-9+.\\-]*:)(?://)?[^\\s<>\\\"{}|\\\\^`]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "rule"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}
