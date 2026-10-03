@@ -24,9 +24,17 @@ from sbp.knowledge.regrounding import (
 )
 from sbp.knowledge.regrounding import plan as plan_regrounding
 from sbp.knowledge.regrounding import summarise as summarise_regrounding
+from sbp.knowledge.relations import (
+    AggregationByFluent,
+    PartWholeEdge,
+    aggregation_rules,
+    group_by_whole,
+    part_whole_edges,
+)
 from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 
 __all__ = [
+    "AggregationByFluent",
     "AssertionRow",
     "AssertionStore",
     "CompatibilityMatrix",
@@ -38,14 +46,18 @@ __all__ = [
     "LatentIndex",
     "LatentNeighbour",
     "LatentRegistration",
+    "PartWholeEdge",
     "PlanStrategy",
     "RegroundingPlan",
     "RegroundingReport",
     "RegroundingTrigger",
     "ScopeEstimate",
     "Selectivity",
+    "aggregation_rules",
     "belief_graph",
+    "group_by_whole",
     "is_scenario_graph",
+    "part_whole_edges",
     "plan_hybrid",
     "plan_regrounding",
     "scenario_graph",

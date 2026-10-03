@@ -29,19 +29,24 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from sbp.core import vocab
+from sbp.core.assertion import Assertion
+from sbp.core.belief import BooleanBelief
 from sbp.core.config import Settings
 from sbp.core.logging import get_logger
+from sbp.core.modality import Modality
 from sbp.core.time import now
+from sbp.knowledge.relations import aggregation_rules, group_by_whole, part_whole_edges
+from sbp.reasoning.coupling import AggregationRule, PartWhole, propagate
 from sbp.reasoning.ingest import BeliefIngest, default_transition
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
     from datetime import datetime
 
-    from sbp.core.assertion import Assertion
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.consumer import EventHandler, KafkaEventConsumer
+    from sbp.knowledge.store import GraphStore
 
     EventDriver = Callable[["EventHandler", int], Awaitable[int]]
     """``(ハンドラ, 最大件数) -> 処理した件数``。
@@ -54,10 +59,19 @@ if TYPE_CHECKING:
     """アサーションを 1 件書く。戻り値は使わない（``assert_`` は ID を返す）。"""
     CommitHook = Callable[[], Awaitable[None]]
     """終了時のオフセットコミット。"""
+    RelationProvider = Callable[[Mapping[tuple[str, str], float]], Sequence[PartWhole]]
+    """``事前 -> 強い関係の列``。事前を渡すのは、関係の参照する実体を事前の集合で絞るため。"""
 
 log = get_logger(__name__)
 
 WORKER_NAME = "belief-worker"
+
+_COUPLING_MIN_CHANGE = 0.01
+"""結合でこの幅より小さく動いた信念は書かない。
+
+**追記専用なので、変化のない文を毎周期足すとグラフが単調に膨らむ**（60 秒周期なら 1 日で
+1440 件/実体）。二時制クエリの履歴が結合の周期で埋まり、「いつ信念が変わったか」が読めなくなる。
+閾値を置く代わりに、動いた分だけを記録する。"""
 
 
 def default_ingest(settings: Settings) -> BeliefIngest:
@@ -131,6 +145,7 @@ class BeliefWorker:
         driver: EventDriver | None = None,
         sink: AssertionSink | None = None,
         ingest: BeliefIngest | None = None,
+        relations: RelationProvider | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -138,6 +153,9 @@ class BeliefWorker:
             設定漏れは起動時に警告する）。
         sink: アサーションの書き込み（``None`` なら書かない）。
         ingest: 信念更新の配線（既定は ``vocab`` の述語表で作る）。
+        relations: 事前 → 強い関係（``None`` なら結合を回さない）。**事前を引数に取るのは、
+            ``propagate`` が結合の参照する実体すべての事前を要求するため**——持っていない
+            実体を含む関係を渡すと例外になる。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -148,6 +166,7 @@ class BeliefWorker:
         self._last_coupling: datetime | None = None
         self._driver = driver
         self._sink = sink
+        self._relations = relations
         self.ingest = ingest if ingest is not None else default_ingest(self.settings)
         self.applied_total = 0
         if driver is None:
@@ -233,11 +252,13 @@ class BeliefWorker:
         at = now()
         if self.coupling_due(at=at):
             self.mark_coupling_done(at=at)
+            coupled = self._couple(at=at)
             log.info(
                 "worker.coupling_cycle",
                 worker=WORKER_NAME,
                 period_s=self.coupling_period.total_seconds(),
                 tracked=self.ingest.tracked_entities,
+                coupled=coupled,
             )
         applied = self.applied_total - before
         if received:
@@ -249,6 +270,80 @@ class BeliefWorker:
                 skipped=dict(self.ingest.skipped),
             )
         return applied
+
+    def _couple(self, *, at: datetime) -> int:
+        """実体間結合を 1 周回し、更新された信念を書く（設計書 §8.1）。
+
+        **フィルタの状態を上書きしない。** 結合の事後をフィルタに書き戻すと、同じ関係からの
+        メッセージが周期ごとに複利で積み上がる（2 周目は 1 周目の結合済み値を事前として
+        また結合する）。フィルタは「自分の証拠だけによる推定」のまま保ち、結合は周期ごとの
+        調整として別のアサーションで記録する。
+
+        **収束しなかった結果も書く。** ``converged`` が偽でも、それは「まだ振動している」という
+        情報であって無意味な値ではない——ただしログに出し、頻発するなら減衰係数と反復上限を
+        見直す材料にする。黙って捨てると、結合が機能していないことに気付けない。
+
+        Args:
+            at: この周期の時刻。
+
+        Returns:
+            結合によって信念を書いた件数。
+        """
+        if self._relations is None:
+            return 0
+        # **結合の鍵はフルーエント型 IRI にする**（不変条件 5 の canonical な識別子）。
+        # フィルタはローカル名で持っているが、集約規則（`aggregatesAs`）は IRI で引かれるので、
+        # ここでローカル名と IRI が混ざると結合が静かに 1 件も成立しない（実際そうなった）。
+        priors: dict[tuple[str, str], float] = {}
+        for (entity, local_name), probe_filter in self.ingest.filters.items():
+            if probe_filter.posterior is None:
+                continue
+            fluent_iri = self.ingest.predicate_of.get(local_name)
+            if fluent_iri is None:
+                continue
+            priors[entity, fluent_iri] = probe_filter.posterior
+        if not priors:
+            return 0
+
+        couplings = self._relations(priors)
+        if not couplings:
+            return 0
+
+        result = propagate(
+            priors,
+            part_wholes=couplings,
+            max_iterations=self.settings.reasoning.bp_max_iterations,
+        )
+        if not result.converged:
+            log.info(
+                "worker.coupling_not_converged",
+                worker=WORKER_NAME,
+                iterations=result.iterations,
+                max_delta=result.max_delta,
+                detail="振動している。頻発するなら damping と反復上限を見直す",
+            )
+
+        written = 0
+        for (entity, fluent_iri), posterior in result.posteriors.items():
+            if abs(posterior - priors[entity, fluent_iri]) < _COUPLING_MIN_CHANGE:
+                # 動かなかった組は書かない。**追記専用なので、変化のない文を毎周期足すと
+                # グラフが単調に膨らみ、二時制クエリの履歴が結合の周期で埋まる**
+                continue
+            self._write(
+                Assertion(
+                    subject=entity,
+                    predicate=fluent_iri,
+                    object=True,
+                    valid_from=at,
+                    tx_from=at,
+                    modality=Modality.INFERRED,
+                    belief=BooleanBelief(p=posterior),
+                    provenance=f"{self.ingest.provenance}/coupling/{at.isoformat()}",
+                    ontology_version=self.ingest.ontology_version,
+                )
+            )
+            written += 1
+        return written
 
     async def _drive(self) -> int:
         """driver に最大 ``batch_size`` 件を処理させる。
@@ -279,6 +374,56 @@ class BeliefWorker:
         loop = asyncio.get_running_loop()
         self.runtime.install_signal_handlers(loop)
         return await self.runtime.run(self.step, max_iterations=max_iterations, commit=commit)
+
+
+def graph_relations(store: GraphStore) -> RelationProvider:
+    """知識グラフから強い関係を読む provider を作る。
+
+    **関係とオントロジーの読み出しを毎周期やり直す。** キャッシュしたくなるが、再接地や
+    オントロジーの版上げで関係が変わったときに古い構造で結合し続けることになる。結合の周期は
+    既定 60 秒で、クエリ 2 本はその中では十分に軽い。
+
+    **集約規則が無いフルーエントは結合しない。** 既定値を埋めると、宣言忘れが
+    「全部分が成立して初めて」という強い仮定として静かに効く（``knowledge.relations`` 参照）。
+
+    Args:
+        store: グラフストア。
+
+    Returns:
+        ``事前 -> PartWhole の列``。
+    """
+
+    def provide(priors: Mapping[tuple[str, str], float]) -> list[PartWhole]:
+        entities = [entity for entity, _fluent in priors]
+        # 事前を持っている実体だけに絞る（propagate は全実体の事前を要求する）
+        grouped = group_by_whole(part_whole_edges(store), known_entities=entities)
+        if not grouped:
+            return []
+        rules = aggregation_rules(store)
+
+        couplings: list[PartWhole] = []
+        for (entity, fluent), _prior in priors.items():
+            parts = grouped.get(entity)
+            if not parts:
+                continue
+            rule_iri = rules.get(fluent)
+            if rule_iri is None:
+                continue
+            # 部分側の事前も必要（propagate の coverage 検査）
+            covered = tuple(part for part in parts if (part, fluent) in priors)
+            if not covered:
+                continue
+            couplings.append(
+                PartWhole(
+                    whole=entity,
+                    parts=covered,
+                    fluent=fluent,
+                    rule=AggregationRule.from_iri(rule_iri),
+                )
+            )
+        return couplings
+
+    return provide
 
 
 def kafka_driver(consumer: KafkaEventConsumer) -> EventDriver:
@@ -329,10 +474,11 @@ async def build_worker(
     from sbp.knowledge import AssertionStore, HttpGraphStore  # noqa: PLC0415
 
     resolved = settings or Settings()
-    graph = AssertionStore(HttpGraphStore(resolved), site_id=site_id)
+    store = HttpGraphStore(resolved)
+    graph = AssertionStore(store, site_id=site_id)
 
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
-    worker = BeliefWorker(resolved, sink=graph.assert_)
+    worker = BeliefWorker(resolved, sink=graph.assert_, relations=graph_relations(store))
 
     consumer = KafkaEventConsumer(
         resolved,

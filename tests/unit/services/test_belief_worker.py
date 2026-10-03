@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -23,6 +24,7 @@ from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
 from sbp.eventlog.consumer import EventHandler
+from sbp.reasoning.coupling import AggregationRule, PartWhole
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
@@ -195,6 +197,110 @@ class TestCouplingPeriod:
         await worker.step()
         # 初回で回したので、直後はもう回らない（= 周期判定が進んだ証拠）
         assert not worker.coupling_due(at=datetime.now(UTC))
+
+
+LINE = "https://sbp.example/site/siteA/asset/LINE-1"
+PUMP_B = "https://sbp.example/site/siteA/asset/P-102"
+
+
+def _event_for(entity: str, *, at: datetime, p: float) -> EventEnvelope:
+    return _event(at=at, p=p).model_copy(update={"subject": entity})
+
+
+class TestCouplingCycle:
+    """結合の周期で信念が伝播する（設計書 §8.1）。"""
+
+    def _relations(self, priors: Mapping[tuple[str, str], float]) -> list[PartWhole]:
+        """LINE-1 は P-101 と P-102 の全体（Running は all 集約）。"""
+        fluent = str(vocab.ent.Running)
+        parts = tuple(entity for entity, name in priors if name == fluent and entity != LINE)
+        if (LINE, fluent) not in priors or not parts:
+            return []
+        return [PartWhole(whole=LINE, parts=parts, fluent=fluent, rule=AggregationRule.ALL)]
+
+    @pytest.mark.asyncio
+    async def test_coupling_writes_adjusted_beliefs(self) -> None:
+        """部分が停止していれば、全体（ライン）の信念が下がって書かれる。
+
+        all 集約なので「どのポンプも動いていなければラインは動いていない」。
+        """
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink, relations=self._relations)
+        # ライン自身は「動いている」と観測され、部分は 2 台とも「止まっている」
+        worker.attach_driver(
+            _Driver(
+                [
+                    [
+                        _event_for(LINE, at=T0, p=0.9),
+                        _event_for(PUMP, at=T0, p=0.02),
+                        _event_for(PUMP_B, at=T0, p=0.02),
+                    ]
+                ]
+            )
+        )
+        await worker.step()
+
+        line_rows = [row for row in sink.written if row.subject == LINE]
+        # 1 件目は前向きフィルタの出力、2 件目は結合後の調整
+        assert len(line_rows) == 2
+        beliefs = [row.belief for row in line_rows]
+        assert all(isinstance(belief, BooleanBelief) for belief in beliefs)
+        assert isinstance(beliefs[0], BooleanBelief)
+        assert isinstance(beliefs[1], BooleanBelief)
+        assert beliefs[1].p < beliefs[0].p
+
+    @pytest.mark.asyncio
+    async def test_the_filter_state_is_not_overwritten_by_coupling(self) -> None:
+        """結合の事後をフィルタに書き戻さない。
+
+        **書き戻すと同じ関係からのメッセージが周期ごとに複利で積み上がる**（2 周目は
+        1 周目の結合済み値を事前としてまた結合する）。フィルタは「自分の証拠だけによる推定」の
+        まま保つ。
+        """
+        worker = BeliefWorker(Settings(), sink=_Sink(), relations=self._relations)
+        worker.attach_driver(
+            _Driver(
+                [
+                    [
+                        _event_for(LINE, at=T0, p=0.9),
+                        _event_for(PUMP, at=T0, p=0.02),
+                        _event_for(PUMP_B, at=T0, p=0.02),
+                    ]
+                ]
+            )
+        )
+        await worker.step()
+        own = worker.ingest.filter_for(entity=LINE, fluent="Running").posterior
+        assert own is not None
+        # フィルタは自分の観測（0.9）由来の値を保っている（結合で下がった値ではない）
+        assert own > 0.5
+
+    @pytest.mark.asyncio
+    async def test_unchanged_beliefs_are_not_rewritten(self) -> None:
+        """結合で動かなかった信念は書かない。
+
+        追記専用なので、変化のない文を毎周期足すと**グラフが単調に膨らみ**、二時制クエリの
+        履歴が結合の周期で埋まる。
+        """
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink, relations=lambda _priors: [])
+        worker.attach_driver(_Driver([[_event(at=T0)]]))
+        await worker.step()
+        # 関係が無ければ結合由来の文は 1 件も出ない
+        assert len(sink.written) == 1
+
+    @pytest.mark.asyncio
+    async def test_without_relations_no_coupling_happens(self) -> None:
+        """relations が無ければ結合を回さない（周期判定だけが進む）。"""
+        worker, _driver, sink = _worker([[_event(at=T0)]])
+        await worker.step()
+        assert len(sink.written) == 1
+
+    @pytest.mark.asyncio
+    async def test_coupling_is_skipped_when_there_are_no_priors(self) -> None:
+        """事前が無ければ結合しない（空の priors で propagate を呼ばない）。"""
+        worker = BeliefWorker(Settings(), sink=_Sink(), relations=self._relations)
+        assert await worker.step() == 0
 
 
 class TestDefaultIngest:
