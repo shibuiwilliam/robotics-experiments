@@ -102,12 +102,12 @@ def readiness_checks(settings: Settings) -> tuple[ReadinessCheck, ...]:
         settings: 設定。
     """
     return (
-        ReadinessCheck(name="redpanda", probe=lambda: _tcp_reachable(settings.kafka_bootstrap)),
-        ReadinessCheck(name="oxigraph", probe=lambda: _http_reachable(settings.sparql_query_url)),
+        ReadinessCheck(name="redpanda", probe=lambda: tcp_reachable(settings.kafka_bootstrap)),
+        ReadinessCheck(name="oxigraph", probe=lambda: http_reachable(settings.sparql_query_url)),
     )
 
 
-def _tcp_reachable(bootstrap: str) -> bool:
+def tcp_reachable(bootstrap: str) -> bool:
     """``host:port`` に TCP で到達できるか。"""
     import socket  # noqa: PLC0415 — 疎通検査だけに使う
 
@@ -119,7 +119,7 @@ def _tcp_reachable(bootstrap: str) -> bool:
         return False
 
 
-def _http_reachable(url: str) -> bool:
+def http_reachable(url: str) -> bool:
     """HTTP エンドポイントに到達できるか。"""
     import httpx  # noqa: PLC0415 — 疎通検査だけに使う
 

@@ -110,6 +110,32 @@ class ReasoningSettings(BaseSettings):
     変わり、同じ観測列でも事後が変わる（`sbp.reasoning.belief.TransitionPrior`）。
     """
 
+    reconcile_period_s: float = Field(default=120.0, gt=0.0)
+    """照合（五類型の検出）を回す周期（秒）。
+
+    **信念更新の周期（``bp_period_s``）と分けている。** 同じ値にすると、照合を速くするために
+    信念更新を遅くするか、その逆をすることになる。照合は窓（持続 τ）を見るので、τ より
+    短い周期で回しても新しい判定材料は増えない。
+    """
+
+    window_samples: int = Field(default=360, ge=2, le=100_000)
+    """照合の時間窓が保持する刻み数の上限。
+
+    既定 360 × 刻み 10 秒 = 1 時間で、持続 τ（既定 300 秒）を十分覆う。**上限が τ を
+    下回ると不一致が永久に検出されず、件数 0 として静かに通る**ので、``WindowStore`` が
+    構築時に整合を検査する。
+    """
+
+    scheduler_max_queries: int = Field(default=10, ge=1, le=1_000)
+    """1 周期で選ぶ観測クエリの件数上限。"""
+
+    scheduler_total_cost: float = Field(default=1.0, gt=0.0)
+    """1 周期で使える観測コストの合計（効用と同じ尺度）。
+
+    **効用が 0 以下のクエリは選ばれない**ので、予算を増やしても無価値な観測は増えない
+    （`sbp.reasoning.scheduler.schedule`）。予算は「価値のある観測が多すぎるときの上限」である。
+    """
+
     batch_size: int = Field(default=100, ge=1, le=10_000)
     """ワーカーが 1 ループで取るイベントの最大件数。
 
