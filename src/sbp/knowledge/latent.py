@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import numpy as np
 from psycopg import sql
 
 from sbp.core.errors import KnowledgeError
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
-    import numpy as np
     from numpy.typing import NDArray
     from psycopg import AsyncConnection
 
@@ -218,6 +218,63 @@ class LatentIndex:
         )
         return len(rows)
 
+    async def since(
+        self,
+        *,
+        entity: str,
+        wm_version: str,
+        level: str,
+        after: datetime | None = None,
+        limit: int = 1_000,
+    ) -> list[tuple[datetime, NDArray[np.float64]]]:
+        """ある時刻より後の潜在を時刻順に返す（接地層が引く読み出し）。
+
+        ANN 近傍検索（:meth:`neighbours`）とは用途が違う。接地層は「次に処理すべき潜在」を
+        時刻順に取りたいので、類似度ではなく時刻で引く。
+
+        **``after`` は右開（``ts > after``）。** 同じ時刻の行を 2 度処理しないためで、
+        ウォーターマークを「最後に処理した時刻」として持てる。閉区間にすると毎回 1 行が
+        重複し、事象昇格が同じ変化点を繰り返し出す。
+
+        **上限を置く。** 潜在は 1 実体あたり毎秒単位で増えるので、無制限に読むと 1 ループが
+        終わらなくなる。打ち切ったかどうかは呼び出し側が件数で判断できる（``limit`` 件
+        返ったら続きがある可能性がある）。
+
+        Args:
+            entity: 実体 IRI。
+            wm_version: モデル版 IRI。
+            level: 階層（``fast`` / ``mid`` / ``slow``）。
+            after: この時刻より後の行だけを返す（``None`` なら最初から）。
+            limit: 返す行数の上限。
+
+        Returns:
+            ``(時刻, 潜在ベクトル)`` の列（時刻の昇順）。
+
+        Raises:
+            KnowledgeError: 未登録の版の場合。
+        """
+        registration = await self.registration(wm_version)
+        statement = sql.SQL(
+            "SELECT ts, vec FROM {table} "
+            "WHERE entity = %s AND level = %s AND wm_version = %s "
+            "AND (%s::timestamptz IS NULL OR ts > %s) "
+            "ORDER BY ts LIMIT %s"
+        ).format(table=sql.Identifier(registration.table_name))
+        moment = None if after is None else ensure_utc(after)
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(statement, (entity, level, wm_version, moment, moment, limit))
+            rows = await cursor.fetchall()
+        out = [(ensure_utc(row[0]), _from_pgvector(row[1])) for row in rows]
+        log.debug(
+            "knowledge.latents_read",
+            entity=entity,
+            wm_version=wm_version,
+            level=level,
+            rows=len(out),
+            truncated=len(out) == limit,
+        )
+        return out
+
     async def neighbours(
         self,
         *,
@@ -336,3 +393,28 @@ class LatentIndex:
 def _to_pgvector(vector: NDArray[np.float64]) -> str:
     """numpy ベクトルを pgvector のリテラルにする。"""
     return "[" + ",".join(f"{float(value):.8g}" for value in vector) + "]"
+
+
+def _from_pgvector(value: object) -> NDArray[np.float64]:
+    """pgvector の値を numpy ベクトルに戻す。
+
+    psycopg が pgvector 型を知らないと文字列（``"[1,2,3]"``）で返ってくる。登録済みの
+    アダプタがあればリストで返るので、**両方を受ける**——型が環境依存なのに片方しか扱わないと、
+    アダプタの有無で動かなくなる。
+
+    Args:
+        value: psycopg が返した pgvector の値。
+
+    Raises:
+        KnowledgeError: 解釈できない形の場合。
+    """
+    if isinstance(value, str):
+        body = value.strip().removeprefix("[").removesuffix("]")
+        if not body:
+            return np.zeros(0, dtype=np.float64)
+        return np.asarray([float(part) for part in body.split(",")], dtype=np.float64)
+    if isinstance(value, (list, tuple)):
+        return np.asarray([float(part) for part in value], dtype=np.float64)
+    if isinstance(value, np.ndarray):
+        return np.asarray(value, dtype=np.float64)
+    raise KnowledgeError(f"cannot read a pgvector value of type {type(value).__name__}")
