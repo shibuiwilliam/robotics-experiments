@@ -15,9 +15,10 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
-from sbp.api import build_schema, create_app, is_read_only_sparql
+from sbp.api import Permission, Principal, build_schema, create_app, is_read_only_sparql
 from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.modality import Modality
@@ -62,6 +63,20 @@ def store() -> _FakeStore:
     return _FakeStore([_row()])
 
 
+def _site_a_reader(_request: Request) -> Principal:
+    """siteA の稼働状態を読める担当者（ABAC、M7-06）。"""
+    return Principal(
+        subject="https://sbp.example/id/person/op1",
+        permissions=(
+            Permission(
+                concept_types=frozenset({vocab.ent.Running}),
+                modalities=frozenset({Modality.OBSERVED, Modality.INFERRED}),
+                sites=frozenset({"siteA"}),
+            ),
+        ),
+    )
+
+
 @pytest.fixture
 def client(store: _FakeStore) -> TestClient:
     app = create_app(
@@ -70,6 +85,7 @@ def client(store: _FakeStore) -> TestClient:
         sparql_reader=lambda query: {"query": query, "results": []},
         stream_reader=lambda topic, limit: [{"topic": topic} for _ in range(min(limit, 2))],
         command_handler=lambda name, payload: {"command": name, "echo": payload},
+        principal_resolver=_site_a_reader,
     )
     return TestClient(app)
 
@@ -176,6 +192,61 @@ class TestGraphQLQueries:
         data = self._ask(client, "{ health { ontologyVersion storeReachable } }")
         assert data["health"]["ontologyVersion"] == vocab.ONTOLOGY_VERSION
         assert data["health"]["storeReachable"] is True
+
+
+class TestAbacAtTheApi:
+    """ABAC が API に効いている（M7-06）。"""
+
+    def _errors(self, client: TestClient, query: str) -> list[dict[str, Any]]:
+        response = client.post("/graphql", json={"query": query})
+        return response.json().get("errors", [])
+
+    def test_without_a_resolver_beliefs_are_denied(self, store: _FakeStore) -> None:
+        """ABAC 未設定で信念を読めない（既定は拒否）。
+
+        「開発中だから全部見せる」を残すと、拠点間の情報分離も人に関する遮蔽も効かないまま
+        本番に出る。疎通（health）は答えてよい——信念を返さないので。
+        """
+        app = create_app(settings=Settings(), assertion_store=store)  # type: ignore[arg-type]
+        client = TestClient(app)
+        errors = self._errors(client, f'{{ beliefs(subject: "{PUMP}") {{ subject }} }}')
+        assert errors
+        assert "ABAC が設定されていない" in errors[0]["message"]
+        assert (
+            "health"
+            in client.post("/graphql", json={"query": "{ health { storeReachable } }"}).json()[
+                "data"
+            ]
+        )
+
+    def test_rows_outside_the_permitted_site_are_filtered(self, store: _FakeStore) -> None:
+        """許可されていない拠点の行は返さない（クエリの後で絞る）。"""
+        store.rows = [_row()]
+        app = create_app(
+            settings=Settings(),
+            assertion_store=store,  # type: ignore[arg-type]
+            principal_resolver=lambda _request: Principal(
+                subject="https://sbp.example/id/person/opB",
+                permissions=(
+                    Permission(
+                        concept_types=frozenset({vocab.ent.Running}),
+                        modalities=frozenset({Modality.INFERRED}),
+                        sites=frozenset({"siteB"}),
+                    ),
+                ),
+            ),
+        )
+        response = TestClient(app).post(
+            "/graphql", json={"query": f'{{ beliefs(subject: "{PUMP}") {{ subject }} }}'}
+        )
+        assert response.json()["data"]["beliefs"] == []
+
+    def test_permitted_rows_still_come_back(self, client: TestClient) -> None:
+        """絞り込みが効きすぎて全部消えることがない（陰性対照）。"""
+        response = client.post(
+            "/graphql", json={"query": f'{{ beliefs(subject: "{PUMP}") {{ subject }} }}'}
+        )
+        assert len(response.json()["data"]["beliefs"]) == 1
 
 
 class TestStreamAndCommands:

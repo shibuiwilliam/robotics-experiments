@@ -11,6 +11,16 @@
 from __future__ import annotations
 
 from sbp.api.app import create_app, is_read_only_sparql
+from sbp.api.authorization import (
+    AccessDecision,
+    AuthorizationError,
+    Permission,
+    Principal,
+    PrivacyClass,
+    authorize,
+    require_authorized,
+    visible_rows,
+)
 from sbp.api.schema import BeliefReader, BeliefSource, BeliefType, Query, build_schema
 from sbp.api.translate import (
     QueryLanguage,
@@ -20,15 +30,23 @@ from sbp.api.translate import (
 )
 
 __all__ = [
+    "AccessDecision",
+    "AuthorizationError",
     "BeliefReader",
     "BeliefSource",
     "BeliefType",
+    "Permission",
+    "Principal",
+    "PrivacyClass",
     "Query",
     "QueryLanguage",
     "TranslatedQuery",
     "TranslationIssue",
+    "authorize",
     "build_schema",
     "create_app",
     "is_read_only_sparql",
+    "require_authorized",
     "review_translation",
+    "visible_rows",
 ]

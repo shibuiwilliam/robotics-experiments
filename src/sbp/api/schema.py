@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 
 import strawberry
 
+from sbp.api.authorization import AuthorizationError, visible_rows
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 
@@ -250,6 +251,14 @@ class Query:
             minConfidence: 確信度の下限。
         """
         source: BeliefSource = info.context["beliefs"]
+        principal = info.context.get("principal")
+        if principal is None:
+            # 既定は拒否（M7-06）。ABAC を設定せずに信念を読める経路を作らない——「開発中だから
+            # 全部見せる」が本番に残ると、拠点間の情報分離も人に関する遮蔽も効かなくなる
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
         rows = source.beliefs(
             subject=subject,
             predicate=predicate,
@@ -258,16 +267,19 @@ class Query:
             modality=Modality(modality.value),
             min_confidence=minConfidence,
         )
+        permitted = visible_rows(principal, rows)
         log.info(
             "api.beliefs_queried",
+            principal=principal.subject,
             subject=subject,
             predicate=predicate,
             modality=modality.value,
             as_of=None if asOf is None else asOf.isoformat(),
             valid_at=None if validAt is None else validAt.isoformat(),
-            rows=len(rows),
+            rows=len(permitted),
+            filtered=len(rows) - len(permitted),
         )
-        return [BeliefType.from_row(row) for row in rows]
+        return [BeliefType.from_row(row) for row in permitted]
 
     @strawberry.field(description="API とストアの疎通")
     def health(self, info: strawberry.Info) -> HealthType:

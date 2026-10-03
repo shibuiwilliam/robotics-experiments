@@ -35,6 +35,7 @@ from sbp.core.logging import get_logger
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sbp.api.authorization import Principal
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
 
@@ -75,6 +76,7 @@ def create_app(
     sparql_reader: Callable[[str], dict[str, Any]] | None = None,
     stream_reader: Callable[[str, int], list[dict[str, Any]]] | None = None,
     command_handler: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+    principal_resolver: Callable[[Request], Principal | None] | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -88,6 +90,9 @@ def create_app(
         sparql_reader: SPARQL クエリの実行関数（``None`` ならプロキシを無効にする）。
         stream_reader: ``(トピック, 最大件数)`` → イベントの列。
         command_handler: ``(コマンド名, 引数)`` → 結果。
+        principal_resolver: リクエスト → 要求者（ABAC、M7-06）。``None`` だと信念クエリは
+            **すべて拒否される**（既定は拒否）。認証の実装は運用環境に依るのでここでは受け取る
+            だけにし、「未設定なら通す」経路を作らない。
 
     Returns:
         FastAPI アプリ。
@@ -97,9 +102,10 @@ def create_app(
     ontology_version = _ontology_version()
     beliefs = BeliefSource(assertion_store, ontology_version=ontology_version)
 
-    async def context() -> dict[str, Any]:
-        """GraphQL の文脈。"""
-        return {"beliefs": beliefs, "settings": settings}
+    async def context(request: Request) -> dict[str, Any]:
+        """GraphQL の文脈。要求者を解決して載せる。"""
+        principal = None if principal_resolver is None else principal_resolver(request)
+        return {"beliefs": beliefs, "settings": settings, "principal": principal}
 
     app = FastAPI(
         title="SBP 意味 API",
@@ -197,7 +203,13 @@ def create_app(
         sparql=sparql_reader is not None,
         stream=stream_reader is not None,
         commands=command_handler is not None,
+        abac=principal_resolver is not None,
     )
+    if principal_resolver is None:
+        log.warning(
+            "api.abac_not_configured",
+            detail="principal_resolver が無いので信念クエリはすべて拒否される（既定は拒否）",
+        )
     return app
 
 

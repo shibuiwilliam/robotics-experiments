@@ -90,6 +90,10 @@ test: ## 単体テスト（ネットワーク・Compose 不要、5 分以内）
 test-int: ## 統合テスト（Compose 必須）
 	$(UV) pytest -m integration
 
+.PHONY: scan-secrets
+scan-secrets: ## 追跡ファイルのシークレット走査（不変条件 12）
+	$(UV) python -m scripts.scan_secrets
+
 .PHONY: check
-check: lint typecheck deps-check ontology-check test ## コミット前に必ず緑にする
+check: lint typecheck deps-check ontology-check scan-secrets test ## コミット前に必ず緑にする
 	@echo "✅ make check: all green"
