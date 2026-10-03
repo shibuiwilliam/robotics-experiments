@@ -303,10 +303,10 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 ## 4. 横断・継続タスク（マイルストーンに属さない）
 
 - [x] **X-01** CI 整備 — `.github/workflows/ci.yml`。3 ジョブ（`check` / `integration` / `ui`）。`check` が落ちたら `integration` を走らせない（型が通らないのに Compose の起動を待っても情報が増えない）。`integration` は `.env.example` の既定ポートを使い、**healthy の期待件数を明示して待つ**——「healthy でないものが 0 件」を成功条件にすると、コンテナが 1 つも起きていないときも通る
-- [ ] **X-02** import 境界 lint — 層依存の向き（development-rules.md §4）と `sbp/testing` オラクル境界を機械検査（import-linter 等）。M0-05 以降随時
+- [x] **X-02** import 境界 lint — import-linter の契約 7 本（`make check` の `deps-check`）。層依存の向き、オラクル境界（不変条件 10）、LLM SDK、LLM のホットパス（不変条件 11）、worldmodel の記号非決定、bridge の非永続化、ワーカーの API 非経由。**`root_packages` に `services` / `scripts` を入れた**——`sbp` だけを見ていると、実運用で動くワーカーと投入スクリプトからオラクルを読む経路が検査されない。各契約が実際に落ちることを違反を仕込んで確認済み
 - [ ] **X-03** ADR の継続運用 — 設計逸脱・閾値変更・ライブラリ選定のたびに `docs/adr/NNNN-*.md`
 - [ ] **X-04** `docs/STATUS.md` 更新 — ゲート通過時のみ（§2 の更新手順）
-- [ ] **X-05** 依存更新・脆弱性対応 — 月次で `uv lock --upgrade` + `make check`
+- [x] **X-05** 依存更新・脆弱性対応 — `make audit`（pip-audit）と CI の専用ジョブを用意し、2026-10-03 に実施。`uv lock --upgrade` は差分なし（既に最新解）、既知の脆弱性 0 件。**`make check` には入れない**（脆弱性 DB の照会にネットワークが要り、`make check` は無ネットワークで通る方針）。`--strict` は使えないので（sbp 自身が editable で必ず skip される）、**skip されたのが sbp だけであることを検査する**——skip を数えずに「脆弱性なし」と読むと、照会できなかったパッケージが緑に見える。以後は月次で `make audit`
 - [ ] **X-06** development-rules.md / 本書の保守 — 規約・計画の変更はコード PR と同じレビューを通す
 
 ---

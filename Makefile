@@ -110,6 +110,24 @@ ui-dev: ## apps/ui の開発サーバ（:5173、ホットリロード）
 scan-secrets: ## 追跡ファイルのシークレット走査（不変条件 12）
 	$(UV) python -m scripts.scan_secrets
 
+# `make check` に入れていない: 脆弱性 DB の照会にネットワークが要るため
+# （`make check` は Compose もネットワークも不要、という CLAUDE.md の方針）。
+# `--strict` は使えない（sbp 自身が editable で PyPI に無いため必ず skip される）。
+# 代わりに **skip されたのが sbp だけであること**を検査する——skip を数えずに
+# 「脆弱性なし」と読むと、照会できなかったパッケージが緑に見える。
+.PHONY: audit
+audit: ## 依存の脆弱性照会（X-05。ネットワークが必要）
+	@$(UV) pip-audit --skip-editable --progress-spinner off > /tmp/sbp-audit.txt 2>&1; \
+	  status=$$?; \
+	  cat /tmp/sbp-audit.txt; \
+	  skipped=$$(awk '/^Name +Skip Reason/{found=1; next} found && NF && $$0 !~ /^-+/ {print $$1}' \
+	    /tmp/sbp-audit.txt | grep -v '^sbp$$' || true); \
+	  if [ -n "$$skipped" ]; then \
+	    echo "❌ audit: sbp 以外が skip された（照会できていない）: $$skipped"; exit 1; \
+	  fi; \
+	  if [ $$status -ne 0 ]; then echo "❌ audit: 脆弱性あり"; exit $$status; fi; \
+	  echo "✅ audit: 既知の脆弱性なし（skip は sbp 自身のみ）"
+
 .PHONY: check
 check: lint typecheck deps-check ontology-check scan-secrets test ## コミット前に必ず緑にする
 	@echo "✅ make check: all green"

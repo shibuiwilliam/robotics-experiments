@@ -1,10 +1,11 @@
 # CI（docs/TASK.md X-01）。
 #
-# ジョブを 3 つに分けている。**速い検査を先に落とすため**である——lint と型が通らないのに
+# ジョブを 4 つに分けている。**速い検査を先に落とすため**である——lint と型が通らないのに
 # Compose を起動して 5 分待つのは、待ち時間を買っているだけで情報が増えない。
 #
 # `check` は Compose もネットワークも要らない（CLAUDE.md のテスト方針）。`integration` だけが
-# サービスを必要とし、`ui` は Node のジョブとして独立している。
+# サービスを必要とし、`ui` は Node のジョブ。`audit`（X-05）は `check` に依存させない——
+# **脆弱性は自分のコードの状態と無関係に増える**ので、lint が落ちている間も結果を知りたい。
 name: CI
 
 on:
@@ -115,6 +116,29 @@ jobs:
       - name: Compose 停止
         if: always()
         run: make down
+
+  audit:
+    name: 依存の脆弱性照会（X-05）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # check とは独立に走らせる。**脆弱性は自分のコードの状態と無関係に増える**ので、
+    # lint が落ちている間も照会の結果は知りたい。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv を入れる
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Python 3.12
+        run: uv python install 3.12
+
+      - name: 依存を lock どおりに同期
+        run: uv sync --all-extras --frozen
+
+      - name: pip-audit
+        run: make audit
 
   ui:
     name: apps/ui（型検査・テスト・ビルド）
