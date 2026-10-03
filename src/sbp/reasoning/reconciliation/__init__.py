@@ -1,0 +1,78 @@
+"""照合（不一致の検出・統合・抑制・ライフサイクル）。設計書 §8.2。
+
+中核テーゼ 5「不一致は例外ではなく製品」の実装層。入口は :func:`reconcile`（検出候補 →
+統合 → 抑制 → トリアージ）と五類型の検出規則（:mod:`sbp.reasoning.reconciliation.rules`）。
+"""
+
+from __future__ import annotations
+
+from sbp.reasoning.reconciliation.context import DetectionContext, SiteOverride
+from sbp.reasoning.reconciliation.discrepancy import (
+    Discrepancy,
+    DiscrepancyKind,
+    DiscrepancyStatus,
+    LearningSignals,
+    Resolution,
+    ResolutionOutcome,
+    StatusChange,
+    Suppression,
+)
+from sbp.reasoning.reconciliation.engine import (
+    ReconciliationOutcome,
+    explain_as_systematic,
+    merge_duplicates,
+    reconcile,
+)
+from sbp.reasoning.reconciliation.rules import (
+    NormViolation,
+    RecordedPresence,
+    TimedClaim,
+    detect_existence,
+    detect_identity,
+    detect_norm,
+    detect_state,
+    detect_time,
+)
+from sbp.reasoning.reconciliation.series import (
+    BeliefSeries,
+    jensen_shannon_distance,
+    sustained_runs,
+)
+from sbp.reasoning.reconciliation.severity import (
+    BusinessValue,
+    BusinessValueRegistry,
+    Severity,
+    compute_severity,
+)
+
+__all__ = [
+    "BeliefSeries",
+    "BusinessValue",
+    "BusinessValueRegistry",
+    "DetectionContext",
+    "Discrepancy",
+    "DiscrepancyKind",
+    "DiscrepancyStatus",
+    "LearningSignals",
+    "NormViolation",
+    "ReconciliationOutcome",
+    "RecordedPresence",
+    "Resolution",
+    "ResolutionOutcome",
+    "Severity",
+    "SiteOverride",
+    "StatusChange",
+    "Suppression",
+    "TimedClaim",
+    "compute_severity",
+    "detect_existence",
+    "detect_identity",
+    "detect_norm",
+    "detect_state",
+    "detect_time",
+    "explain_as_systematic",
+    "jensen_shannon_distance",
+    "merge_duplicates",
+    "reconcile",
+    "sustained_runs",
+]

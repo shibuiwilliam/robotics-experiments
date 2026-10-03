@@ -1,0 +1,44 @@
+# ObjectType ごとの業務価値 v(x)（設計書 §8.2 の深刻度モデル）。
+#
+# 深刻度は「推定の確からしさ」ではなく「業務の損失」で順位を決める。そのための v(x) をここに
+# 置く。値は担当者ヒアリング相当の見積りで、**相対順位だけが意味を持つ**（絶対額の精度は
+# 要らない。ポンプ 1 台と予備部品 1 個のどちらを先に見るかが決まればよい）。
+#
+# safety_class は金額に換算できない影響を 0.0〜1.0 で入れる。同額でも安全に関わるものが
+# 上位に来るようにするための増幅項である（severity.BusinessValue.value_at_stake）。
+#
+# 型は ontology/domain/equipment-maintenance.ttl にあるものだけを使う。新しい型が必要なら
+# 先にオントロジーを変更する（CLAUDE.md「オントロジー変更の手順」）。
+
+values:
+  # ---- 生産ライン ----
+  # 止まると下流工程がすべて止まるため、単体の資産価値よりペナルティが支配する。
+  - object_type: ent:ProductionLine
+    asset_value: 12000000.0
+    safety_class: 0.3
+    sla_penalty: 20000000.0
+    note: 2026-06 生産管理課ヒアリング。停止 1 時間あたり 2000 万円の機会損失想定
+
+  # ---- 回転機械一般 ----
+  # Pump の上位型。Pump 以外の回転機械に当たったときの既定値として置く。
+  - object_type: ent:RotatingEquipment
+    asset_value: 3000000.0
+    safety_class: 0.4
+    sla_penalty: 2000000.0
+    note: 回転部の近接作業があるため安全等級を中程度に置く
+
+  # ---- ポンプ ----
+  # 停止すると下流工程が止まるため SLA ペナルティが資産価値を上回る。
+  - object_type: ent:Pump
+    asset_value: 2500000.0
+    safety_class: 0.3
+    sla_penalty: 4000000.0
+    note: 2026-06 設備保全課ヒアリング。停止 1 時間あたり下流損失 400 万円の想定
+
+  # ---- 予備部品 ----
+  # 単体の価値は小さい。ただし在庫の存在不一致（類型 1）が最も起きるのはここである。
+  - object_type: ent:SparePart
+    asset_value: 120000.0
+    safety_class: 0.1
+    sla_penalty: 0.0
+    note: 価値は小さいが幽霊在庫の主戦場。件数で効く

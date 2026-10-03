@@ -88,6 +88,12 @@ class ReasoningSettings(BaseSettings):
     persistence_s: float = Field(default=300.0, gt=0.0)
     """不一致判定に必要な持続時間 τ（秒）。情報源ごとに上書きしうる。"""
 
+    severity_value_scale: float = Field(default=1_000_000.0, gt=0.0)
+    """深刻度の価値正規化基準。この額の業務価値で価値項が 1.0 になる。"""
+
+    severity_persistence_scale_s: float = Field(default=3600.0, gt=0.0)
+    """深刻度の持続時間正規化基準（秒）。この長さで持続項が 1.0 になる。"""
+
     bp_period_s: float = Field(default=60.0, gt=0.0)
     """実体間メッセージパッシング（loopy BP）の実行周期（秒）。"""
 
