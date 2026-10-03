@@ -131,6 +131,26 @@ services:
       retries: 6
       start_period: 15s
 
+  # UI（M7-04、ADR-0008）。静的ファイルを配るだけで、API とは別オリジン。
+  # ビルドは `make ui-build`（ローカルの Node で行う）。このコンテナはビルドしない——
+  # Node のビルド環境をイメージに持つと、Compose 全体の 6 GB 制限を圧迫する。
+  ui:
+    <<: *platform
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: sbp-ui
+    profiles: ["ui"]
+    ports:
+      - "${SBP_PORT_UI:-5173}:8080"
+    volumes:
+      - ../apps/ui/dist:/usr/share/nginx/html:ro
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8080/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+
 volumes:
   sbp_rp:
     name: sbp_rp

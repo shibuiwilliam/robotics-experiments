@@ -90,6 +90,22 @@ test: ## 単体テスト（ネットワーク・Compose 不要、5 分以内）
 test-int: ## 統合テスト（Compose 必須）
 	$(UV) pytest -m integration
 
+.PHONY: ui-install
+ui-install: ## apps/ui の依存を入れる（Node 20+）
+	cd apps/ui && npm ci
+
+.PHONY: ui-check
+ui-check: ## apps/ui の型検査とテスト（ADR-0008。依存が少ないので数秒で終わる）
+	cd apps/ui && npm run typecheck && npm test
+
+.PHONY: ui-build
+ui-build: ## apps/ui を dist/ にビルド（compose の ui profile が配る）
+	cd apps/ui && npm run build
+
+.PHONY: ui-dev
+ui-dev: ## apps/ui の開発サーバ（:5173、ホットリロード）
+	cd apps/ui && npm run dev
+
 .PHONY: scan-secrets
 scan-secrets: ## 追跡ファイルのシークレット走査（不変条件 12）
 	$(UV) python -m scripts.scan_secrets
@@ -97,3 +113,9 @@ scan-secrets: ## 追跡ファイルのシークレット走査（不変条件 12
 .PHONY: check
 check: lint typecheck deps-check ontology-check scan-secrets test ## コミット前に必ず緑にする
 	@echo "✅ make check: all green"
+
+# UI を触ったときはこちら。`check` に ui-check を入れていないのは、`make check` を
+# 「追加のインストール無しで必ず走る」ものに保つため（node_modules が無い環境でも緑にする）。
+.PHONY: check-all
+check-all: check ui-check ## check + apps/ui（UI を触った PR で使う）
+	@echo "✅ make check-all: all green（Python + UI）"
