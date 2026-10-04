@@ -14,12 +14,15 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from uuid import UUID
 
 import psycopg
 import pytest
 from services.learning_worker import LearningWorker
 
+from sbp.actions import ActionRegistry
+from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.time import Interval, now
 from sbp.knowledge import (
@@ -27,6 +30,7 @@ from sbp.knowledge import (
     DecisionQueue,
     DecisionRow,
     DiscrepancyStore,
+    ExpectationStore,
     ObservationQueue,
 )
 from sbp.reasoning.reconciliation import (
@@ -322,3 +326,144 @@ class TestDiscrepancyBodyIsUsed:
             assert found is not None
             assert found[0]["discrepancy_source"] == "reconstructed"
             await _cleanup(connection)
+
+
+class TestActionExecution:
+    """承認されたアクションの実行（M8-21、ADR-0014）。
+
+    **ここで M5 の閉ループが運用経路に乗る。** 人が承認 → キュー → ワーカーが設計書 §9.2 の
+    順序で適用 → 期待が `expectations` 表に残る。これまで実行はライブラリとテストの中にしか
+    無かった（所見 89）。
+    """
+
+    @staticmethod
+    def _action_row(*, decision_id: str = "a-1", override: str | None = None) -> DecisionRow:
+        payload: dict[str, object] = {
+            "decision_id": decision_id,
+            "action_type": vocab.ent.CreateEmergencyInspection,
+            "target": PUMP,
+            "approved_by": OPERATOR,
+            "reason": "停止の疑いが強く、緊急点検を起票する",
+            "severity": 0.9,
+            "correlation_id": DISCREPANCY_ID,
+        }
+        if override is not None:
+            payload["override_reason"] = override
+        return DecisionRow(
+            decision_id=decision_id,
+            kind=DecisionKind.ACTION,
+            subject=PUMP,
+            decided_by=OPERATOR,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _satisfying_beliefs() -> dict[str, float]:
+        """緊急点検の物理前提を満たす信念（契約から作る）。"""
+        contracts = ActionRegistry.from_directory(Path("actions"))
+        beliefs: dict[str, float] = {}
+        for condition in contracts.get(vocab.ent.CreateEmergencyInspection).all_preconditions:
+            if condition.fluent is None or condition.threshold is None:
+                continue
+            beliefs[condition.fluent] = (
+                condition.threshold if condition.kind == "belief_at_least" else 0.0
+            )
+        return beliefs
+
+    @pytest.mark.asyncio
+    async def test_an_approved_action_persists_its_expectation(self, settings: Settings) -> None:
+        """承認されたアクションが期待を表に残す（設計書 §9.2 の 1→4）。
+
+        **表に残ることが要点である。** 期待が残らなければ効果の検証ができず、学習が止まる。
+        """
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            decisions = DecisionQueue(connection, site=SITE)
+            expectations = ExpectationStore(connection, site=SITE)
+            await decisions.enqueue(self._action_row())
+
+            beliefs = self._satisfying_beliefs()
+
+            async def read(entity: str) -> dict[str, float]:
+                del entity
+                return beliefs
+
+            worker = LearningWorker(
+                settings,
+                decisions=decisions,
+                contracts=ActionRegistry.from_directory(Path("actions")),
+                beliefs=read,
+                expectations=expectations.upsert,
+            )
+            applied = await worker.step()
+
+            assert applied == 1, "承認が適用されていない"
+            board = await expectations.board(target=PUMP)
+            assert len(board) == 1
+            assert board[0].status == "Active"
+            assert board[0].action_type == vocab.ent.CreateEmergencyInspection
+            # 期限は最も遅い効果（点検は 24 時間以内）
+            assert board[0].deadline is not None
+            await _cleanup_actions(connection)
+
+    @pytest.mark.asyncio
+    async def test_an_unwired_worker_records_the_failure(self, settings: Settings) -> None:
+        """配線が無ければ失敗として残る（黙って成功にしない）。
+
+        既定の配線では実行できない——業務システムを変える経路は運用者が明示する。
+        """
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            decisions = DecisionQueue(connection, site=SITE)
+            await decisions.enqueue(self._action_row(decision_id="a-unwired"))
+
+            worker = LearningWorker(settings, decisions=decisions)
+            assert await worker.step() == 0
+
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT failed_at, error FROM learning_decisions WHERE decision_id = %s",
+                    ("a-unwired",),
+                )
+                row = await cursor.fetchone()
+            assert row is not None
+            assert row[0] is not None, "失敗が記録されていない"
+            assert "not wired" in str(row[1])
+            await _cleanup_actions(connection)
+
+    @pytest.mark.asyncio
+    async def test_the_same_approval_executes_once(self, settings: Settings) -> None:
+        """同じ承認を 2 回積んでも 1 回しか実行されない。
+
+        **アクションの二重実行はこの基盤で最悪の失敗である**（業務システムを 2 回変える）。
+        """
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            decisions = DecisionQueue(connection, site=SITE)
+            expectations = ExpectationStore(connection, site=SITE)
+            assert await decisions.enqueue(self._action_row(decision_id="a-dup")) is True
+            assert await decisions.enqueue(self._action_row(decision_id="a-dup")) is False
+
+            beliefs = self._satisfying_beliefs()
+
+            async def read(entity: str) -> dict[str, float]:
+                del entity
+                return beliefs
+
+            worker = LearningWorker(
+                settings,
+                decisions=decisions,
+                contracts=ActionRegistry.from_directory(Path("actions")),
+                beliefs=read,
+                expectations=expectations.upsert,
+            )
+            await worker.step()
+            await worker.step()
+
+            assert len(await expectations.board(target=PUMP)) == 1
+            await _cleanup_actions(connection)
+
+
+async def _cleanup_actions(connection: psycopg.AsyncConnection[tuple[object, ...]]) -> None:
+    """アクションの判断と期待を落とす。"""
+    async with connection.cursor() as cursor:
+        await cursor.execute("DELETE FROM learning_decisions WHERE site = %s", (SITE,))
+        await cursor.execute("DELETE FROM expectations WHERE site = %s", (SITE,))
+    await connection.commit()

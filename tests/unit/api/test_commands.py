@@ -17,11 +17,18 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from sbp.api.commands import CurationCommand, ResolutionCommand, build_command_handler
+from sbp.api.commands import (
+    CurationCommand,
+    ExecutionCommand,
+    ResolutionCommand,
+    build_command_handler,
+)
+from sbp.core import vocab
 from sbp.knowledge.decisions import DecisionKind, DecisionRow
 
 OPERATOR = "https://sbp.example/person/operator-1"
 DISCREPANCY_ID = "0f8fad5b-d9cb-469f-a165-70867728950e"
+PUMP = "https://sbp.example/site/siteA/asset/P-101"
 """不一致の識別子は UUID（所見 77）。"""
 
 
@@ -34,6 +41,19 @@ def _resolution_payload(**overrides: object) -> dict[str, object]:
         "resolved_by": OPERATOR,
     }
     return base | overrides
+
+
+def _execution_payload(**overrides: object) -> dict[str, object]:
+    """アクション実行の引数（既定は承認済み・上書きなし）。"""
+    payload: dict[str, object] = {
+        "decision_id": "a-1",
+        "action_type": vocab.ent.CreateEmergencyInspection,
+        "target": PUMP,
+        "approved_by": OPERATOR,
+        "reason": "停止の疑いが強く、緊急点検を起票する",
+        "severity": 0.9,
+    }
+    return payload | overrides
 
 
 def _curation_payload(**overrides: object) -> dict[str, object]:
@@ -99,6 +119,36 @@ class TestCurationCommand:
         assert command.accepted is False
 
 
+class TestExecutionCommand:
+    """アクション実行の引数（M8-21、ADR-0014）。"""
+
+    def test_a_valid_approval_parses(self) -> None:
+        """承認付きの実行要求が通る。"""
+        command = ExecutionCommand.model_validate(_execution_payload())
+
+        assert command.action_type.endswith("CreateEmergencyInspection")
+        assert command.override_reason is None
+
+    def test_a_reason_is_required(self) -> None:
+        """理由の無い実行を拒否する（監査で読めない）。"""
+        with pytest.raises(ValidationError):
+            ExecutionCommand.model_validate(_execution_payload(reason=""))
+
+    def test_an_empty_override_reason_is_refused(self) -> None:
+        """上書きの理由が空なら拒否する。
+
+        **上書きは安全ガードを外す操作である**（設計書 §9.3）。空文字を通すと、理由を
+        書かせる意図が「フィールドを送れば通る」に変わる。
+        """
+        with pytest.raises(ValidationError):
+            ExecutionCommand.model_validate(_execution_payload(override_reason=""))
+
+    def test_a_severity_outside_the_unit_interval_is_refused(self) -> None:
+        """深刻度は確率である（承認の判定に使う）。"""
+        with pytest.raises(ValidationError):
+            ExecutionCommand.model_validate(_execution_payload(severity=1.5))
+
+
 class TestHandler:
     """ハンドラの振る舞い。"""
 
@@ -136,6 +186,28 @@ class TestHandler:
 
         assert rows[0].kind is DecisionKind.CURATION
         assert rows[0].subject == "prop-1"
+
+    @pytest.mark.asyncio
+    async def test_an_execution_is_enqueued(self) -> None:
+        """アクションの承認が判断キューに積まれる。
+
+        **主語は対象実体である**（アクション型ではない）。同じ型のアクションが別の設備に
+        向くのが普通で、型を主語にすると表の `subject` で辿れなくなる。
+        """
+        rows: list[DecisionRow] = []
+
+        async def enqueue(row: DecisionRow) -> bool:
+            rows.append(row)
+            return True
+
+        handler = build_command_handler(enqueue)
+        result = handler("execute_action", _execution_payload())
+        await asyncio.sleep(0)
+
+        assert result["accepted"] is True
+        assert rows[0].kind is DecisionKind.ACTION
+        assert rows[0].subject == PUMP
+        assert rows[0].decided_by == OPERATOR
 
     @pytest.mark.asyncio
     async def test_an_unknown_command_is_refused(self) -> None:

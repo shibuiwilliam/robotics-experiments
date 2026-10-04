@@ -44,6 +44,12 @@ class DecisionKind(StrEnum):
     """不一致の解決（物理が正しい / 記録が正しい / 両方誤り / 判定不能）。"""
     CURATION = "curation"
     """概念提案の採否。"""
+    ACTION = "action"
+    """アクションの実行（承認付き。ADR-0014）。
+
+    **承認は判断であり、実行はその適用である。** `riskClass >= medium` は承認必須なので
+    （設計書 §9.3）、実行はここを通る。アクションの二重実行を `decision_id` の冪等で防ぐ。
+    """
 
 
 @dataclass(frozen=True, slots=True)

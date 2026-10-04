@@ -20,6 +20,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from sbp.actions.requests import ExecutionCommand
 from sbp.core.logging import get_logger
 from sbp.knowledge.decisions import DecisionKind, DecisionRow
 
@@ -29,7 +30,12 @@ if TYPE_CHECKING:
     Enqueue = Callable[[DecisionRow], Awaitable[bool]]
     """``DecisionQueue.enqueue`` を包む。"""
 
-__all__ = ["CurationCommand", "ResolutionCommand", "build_command_handler"]
+__all__ = [
+    "CurationCommand",
+    "ExecutionCommand",
+    "ResolutionCommand",
+    "build_command_handler",
+]
 
 log = get_logger(__name__)
 
@@ -169,6 +175,17 @@ def _to_row(name: str, payload: dict[str, Any]) -> DecisionRow:
             decided_by=command.resolved_by,
             payload=command.model_dump(mode="json"),
         )
+    if name == "execute_action":
+        execution = ExecutionCommand.model_validate(payload)
+        return DecisionRow(
+            decision_id=execution.decision_id,
+            kind=DecisionKind.ACTION,
+            # **対象実体を主語にする。** アクション型ではない——同じ型のアクションが別の設備に
+            # 向くのが普通で、型を主語にすると表の `subject` で辿れなくなる
+            subject=execution.target,
+            decided_by=execution.approved_by,
+            payload=execution.model_dump(mode="json"),
+        )
     if name == "curate_concept":
         curation = CurationCommand.model_validate(payload)
         return DecisionRow(
@@ -179,5 +196,6 @@ def _to_row(name: str, payload: dict[str, Any]) -> DecisionRow:
             payload=curation.model_dump(mode="json"),
         )
     raise ValueError(
-        f"unknown command {name!r}; known commands: resolve_discrepancy, curate_concept"
+        f"unknown command {name!r}; known commands: resolve_discrepancy, "
+        "curate_concept, execute_action"
     )

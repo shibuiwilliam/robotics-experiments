@@ -15,7 +15,7 @@ from sbp.knowledge.artifacts import (
     S3ArtifactStore,
     parse_s3_uri,
 )
-from sbp.knowledge.assertions import AssertionRow, AssertionStore
+from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_beliefs
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, site_prefix
@@ -84,6 +84,7 @@ __all__ = [
     "WatermarkStore",
     "aggregation_rules",
     "belief_graph",
+    "current_beliefs",
     "entities_of_type",
     "group_by_whole",
     "is_scenario_graph",

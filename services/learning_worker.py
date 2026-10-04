@@ -1,6 +1,6 @@
-"""学習信号の適用ワーカー（M8-08、ADR-0012）。
+"""人の判断の適用ワーカー（M8-08、ADR-0012 / M8-21、ADR-0014）。
 
-人の判断（不一致の解決・概念提案の採否）を作業キューから引き、学習信号に変換して適用する。
+人の判断（不一致の解決・概念提案の採否・**アクションの承認**）を作業キューから引いて適用する。
 **5 番目のワーカー**で、既定では起動しない（`scripts/dev.py --workers learning`）。
 
 **全部を自動適用しない**（ADR-0012 の問い 3）。
@@ -12,6 +12,12 @@
 | ``reliability_updates`` | 記録するだけ。1 件の解決で全照合の尤度を動かさない |
 | ``bags``（負例） | 記録するだけ。再学習は昇格ゲートを通る別の仕事 |
 | ``concept_candidates`` | 記録するだけ。オントロジーの MINOR 起票は人の手作業 |
+
+**アクションの実行**（M8-21、ADR-0014）は設計書 §9.2 の順序どおりに適用する:
+前提検証（三面）→ 承認 → 実行 → ``ActionEvent`` → ``Expectation`` 生成 → 永続化。
+**順序を省略しない。** 既定では契約レジストリ・信念の読み出し・期待の書き込みが配線されて
+いないので、何も実行できない（失敗として記録される）——業務システムを変える経路は運用者が
+明示する、という書き戻しと同じ扱いである。
 
 **照合ワーカーに相乗りしない理由。** 照合は窓を回すホットパスで、書き戻しは外部システムへの
 同期呼び出しである。詰まった書き戻しが検出を止める（ADR-0012 の問い 2）。
@@ -26,13 +32,27 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid5
 
+from sbp.actions import (
+    ActionRequest,
+    ActionStage,
+    Approval,
+    ExecutionCommand,
+    Override,
+    RateLimitState,
+    check_preconditions,
+    expectation_for,
+)
+from sbp.core import vocab
 from sbp.core.config import Settings, WritebackMode
+from sbp.core.errors import ActionError
 from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.knowledge.decisions import DecisionKind
+from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.reconciliation import (
     Discrepancy,
     DiscrepancyKind,
@@ -49,9 +69,11 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
     from datetime import datetime
 
+    from sbp.actions import ActionRegistry
     from sbp.integration.writeback import WritebackCommand
     from sbp.knowledge.decisions import DecisionQueue, DecisionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
+    from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.observations import ObservationRow
     from sbp.reasoning.reconciliation.learning import LearningArtifacts
 
@@ -61,8 +83,18 @@ if TYPE_CHECKING:
     """観測要求を作業キューに積む（``ObservationQueue.enqueue``）。"""
     WritebackRunner = Callable[["WritebackCommand"], Awaitable[object]]
     """書き戻しを 1 件実行する（既定 dry）。"""
+    BeliefReader = Callable[[str], Awaitable[dict[str, float]]]
+    """``実体 IRI -> フルーエント型 IRI: 確信度``（``knowledge.current_beliefs`` を包む）。"""
+    ExpectationSink = Callable[["ExpectationRecord"], Awaitable[None]]
+    """期待を作業項目表に書く（``ExpectationStore.upsert``）。"""
 
-__all__ = ["LearningWorker", "build_worker", "main", "reconstruct_discrepancy"]
+__all__ = [
+    "LearningWorker",
+    "build_worker",
+    "command_id_for",
+    "main",
+    "reconstruct_discrepancy",
+]
 
 log = get_logger(__name__)
 
@@ -105,6 +137,9 @@ class LearningWorker:
         discrepancies: DiscrepancyReader | None = None,
         observations: ObservationSink | None = None,
         writeback: WritebackRunner | None = None,
+        contracts: ActionRegistry | None = None,
+        beliefs: BeliefReader | None = None,
+        expectations: ExpectationSink | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -116,6 +151,11 @@ class LearningWorker:
         writeback: 書き戻しの実行（``None`` なら**提案として記録するだけ**。
             既定が ``None`` なのは意図的である——書き戻しは業務システムを変えるので、
             配線は運用者が明示する）。
+        contracts: アクションの意味契約（``None`` なら実行を適用しない）。
+        beliefs: 前提の物理面を見るための信念の読み出し（``None`` なら**前提は必ず落ちる**
+            ——「知らないことを満たしているとみなさない」の帰結である。設計書 §9.3）。
+        expectations: 期待の書き込み（``None`` なら**実行しない**。実行したのに期待を
+            書けないと、効果の検証が永久にできず学習が止まる）。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -128,6 +168,12 @@ class LearningWorker:
         self._discrepancies = discrepancies
         self._observations = observations
         self._writeback = writeback
+        self._contracts = contracts
+        self._beliefs = beliefs
+        self._expectations = expectations
+        # **プロセス内にしか無い。** 再起動で消えるので、冪等の鍵が防ぐのは「同じ判断の
+        # 二度適用」だけで、「別の判断で短時間に 2 回」は再起動後に通る（ADR-0014 の未決 1）
+        self._rate_limits = RateLimitState()
         self.period = timedelta(seconds=period_s)
         self._last_poll: datetime | None = None
         self.applied_total = 0
@@ -137,6 +183,12 @@ class LearningWorker:
                 "worker.no_decision_queue",
                 worker=WORKER_NAME,
                 detail="判断のキューが無いので何も適用しない",
+            )
+        if contracts is None:
+            log.info(
+                "worker.actions_not_wired",
+                worker=WORKER_NAME,
+                detail="契約レジストリが無いのでアクションを実行しない（承認は記録される）",
             )
         if writeback is None:
             log.info(
@@ -228,6 +280,8 @@ class LearningWorker:
             return await self._apply_resolution(row, at=at)
         if row.kind is DecisionKind.CURATION:
             return self._apply_curation(row)
+        if row.kind is DecisionKind.ACTION:
+            return await self._apply_action(row, at=at)
         raise ValueError(f"unknown decision kind {row.kind!r}")
 
     async def _apply_resolution(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
@@ -336,6 +390,114 @@ class LearningWorker:
         )
         return summary
 
+    async def _apply_action(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
+        """承認されたアクションを実行する（設計書 §9.2、ADR-0014）。
+
+        **順序を省略しない**: 前提検証（三面）→ 承認 → 実行 → ``ActionEvent`` →
+        ``Expectation`` 生成 → 永続化。
+
+        **期待を書けなければ実行しない。** 実行したのに期待を書けないと、効果の検証が永久に
+        できず学習が止まる——「実行はしたが何も確かめられない」状態を作らない。だから配線の
+        検査を実行の**前**に置く。
+
+        Args:
+            row: 判断（``ExecutionCommand`` の内容が ``payload``）。
+            at: 処理時刻。
+
+        Returns:
+            何を適用したかの要約。
+
+        Raises:
+            ActionError: 配線が無い、契約が無い、前提が満たせない、レート制限に当たる場合。
+                キューの ``error`` に残り、再試行の対象になる（前提は後で満たされうる）。
+        """
+        command = ExecutionCommand.model_validate(row.payload)
+        if self._contracts is None or self._expectations is None:
+            raise ActionError(
+                f"cannot execute {command.action_type}: the contract registry or the expectation "
+                "store is not wired; actions change the business system so the path is explicit"
+            )
+        contract = self._contracts.get(command.action_type)
+
+        # 前提の物理面。**読めなければ空で渡す**——`check_preconditions` が「信念が無い」を
+        # 未達として扱う（知らないことを満たしているとみなさない。設計書 §9.3）
+        beliefs = {} if self._beliefs is None else await self._beliefs(command.target)
+        report = check_preconditions(contract, target=command.target, beliefs=beliefs)
+
+        request = ActionRequest(
+            contract=contract,
+            target=command.target,
+            requested_by=command.approved_by,
+            severity=command.severity,
+            # **冪等の鍵を判断から導く。** 既定は `uuid4` で、再試行ごとに別の値になる
+            # ——部分的に失敗した実行を再試行すると、業務システムが 2 つの命令を見る
+            command_id=command_id_for(row.decision_id),
+            correlation_id=command.correlation_id,
+        )
+        override = (
+            None
+            if command.override_reason is None
+            else Override(
+                reason=command.override_reason,
+                overridden_by=command.approved_by,
+                overridden_at=at,
+                failed_faces=report.failed_faces(),
+            )
+        )
+        stage = request.check(report, override=override)
+        if stage is ActionStage.REJECTED:
+            raise ActionError(
+                f"{command.action_type} on {command.target} failed its preconditions: "
+                f"{report.explain()}"
+            )
+
+        # **このコマンドが承認そのものである**（ADR-0014）。承認が不要な契約でも
+        # `approve` を通す——段階を飛ばすと実行が段階検査に落ちる
+        request.approve(
+            Approval(
+                role=contract.approvals.role,
+                approved_by=command.approved_by,
+                approved_at=at,
+                note=command.reason,
+            )
+            if contract.requires_approval(severity=command.severity)
+            else None
+        )
+        event = request.execute(
+            at=at, executed_by=command.approved_by, rate_limits=self._rate_limits
+        )
+
+        expectation = expectation_for(
+            contract,
+            event,
+            ontology_version=vocab.ONTOLOGY_VERSION,
+            record_effect_floor=self.settings.actions.record_effect_floor,
+            note=command.reason,
+        )
+        await self._expectations(expectation_to_record(expectation))
+
+        summary = {
+            "kind": "action",
+            "action_type": command.action_type,
+            "target": command.target,
+            "action_event": str(event.event_id),
+            "expectation_id": str(expectation.expectation_id),
+            "overridden": event.was_overridden,
+            "symbolic_effects": len(expectation.effects_of("symbolic")),
+            "rollout_effects": len(expectation.effects_of("rollout")),
+            "beliefs_seen": len(beliefs),
+        }
+        log.info(
+            "worker.action_executed",
+            worker=WORKER_NAME,
+            correlation_id=str(command.correlation_id) if command.correlation_id else None,
+            event_id=str(event.event_id),
+            entity=command.target,
+            decision_id=row.decision_id,
+            **{key: summary[key] for key in ("action_type", "expectation_id", "overridden")},
+        )
+        return summary
+
     async def _enqueue_observations(self, artifacts: LearningArtifacts, *, site: str) -> int:
         """追加観測の要求を作業キューに積む（M8-05 の供給元）。
 
@@ -402,6 +564,25 @@ class LearningWorker:
         return await self.runtime.run(self.step, max_iterations=max_iterations)
 
 
+_COMMAND_NAMESPACE = UUID("6f9c1f2e-2a3b-4c5d-8e7f-0a1b2c3d4e5f")
+"""``decision_id`` から冪等の ``command_id`` を導く名前空間（ADR-0014）。
+
+固定値である必要がある——変えると、過去の判断を再試行したときに別の命令として扱われる。
+"""
+
+
+def command_id_for(decision_id: str) -> UUID:
+    """判断の識別子から決定的な冪等の鍵を作る。
+
+    **再試行で同じ値になることが要点である。** `ActionRequest.command_id` の既定は `uuid4` で、
+    適用が部分的に失敗して再試行されると別の命令になり、業務システムが 2 回変わる。
+
+    Args:
+        decision_id: 判断の識別子（UI が生成した冪等の鍵）。
+    """
+    return uuid5(_COMMAND_NAMESPACE, decision_id)
+
+
 def reconstruct_discrepancy(
     row: DecisionRow, *, resolution: Resolution, at: datetime
 ) -> Discrepancy:
@@ -428,7 +609,6 @@ def reconstruct_discrepancy(
         ValueError: ``row.subject`` が UUID でない場合。**推測で新しい ID を作らない**
             ——辿れない学習信号は、無いほうがまだ分かる。
     """
-    from sbp.core import vocab  # noqa: PLC0415 — オントロジー版だけに使う
 
     start = row.received_at or at
     try:
@@ -466,10 +646,14 @@ def reconstruct_discrepancy(
 async def build_worker(
     settings: Settings | None = None, *, site_id: str
 ) -> tuple[LearningWorker, DecisionQueue]:
-    """実運用の配線を組む（判断キュー → 学習信号 → 観測要求キュー）。
+    """実運用の配線を組む（判断キュー → 学習信号 → 観測要求キュー / アクション実行）。
 
     **書き戻しは配線しない。** 業務システムを変える経路は運用者が明示する
     （``SBP_WRITEBACK_MODE=live`` だけでは足りない——コネクタの資格情報が要る）。
+
+    **アクションの実行は配線する**（ADR-0014）。契約（``actions/*.yaml``）・信念の読み出し・
+    期待の書き込みを繋ぐ。**実行自体が業務システムを変えるのは書き戻しを経由したときだけ**で、
+    それは上記のとおり配線していない——いまは ``ActionEvent`` と ``Expectation`` が出るだけである。
 
     Args:
         settings: 設定（既定は環境から読む）。
@@ -480,10 +664,15 @@ async def build_worker(
     """
     import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
 
+    from sbp.actions import ActionRegistry  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
+        AssertionStore,
         DecisionQueue,
         DiscrepancyStore,
+        ExpectationStore,
+        HttpGraphStore,
         ObservationQueue,
+        current_beliefs,
     )
 
     resolved = settings or Settings()
@@ -491,14 +680,43 @@ async def build_worker(
     decisions = DecisionQueue(connection, site=site_id)
     observations = ObservationQueue(connection, site=site_id)
     store = DiscrepancyStore(connection, site=site_id)
+    expectations = ExpectationStore(connection, site=site_id)
+    contracts = ActionRegistry.from_directory(Path("actions"))
+    assertions = AssertionStore(HttpGraphStore(resolved), site_id=site_id)
+
+    async def read_beliefs(entity: str) -> dict[str, float]:
+        """実体の信念を読む（前提の物理面）。
+
+        SPARQL は同期なので別スレッドに逃がす——ワーカーのループを止めない。
+
+        Args:
+            entity: 対象実体の IRI。
+        """
+        return await asyncio.to_thread(current_beliefs, assertions, entity=entity)
+
+    async def write_expectation(record: ExpectationRecord) -> None:
+        """期待を作業項目表に書く。
+
+        Args:
+            record: 期待のレコード。
+        """
+        await expectations.upsert(record)
 
     worker = LearningWorker(
         resolved,
         decisions=decisions,
         discrepancies=store.get,
         observations=observations.enqueue,
+        contracts=contracts,
+        beliefs=read_beliefs,
+        expectations=write_expectation,
     )
-    log.info("worker.wired", worker=WORKER_NAME, site_id=site_id)
+    log.info(
+        "worker.wired",
+        worker=WORKER_NAME,
+        site_id=site_id,
+        action_types=len(contracts.types()),
+    )
     return worker, decisions
 
 

@@ -36,6 +36,7 @@ from sbp.actions.preconditions import (
     PreconditionReport,
     check_preconditions,
 )
+from sbp.actions.requests import ExecutionCommand
 
 __all__ = [
     "ActionContract",
@@ -48,6 +49,7 @@ __all__ = [
     "ApprovalTrigger",
     "ConditionResult",
     "Effect",
+    "ExecutionCommand",
     "Override",
     "Precondition",
     "PreconditionReport",

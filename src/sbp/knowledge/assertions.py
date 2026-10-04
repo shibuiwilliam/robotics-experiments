@@ -429,3 +429,49 @@ class AssertionStore:
             ontology_version=row["ontologyVersion"] or "",
             graph=row.get("g") or "",
         )
+
+
+def current_beliefs(
+    store: AssertionStore,
+    *,
+    entity: str,
+    at: datetime | None = None,
+    modality: Modality = Modality.INFERRED,
+) -> dict[str, float]:
+    """実体について成立しているフルーエントと確信度を引く（M8-21）。
+
+    真偽フルーエントの信念は ``(実体, フルーエント型, True)`` という形で入っている
+    （:meth:`BeliefUpdate.to_assertion`）。アクションの前提検証は
+    「フルーエント型 IRI → 確信度」の表を要求するので、ここで畳む。
+
+    **同じフルーエントが複数あれば最も確信度が高いものを採る。** 重なるのは区間が分かれて
+    いるときで、``valid_at`` を指定すれば 1 件に絞れる。指定しない呼び出しで黙って先頭を
+    採ると、どれが返るかが格納順に依存する。
+
+    **様相は既定で ``inferred`` に絞る。** 前提の物理面は「基盤が推定した状態」を見るべきで、
+    計画（``planned``）を混ぜると「計画どおりなら前提を満たす」ことになり、安全ガードが
+    計画の追認になる（設計書 §9.3）。
+
+    Args:
+        store: アサーションストア。
+        entity: 対象実体の IRI。
+        at: ``valid_at``（この時刻に成立していた文に絞る）。``None`` なら区間を絞らない。
+        modality: 様相で絞る。
+
+    Returns:
+        フルーエント型 IRI → 確信度。目的語が ``True`` でない文は含めない
+        （フルーエントの成立を表していないため）。
+    """
+    rows = store.query(subject=entity, valid_at=at, modality=modality)
+    beliefs: dict[str, float] = {}
+    for row in rows:
+        if row.object_ not in _TRUE_LITERALS:
+            continue
+        current = beliefs.get(row.predicate)
+        if current is None or row.confidence > current:
+            beliefs[row.predicate] = row.confidence
+    return beliefs
+
+
+_TRUE_LITERALS = frozenset({"true", "True"})
+"""真偽フルーエントの目的語の表現（ストアの literal 表現に依る）。"""
