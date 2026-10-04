@@ -12,8 +12,9 @@
 
 **ウォーターマークで進む。** 「最後に処理した潜在の時刻」を実体ごとに持ち、それより後だけを
 読む（``LatentIndex.since`` は右開）。これが無いと、同じ変化点から事象を繰り返し昇格する。
-ウォーターマークは**プロセス内に持つ**ので、再起動すると進んだところから再開できない
-（M8-03 で投影テーブルに逃がす）。
+ウォーターマークは**投影表に永続化する**（M8-03、``sbp.knowledge.watermarks``）ので、再起動
+しても進んだところから再開する。永続化が無い（``watermarks=None``）場合はプロセス内だけに
+持ち、再起動で最初から読み直す——単体テストと使い捨ての実行のための形である。
 
 **プローブは置き場から版指定でロードする**（ADR-0009）。起動時に学習する案は不変条件 10 が
 塞いだ——ワーカーは真値を読めないので、そもそも学習できない。接地する実体は知識グラフから
@@ -53,6 +54,14 @@ if TYPE_CHECKING:
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.producer import KafkaEventProducer
     from sbp.knowledge.artifacts import ArtifactStore
+    from sbp.knowledge.watermarks import WatermarkStore
+
+    WatermarkSink = WatermarkStore
+    """ウォーターマークの永続化。
+
+    具体型をそのまま使う（Protocol を切らない）。単体テストは同じ形の代役を渡すので、
+    抽象を 1 つ増やすより読みやすい——``load`` / ``save`` の 2 メソッドしかない。
+    """
 
     LatentReader = Callable[
         [str, datetime | None, int], Awaitable[Sequence[tuple[datetime, NDArray[np.float64]]]]
@@ -135,6 +144,7 @@ class BridgeWorker:
         wm_version: str | None = None,
         level: str = "mid",
         probe_ids: Mapping[str, str] | None = None,
+        watermarks: WatermarkSink | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -149,6 +159,8 @@ class BridgeWorker:
         probe_ids: フルーエントのローカル名 → プローブ IRI。昇格したイベントの証拠に
             「どのプローブが言ったか」を残す。**IRI を組み立てない**（不変条件 5）
             ——``ProbeSet.probe_ids()`` から渡す。
+        watermarks: ウォーターマークの永続化（``None`` ならプロセス内だけに持つ）。
+            起動時に :meth:`restore_watermarks` を呼んで前回の位置を戻す。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -164,6 +176,7 @@ class BridgeWorker:
         self._wm_version = wm_version
         self._level = level
         self._probe_ids = dict(probe_ids or {})
+        self._watermark_sink = watermarks
         self.watermarks: dict[str, datetime] = {}
         self.lifted_total = 0
         if not self._entities:
@@ -180,6 +193,42 @@ class BridgeWorker:
                 probes=probes is not None,
                 detail="reader と probes の両方が無いと昇格できない",
             )
+
+    async def restore_watermarks(self) -> int:
+        """永続化されたウォーターマークをプロセス内に戻す（起動時に 1 回）。
+
+        **知らない実体の分も戻す。** 接地対象から外れた実体のウォーターマークが残っていても
+        害は無く、再び対象に入ったときに続きから読める。逆に対象の実体の値を落とすと、
+        その実体だけ最初から読み直す。
+
+        Returns:
+            戻した件数。
+        """
+        if self._watermark_sink is None:
+            return 0
+        restored = await self._watermark_sink.load()
+        self.watermarks.update(restored)
+        log.info(
+            "worker.watermarks_restored",
+            worker=WORKER_NAME,
+            restored=len(restored),
+            entities=len(self._entities),
+        )
+        return len(restored)
+
+    async def _advance(self, entity: str, through: datetime) -> None:
+        """ウォーターマークを進め、永続化する。
+
+        **副作用の後に呼ぶ。** 先に進めると、送信に失敗したイベントが二度と昇格されない
+        （潜在は残っているが読み直さない。所見 52）。
+
+        Args:
+            entity: 実体 IRI。
+            through: この時刻までを処理した。
+        """
+        self.watermarks[entity] = through
+        if self._watermark_sink is not None:
+            await self._watermark_sink.save(entity, through)
 
     async def step(self) -> int:
         """1 ループ。各実体の新しい潜在を取り込んで事象を昇格する。
@@ -232,7 +281,7 @@ class BridgeWorker:
                 entity=entity,
                 detail="プローブが 1 つも結果を返さなかった（active なプローブが無い可能性）",
             )
-            self.watermarks[entity] = timestamps[-1]
+            await self._advance(entity, timestamps[-1])
             return 0
 
         # **プローブ IRI は束ねが持っているものを使う**（不変条件 5: IRI を組み立てない）。
@@ -258,7 +307,7 @@ class BridgeWorker:
         self.lifted_total += len(lifted)
         # **最後まで処理してからウォーターマークを進める。** 先に進めると、送信に失敗した
         # イベントが二度と昇格されない（潜在は残っているが読み直さない）
-        self.watermarks[entity] = timestamps[-1]
+        await self._advance(entity, timestamps[-1])
         return len(lifted)
 
     def _emit(self, event: LiftedEvent) -> None:
@@ -277,9 +326,13 @@ class BridgeWorker:
     async def run(self, *, max_iterations: int | None = None) -> int:
         """起動する。
 
+        **ループの前にウォーターマークを戻す。** 戻さずに回すと、永続化してあっても再起動の
+        たびに最初から読み直す（永続化が無いのと同じになる）。
+
         Args:
             max_iterations: テスト用の上限。
         """
+        await self.restore_watermarks()
         loop = asyncio.get_running_loop()
         self.runtime.install_signal_handlers(loop)
         return await self.runtime.run(self.step, max_iterations=max_iterations)
@@ -385,6 +438,7 @@ async def build_worker(
         HttpGraphStore,
         LatentIndex,
         S3ArtifactStore,
+        WatermarkStore,
         entities_of_type,
     )
 
@@ -409,6 +463,7 @@ async def build_worker(
 
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
     index = LatentIndex(connection)
+    watermarks = WatermarkStore(connection, worker=WORKER_NAME, wm_version=wm_version, level=level)
 
     async def reader(
         entity: str, after: datetime | None, limit: int
@@ -435,6 +490,7 @@ async def build_worker(
         wm_version=wm_version,
         level=level,
         probe_ids=probe_set.probe_ids(),
+        watermarks=watermarks,
     )
     log.info(
         "worker.wired",

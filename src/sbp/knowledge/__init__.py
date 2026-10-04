@@ -39,6 +39,7 @@ from sbp.knowledge.relations import (
     part_whole_edges,
 )
 from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
+from sbp.knowledge.watermarks import Watermark, WatermarkStore
 
 __all__ = [
     "AggregationByFluent",
@@ -63,6 +64,8 @@ __all__ = [
     "S3ArtifactStore",
     "ScopeEstimate",
     "Selectivity",
+    "Watermark",
+    "WatermarkStore",
     "aggregation_rules",
     "belief_graph",
     "entities_of_type",

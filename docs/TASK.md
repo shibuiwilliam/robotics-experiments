@@ -308,7 +308,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 
 - [x] **M8-01** プローブ重みの直列化とロード — `sbp.bridge.serialization`（純粋な束ね形式。I/O を持たない）+ `sbp.knowledge.artifacts`（バイト列の置き場。ローカル FS と S3）。較正器を欠いた `active` は保存もロードも拒否する（不変条件 7）。版は明示必須（`latest` 禁止、レジストリと同じ理由） → 完了（束ね形式 1.0.0・契約テストで golden 固定、置き場は既定で上書き拒否、単体 44 件 + 契約 3 件）
 - [x] **M8-02** bridge-worker のプローブ供給配線 — M8-01 の束ねを置き場から読み、`active` だけを走らせる。接地する実体の一覧の供給元を決める（ADR）。`TODO(question)` を消す → 完了（ADR-0009。`sbp.bridge.runner.ProbeSet`、`sbp.knowledge.entities.entities_of_type`、`build_worker`。プローブ IRI の組み立て（不変条件 5 違反）も除去。単体 45 件）
-- [ ] **M8-03** ウォーターマークの永続化 — 再起動で進んだところから再開する。投影テーブル（alembic）に逃がす。`TODO(question)` を消す
+- [x] **M8-03** ウォーターマークの永続化 — 再起動で進んだところから再開する。投影テーブル（alembic）に逃がす。`TODO(question)` を消す → 完了（alembic 0003 `grounding_watermarks`、`sbp.knowledge.watermarks.WatermarkStore`。キーに WM 版と階層を含める。単体 5 件 + 統合 3 件）
 - [ ] **M8-04** 不一致イベントの送信先の決定と配線 — 中央集約か拠点別か（ADR）。`reconcile_worker.main()` の sink を埋め、`TODO(question)` を消す
 - [ ] **M8-05** scheduler-worker の要求供給配線 — `ObservationRequest` の供給元（イベントログ / 投影テーブル）を決め（ADR）、観測手段の割り当てを実装する。`TODO(question)` を消す
 - [ ] **M8-06** Grafana ダッシュボード — `infra/prometheus/` と observability profile のダッシュボード JSON（6 領域 25 指標。指標名は列挙で固定済み）

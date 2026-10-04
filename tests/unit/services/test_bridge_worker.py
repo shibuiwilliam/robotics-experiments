@@ -23,7 +23,7 @@ from sbp.bridge.lifting import load_event_calculus
 from sbp.bridge.probes import LinearProbe, ProbeKind, ProbeMetrics, ProbeSpec
 from sbp.bridge.serialization import artifact_key, bundle_probe, dumps
 from sbp.core.config import Settings
-from sbp.core.errors import ArtifactNotFoundError, BridgeError
+from sbp.core.errors import ArtifactNotFoundError, BridgeError, DependencyUnavailableError
 from sbp.core.events import EventEnvelope
 from sbp.core.modality import Modality
 from sbp.knowledge.artifacts import LocalArtifactStore
@@ -98,6 +98,7 @@ def _worker(
     probes: object = None,
     sink: _Sink | None = None,
     probe_ids: dict[str, str] | None = None,
+    watermarks: object = None,
 ) -> tuple[BridgeWorker, _Reader, _Sink]:
     reader = _Reader(rows if rows is not None else [])
     used_sink = sink if sink is not None else _Sink()
@@ -114,6 +115,7 @@ def _worker(
         rules=_RULES,
         wm_version="https://sbp.example/wm/koopman/1.0.0",
         probe_ids=probe_ids if probe_ids is not None else {"Running": RUNNING_PROBE},
+        watermarks=watermarks,  # type: ignore[arg-type]
     )
     return worker, reader, used_sink
 
@@ -345,3 +347,101 @@ class TestProbeSupply:
 
         with pytest.raises(BridgeError, match="no probe IRI"):
             await worker.step()
+
+
+class _WatermarkSink:
+    """ウォーターマークの永続化の代役（``WatermarkStore`` と同じ形）。"""
+
+    def __init__(self, initial: dict[str, datetime] | None = None) -> None:
+        self.stored: dict[str, datetime] = dict(initial or {})
+        self.saves: list[tuple[str, datetime]] = []
+
+    async def load(self) -> dict[str, datetime]:
+        return dict(self.stored)
+
+    async def save(self, entity: str, processed_through: datetime) -> None:
+        # 本物と同じく後退させない
+        current = self.stored.get(entity)
+        if current is None or current < processed_through:
+            self.stored[entity] = processed_through
+        self.saves.append((entity, processed_through))
+
+
+class TestWatermarkPersistence:
+    """ウォーターマークの永続化（M8-03）。
+
+    重点:
+
+    1. **再起動で進んだ位置から再開する** — メモリだけだと、取りこぼすか重複するかになる。
+    2. **副作用の後に書く** — 送信に失敗したイベントが二度と昇格されない状態を作らない。
+    3. **後退させない** — 遅れて走ったループが進んだ位置を巻き戻さない。
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_watermark_is_persisted_after_lifting(self) -> None:
+        """昇格が終わったあとにウォーターマークが書かれる。"""
+        sink = _WatermarkSink()
+        worker, _reader, _event_sink = _worker(rows=_latents(40), watermarks=sink)
+
+        await worker.step()
+
+        assert sink.stored[PUMP] == worker.watermarks[PUMP]
+        assert sink.saves, "永続化が呼ばれていない"
+
+    @pytest.mark.asyncio
+    async def test_a_failing_sink_does_not_persist_the_watermark(self) -> None:
+        """送信が落ちたらウォーターマークを永続化しない。
+
+        永続化してしまうと、再起動後も「処理済み」として飛ばされ、イベントが永久に失われる。
+        """
+        sink = _WatermarkSink()
+        worker, _reader, _event_sink = _worker(
+            rows=_latents(40), sink=_Sink(fail=True), watermarks=sink
+        )
+
+        with pytest.raises(RuntimeError):
+            await worker.step()
+
+        assert sink.stored == {}, "送信失敗時に進めてはいけない"
+
+    @pytest.mark.asyncio
+    async def test_restored_watermarks_skip_already_processed_latents(self) -> None:
+        """前回の位置を戻すと、その先だけを読む（再起動の再開）。"""
+        rows = _latents(40)
+        already = rows[19][0]
+        sink = _WatermarkSink({PUMP: already})
+        worker, reader, _event_sink = _worker(rows=rows, watermarks=sink)
+
+        restored = await worker.restore_watermarks()
+        await worker.step()
+
+        assert restored == 1
+        assert reader.calls == [already], "戻した位置より後だけを読む"
+
+    @pytest.mark.asyncio
+    async def test_without_a_sink_the_watermark_stays_in_memory(self) -> None:
+        """永続化が無くても動く（単体テストと使い捨ての実行のため）。"""
+        worker, _reader, _event_sink = _worker(rows=_latents(40))
+
+        assert await worker.restore_watermarks() == 0
+        await worker.step()
+        assert PUMP in worker.watermarks
+
+    @pytest.mark.asyncio
+    async def test_run_restores_before_the_readiness_check(self) -> None:
+        """``run`` はループの前にウォーターマークを戻す。
+
+        戻さずに回すと、永続化してあっても再起動のたびに最初から読み直す（永続化が無いのと
+        同じになる）。単体テストではネットワークが遮断されているので疎通検査で落ちるが、
+        **その時点で既に戻っていること**を確かめれば順序は固定できる。
+        """
+        rows = _latents(40)
+        already = rows[19][0]
+        sink = _WatermarkSink({PUMP: already})
+        worker, reader, _event_sink = _worker(rows=rows, watermarks=sink)
+
+        with pytest.raises(DependencyUnavailableError):
+            await worker.run(max_iterations=1)
+
+        assert worker.watermarks[PUMP] == already, "疎通検査より前に戻っている"
+        assert reader.calls == [], "疎通検査で落ちたので潜在は読んでいない"

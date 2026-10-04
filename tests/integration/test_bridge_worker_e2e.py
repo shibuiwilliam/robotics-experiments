@@ -26,7 +26,7 @@ from sbp.bridge.lifting import load_event_calculus
 from sbp.core.config import Settings
 from sbp.core.modality import Modality
 from sbp.core.time import now
-from sbp.knowledge import LatentIndex
+from sbp.knowledge import LatentIndex, WatermarkStore
 from sbp.testing.synth import Fluent, SynthConfig, SynthWorld
 from sbp.worldmodel.families.koopman import KoopmanConfig, KoopmanModel
 
@@ -41,6 +41,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.enable_socket]
 
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
 LEVEL = "mid"
+RUNNING_PROBE = "https://sbp.example/probe/Running/1.0.0"
+"""プローブ IRI は**ワーカーに渡す**（ワーカーは IRI を組み立てない。不変条件 5）。"""
 
 _RULES = load_event_calculus("""
 initiates(start_cmd, running).
@@ -231,6 +233,7 @@ class TestEndToEnd:
                 rules=_RULES,
                 wm_version=koopman.meta.version_iri,
                 level=LEVEL,
+                probe_ids={"Running": RUNNING_PROBE},
             )
             # **1 ループでは終わらない。** `batch_size`（既定 100）ずつ読むので、変化点に
             # 届くまで複数ループ回る——実運用と同じ進み方である。最初の 200 標本は
@@ -286,10 +289,121 @@ class TestEndToEnd:
                 rules=_RULES,
                 wm_version=koopman.meta.version_iri,
                 level=LEVEL,
+                probe_ids={"Running": RUNNING_PROBE},
             )
             await worker.step()
             assert worker.watermarks[PUMP] == stamps[99]
             await worker.step()
             # 2 周目は新しい潜在が無いので 0 件
             assert reads == [100, 0]
+            await connection.rollback()
+
+
+class TestWatermarkPersistence:
+    """ウォーターマークの投影表（M8-03）。
+
+    **ここでしか確かめられない。** `WatermarkStore` は SQL（UPSERT と後退防止の WHERE 句）
+    そのものなので、単体テストの代役では「後退させない」が本当に効いているか分からない。
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_restarted_worker_resumes_where_it_stopped(
+        self, settings: Settings, koopman: KoopmanModel, world: SynthWorld
+    ) -> None:
+        """別のワーカー実体（= 再起動相当）が進んだ位置から再開する。"""
+        run, _dim = _probe_runner(world, koopman)
+        version = koopman.meta.version_iri
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            stamps = await _write_latents(connection, koopman=koopman, world=world, count=100)
+            index = LatentIndex(connection)
+            store = WatermarkStore(
+                connection, worker="bridge-worker-test", wm_version=version, level=LEVEL
+            )
+            reads: list[datetime | None] = []
+
+            async def reader(
+                entity: str, after: datetime | None, limit: int
+            ) -> list[tuple[datetime, NDArray[np.float64]]]:
+                del entity
+                reads.append(after)
+                return await index.since(
+                    entity=PUMP, wm_version=version, level=LEVEL, after=after, limit=limit
+                )
+
+            def _worker() -> BridgeWorker:
+                return BridgeWorker(
+                    settings,
+                    entities=(PUMP,),
+                    reader=reader,
+                    probes=run,  # type: ignore[arg-type]
+                    sink=_Sink(),
+                    rules=_RULES,
+                    wm_version=version,
+                    level=LEVEL,
+                    probe_ids={"Running": RUNNING_PROBE},
+                    watermarks=store,
+                )
+
+            first = _worker()
+            await first.step()
+            assert first.watermarks[PUMP] == stamps[99]
+
+            # 「再起動」— 新しいワーカー実体がウォーターマークを戻す
+            second = _worker()
+            assert await second.restore_watermarks() == 1
+            assert second.watermarks[PUMP] == stamps[99]
+            await second.step()
+
+            assert reads == [None, stamps[99]], "2 つ目は進んだ位置から読んでいる"
+            await connection.rollback()
+
+    @pytest.mark.asyncio
+    async def test_the_watermark_does_not_move_backwards(
+        self, settings: Settings, koopman: KoopmanModel, world: SynthWorld
+    ) -> None:
+        """古い時刻での更新は無視される（UPSERT の WHERE 句）。
+
+        後退を許すと、遅れて走ったループが進んだ位置を巻き戻し、同じ潜在が二度処理される。
+        """
+        version = koopman.meta.version_iri
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            stamps = await _write_latents(connection, koopman=koopman, world=world, count=10)
+            store = WatermarkStore(
+                connection, worker="bridge-worker-backwards", wm_version=version, level=LEVEL
+            )
+            await store.save(PUMP, stamps[8])
+            await store.save(PUMP, stamps[2])
+
+            assert (await store.load())[PUMP] == stamps[8]
+            await connection.rollback()
+
+    @pytest.mark.asyncio
+    async def test_another_wm_version_starts_fresh(
+        self, settings: Settings, koopman: KoopmanModel, world: SynthWorld
+    ) -> None:
+        """別の WM 版のウォーターマークは共有されない。
+
+        違う潜在空間の「どこまで処理したか」は意味が違う。流用すると、新しい版の潜在を
+        「もう処理した」ことにしてしまう。
+        """
+        version = koopman.meta.version_iri
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            stamps = await _write_latents(connection, koopman=koopman, world=world, count=10)
+            old_store = WatermarkStore(
+                connection, worker="bridge-worker-versions", wm_version=version, level=LEVEL
+            )
+            await old_store.save(PUMP, stamps[5])
+
+            new_store = WatermarkStore(
+                connection,
+                worker="bridge-worker-versions",
+                wm_version=version + "-next",
+                level=LEVEL,
+            )
+            assert await new_store.load() == {}, "新しい版は白紙から始まる"
+
+            other_level = WatermarkStore(
+                connection, worker="bridge-worker-versions", wm_version=version, level="slow"
+            )
+            assert await other_level.load() == {}, "階層が違えば別のウォーターマーク"
             await connection.rollback()
