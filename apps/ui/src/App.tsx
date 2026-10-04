@@ -16,6 +16,7 @@ import {
   fetchExpectations,
   fetchProposals,
   resolveApiUrl,
+  resolveSiteId,
   submitCuration,
   submitResolution,
 } from "./lib/api";
@@ -51,12 +52,18 @@ export function App(): React.JSX.Element {
   const [beliefs, setBeliefs] = useState<readonly Belief[]>([]);
   const [expectations, setExpectations] = useState<readonly Expectation[]>([]);
   const [proposals, setProposals] = useState<readonly ConceptProposal[]>([]);
+  // 概念提案は未配線（M8-19）。**空と「読めない」を区別して画面に出す**（所見 32）
+  const [proposalError, setProposalError] = useState<string | null>(null);
   const [subject] = useState(DEFAULT_SUBJECT);
 
   let apiUrl = "";
+  let siteId = "";
   let configError: string | null = null;
   try {
-    apiUrl = resolveApiUrl(import.meta.env as Record<string, string | undefined>);
+    const env = import.meta.env as Record<string, string | undefined>;
+    apiUrl = resolveApiUrl(env);
+    // トピック名は `<site>.<layer>.<class>`。拠点を間違えると存在しないトピックを読む（所見 85）
+    siteId = resolveSiteId(env);
   } catch (caught) {
     configError = caught instanceof Error ? caught.message : String(caught);
   }
@@ -64,16 +71,26 @@ export function App(): React.JSX.Element {
   const load = useCallback(async () => {
     if (apiUrl === "") return;
     try {
-      const [queue, board, concepts, rows] = await Promise.all([
+      // **概念提案は未配線なので別に扱う**（読む先が無い。M8-19）。Promise.all に混ぜると、
+      // 1 つの未配線が画面全体を落とす——配線済みのビューは動かす
+      const [queue, board, rows] = await Promise.all([
         fetchDiscrepancies(apiUrl),
-        fetchExpectations(apiUrl),
-        fetchProposals(apiUrl),
+        fetchExpectations(apiUrl, siteId),
         fetchBeliefs(apiUrl, { subject }),
       ]);
       setDiscrepancies(queue);
       setExpectations(board);
-      setProposals(concepts);
       setBeliefs(rows);
+      try {
+        setProposals(await fetchProposals(apiUrl));
+        setProposalError(null);
+      } catch (caught) {
+        // 空にしない（「提案が無い」と読まれる）。理由を画面に出す
+        setProposals([]);
+        setProposalError(
+          caught instanceof Error ? caught.message : String(caught),
+        );
+      }
       setError(null);
     } catch (caught) {
       // 失敗を空の成功として描かない。空のキューは「不一致が無い」と読まれる
@@ -172,11 +189,18 @@ export function App(): React.JSX.Element {
         <ExpectationBoard expectations={expectations} now={now} />
       ) : null}
       {tab === "concepts" ? (
-        <ConceptCuration
-          proposals={proposals}
-          decidedBy="https://sbp.example/id/person/dev"
-          onDecide={(decision) => void onDecide(decision)}
-        />
+        <>
+          {proposalError === null ? null : (
+            <p className="unwired" role="status">
+              <strong>概念提案は未配線である</strong>——{proposalError}
+            </p>
+          )}
+          <ConceptCuration
+            proposals={proposals}
+            decidedBy="https://sbp.example/id/person/dev"
+            onDecide={(decision) => void onDecide(decision)}
+          />
+        </>
       ) : null}
     </main>
   );

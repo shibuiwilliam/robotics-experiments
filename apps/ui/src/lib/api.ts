@@ -24,6 +24,25 @@ export class ConfigurationError extends Error {}
 /** API の返したエラー。 */
 export class ApiError extends Error {}
 
+/**
+ * 拠点を解決する（イベントログのトピック名に要る。M8-16）。
+ *
+ * **既定値を埋めない。** トピック名は `<site>.<layer>.<class>` で、拠点を間違えると
+ * **存在しないトピックを読んで空を返す**——「イベントが無い」と「トピックが無い」が
+ * 区別できない（所見 85）。
+ */
+export function resolveSiteId(
+  env: Record<string, string | undefined>,
+): string {
+  const site = env["VITE_SBP_SITE_ID"];
+  if (site === undefined || site.trim() === "") {
+    throw new ConfigurationError(
+      "VITE_SBP_SITE_ID が未設定。トピック名は <site>.<layer>.<class> で、拠点を間違えると存在しないトピックを読んで空を返す（所見 85）",
+    );
+  }
+  return site.trim();
+}
+
 /** エンドポイントを解決する。 */
 export function resolveApiUrl(
   env: Record<string, string | undefined>,
@@ -147,13 +166,24 @@ export async function fetchDiscrepancies(
   return data.discrepancies;
 }
 
-/** 期待ボードを読む。 */
+/**
+ * 期待ボードを読む。
+ *
+ * **トピックは拠点ごとである**（`<site>.reasoning.expectation`）。以前は
+ * `central.reasoning.expectation` を読んでいたが、**そのトピックは存在しない**
+ * （`scripts/topics.py` に無い。所見 85）——存在しないトピックは空を返すので、
+ * 「期待が無い」と読めてしまっていた。
+ *
+ * **型は API と一致していない**（所見 86）。`Expectation` の形はイベントの封筒に入らず、
+ * 永続化と API 資源が未実装である（M8-18）。ここは経路だけを正しくしてある。
+ */
 export async function fetchExpectations(
   apiUrl: string,
+  siteId: string,
   limit = 50,
 ): Promise<readonly Expectation[]> {
   const response = await fetch(
-    `${apiUrl}/stream/central.reasoning.expectation?limit=${limit}`,
+    `${apiUrl}/stream/${encodeURIComponent(`${siteId}.reasoning.expectation`)}?limit=${limit}`,
   );
   if (!response.ok) {
     throw new ApiError(`ストリームが ${response.status} を返した`);
@@ -164,21 +194,22 @@ export async function fetchExpectations(
   return payload.events.map((event) => event.payload);
 }
 
-/** 概念提案を読む。 */
+/**
+ * 概念提案を読む。**まだ読む先が無い。**
+ *
+ * 以前は `central.reasoning.concept` を読んでいたが、**そのトピックは存在しない**
+ * （`scripts/topics.py` にも無く、提案を出す周期ジョブも未実装。所見 85）。
+ *
+ * **空の配列を返さない。** 返すと「提案が無い」と読まれ、発見ループが動いていないことと
+ * 区別できない（所見 32）。配線されるまで明示的に失敗させる——永続化と API 資源は M8-19。
+ */
 export async function fetchProposals(
-  apiUrl: string,
-  limit = 50,
+  _apiUrl: string,
+  _limit = 50,
 ): Promise<readonly ConceptProposal[]> {
-  const response = await fetch(
-    `${apiUrl}/stream/central.reasoning.concept?limit=${limit}`,
+  throw new ApiError(
+    "概念提案の読み出しは未配線（トピックも API 資源も無い。M8-19）。空を返さないのは、提案が無いことと発見ループが動いていないことを区別するため",
   );
-  if (!response.ok) {
-    throw new ApiError(`ストリームが ${response.status} を返した`);
-  }
-  const payload = (await response.json()) as {
-    events: { payload: ConceptProposal }[];
-  };
-  return payload.events.map((event) => event.payload);
 }
 
 /**

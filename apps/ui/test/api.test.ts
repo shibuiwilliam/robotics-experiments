@@ -12,7 +12,10 @@ import {
   ConfigurationError,
   fetchBeliefs,
   fetchDiscrepancies,
+  fetchExpectations,
+  fetchProposals,
   resolveApiUrl,
+  resolveSiteId,
   submitResolution,
 } from "../src/lib/api";
 
@@ -203,5 +206,45 @@ describe("fetchDiscrepancies", () => {
     expect(rows.length).toBe(1);
     expect(rows[0]!.kind).toBe(2);
     expect(rows[0]!.status).toBe("Open");
+  });
+});
+
+
+describe("resolveSiteId", () => {
+  it("未設定なら落とす（存在しないトピックを読むのを防ぐ）", () => {
+    expect(() => resolveSiteId({})).toThrow(ConfigurationError);
+  });
+
+  it("空白だけも落とす", () => {
+    expect(() => resolveSiteId({ VITE_SBP_SITE_ID: "   " })).toThrow(
+      ConfigurationError,
+    );
+  });
+
+  it("前後の空白を落として返す", () => {
+    expect(resolveSiteId({ VITE_SBP_SITE_ID: " siteA " })).toBe("siteA");
+  });
+});
+
+describe("fetchExpectations", () => {
+  it("拠点のトピックを読む（central ではない。所見 85）", async () => {
+    // `central.reasoning.expectation` は存在しない。存在しないトピックは空を返すので、
+    // 「期待が無い」と読めてしまっていた
+    const fetchMock = stubFetch({ body: { events: [] } });
+    await fetchExpectations("http://api", "siteA");
+    const url = String(fetchMock.mock.calls[0]![0]);
+    expect(url).toContain("siteA.reasoning.expectation");
+    expect(url).not.toContain("central.reasoning.expectation");
+  });
+});
+
+describe("fetchProposals", () => {
+  it("未配線なので空を返さず失敗する（所見 32）", async () => {
+    // 空を返すと「提案が無い」と読まれ、発見ループが動いていないことと区別できない
+    await expect(fetchProposals("http://api")).rejects.toThrow(ApiError);
+  });
+
+  it("失敗の理由に未配線であることが出る", async () => {
+    await expect(fetchProposals("http://api")).rejects.toThrow(/未配線/);
   });
 });

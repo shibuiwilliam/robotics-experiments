@@ -48,6 +48,19 @@ def _source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _strip_comments(source: str) -> str:
+    """TypeScript のコメントを落とす。
+
+    **原文を正規表現で探すときに要る。** 説明文に書いた識別子を「コードが使っている」と
+    誤認すると、説明を書いたせいでテストが落ちる（所見 87）。
+
+    Args:
+        source: TypeScript の原文。
+    """
+    without_block = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return re.sub(r"//[^\n]*", "", without_block)
+
+
 def _string_union(source: str, name: str) -> set[str]:
     """``export type <name> = "a" | "b"`` の値を抜き出す。
 
@@ -163,3 +176,52 @@ def test_the_ui_does_not_read_discrepancies_from_the_stream() -> None:
 
     assert "/stream/" not in match.group(0), "不一致をストリームから読んでいる"
     assert "discrepancies(" in match.group(0), "GraphQL の資源を引いていない"
+
+
+def test_the_topics_the_ui_reads_exist() -> None:
+    """UI が名指しするトピックが ``scripts/topics.py`` に実在する。
+
+    **存在しないトピックは空を返す。** `/stream/{topic}` は名前を受け取って読むだけなので、
+    綴り違いや拠点違いは「イベントが無い」として表示される——`0 件` と `トピックが無い` が
+    区別できない（所見 32 / 85）。
+
+    UI が読んでいたのは `central.reasoning.expectation` と `central.reasoning.concept` で、
+    **どちらも存在しなかった**（期待は拠点ごと、概念提案はトピック自体が無い）。
+    """
+    from scripts.topics import central_topics, topics_for_site  # noqa: PLC0415
+
+    declared = {spec.name for spec in central_topics()}
+    # 拠点部分は実行時に決まるので、`<layer>.<class>` の部分で比べる
+    probe_site = "siteContractProbe"
+    site_classes = {
+        spec.name.removeprefix(f"{probe_site}.") for spec in topics_for_site(probe_site)
+    }
+
+    # **コメントを落としてから探す。** 落とさないと、説明文に書いた「以前は
+    # `central.reasoning.expectation` を読んでいた」というコメントを拾って落ちる
+    # （実際に落ちた。所見 87）
+    source = _strip_comments(_source(UI_API))
+    literals = set(re.findall(r'[`"]([a-z]+\.[a-z]+\.[a-z]+)[`"]', source))
+    templated = set(re.findall(r"\$\{siteId\}\.([a-z]+\.[a-z]+)", source))
+
+    for topic in literals:
+        assert topic in declared, (
+            f"UI が読む {topic} が scripts/topics.py に無い（存在しないトピックは空を返す）"
+        )
+    for suffix in templated:
+        assert suffix in site_classes, f"UI が読む <site>.{suffix} が scripts/topics.py に無い"
+
+
+def test_the_ui_does_not_silently_return_empty_for_unwired_reads() -> None:
+    """未配線の読み出しが空を返さない。
+
+    空を返すと「提案が無い」と読まれ、発見ループが動いていないことと区別できない（所見 32）。
+    概念提案はトピックも API 資源も無いので、明示的に失敗する形にしてある（M8-19）。
+    """
+    source = _strip_comments(_source(UI_API))
+    match = re.search(r"export async function fetchProposals.*?\n\}", source, re.DOTALL)
+    assert match is not None
+
+    body = match.group(0)
+    assert "throw new ApiError" in body, "未配線なのに空を返している"
+    assert "/stream/" not in body, "存在しないトピックを読んでいる"
