@@ -7,10 +7,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class LlmMode(StrEnum):
@@ -56,6 +56,36 @@ class BridgeSettings(BaseSettings):
 
     identity_revoke_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     """IdentityClaim をこの確信度未満で撤回し、不一致（類型 4）を起票する。"""
+
+    probe_ids: Annotated[tuple[str, ...], NoDecode] = ()
+    """接地ワーカーが走らせるプローブの IRI（版を含む）。ADR-0009。
+
+    **既定値を置かない。** 適当な版を既定にすると、設定漏れが「別の版のプローブで接地して
+    いた」という形で現れる。環境変数はカンマ区切り（``a,b``）で書く——``NoDecode`` を付けて
+    pydantic-settings の JSON 解釈を外しているのは、``.env`` に JSON 配列を書かせると
+    運用でクォートを間違えるためである。
+    """
+
+    wm_version: str = ""
+    """接地ワーカーが読む潜在を作った WM 版の IRI。ADR-0009。
+
+    プローブの ``wm_version`` と一致しなければ起動時に落とす。次元が偶然一致している違う
+    潜在空間を読むと、動いてしまって出力が無意味になる（設計書 §4.8）。
+    """
+
+    @field_validator("probe_ids", mode="before")
+    @classmethod
+    def _split_probe_ids(cls, value: object) -> object:
+        """カンマ区切りの文字列を受け付ける。
+
+        空白だけの要素は落とす。``NoDecode`` により、ここに来る値は環境変数の生の文字列である。
+
+                Args:
+                    value: 環境変数の生の値、または既に列になっているもの。
+        """
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        return value
 
     @model_validator(mode="after")
     def _hysteresis_ordered(self) -> BridgeSettings:

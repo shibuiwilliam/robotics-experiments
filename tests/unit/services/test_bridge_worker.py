@@ -16,12 +16,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from services.bridge_worker import BridgeWorker, load_rules
+from services.bridge_worker import BridgeWorker, load_probe_set, load_rules
 
+from sbp.bridge.calibration import TemperatureScaler
 from sbp.bridge.lifting import load_event_calculus
+from sbp.bridge.probes import LinearProbe, ProbeKind, ProbeMetrics, ProbeSpec
+from sbp.bridge.serialization import artifact_key, bundle_probe, dumps
 from sbp.core.config import Settings
+from sbp.core.errors import ArtifactNotFoundError, BridgeError
 from sbp.core.events import EventEnvelope
 from sbp.core.modality import Modality
+from sbp.knowledge.artifacts import LocalArtifactStore
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -83,11 +88,16 @@ def _probes_switching(count: int) -> dict[str, NDArray[np.float64]]:
     return {"Running": values}
 
 
+RUNNING_PROBE = "https://sbp.example/probe/Running/1.0.0"
+"""このテストが使うプローブの IRI。**ワーカーに渡す**（ワーカーは IRI を組み立てない）。"""
+
+
 def _worker(
     *,
     rows: list[tuple[datetime, NDArray[np.float64]]] | None = None,
     probes: object = None,
     sink: _Sink | None = None,
+    probe_ids: dict[str, str] | None = None,
 ) -> tuple[BridgeWorker, _Reader, _Sink]:
     reader = _Reader(rows if rows is not None else [])
     used_sink = sink if sink is not None else _Sink()
@@ -103,6 +113,7 @@ def _worker(
         sink=used_sink,
         rules=_RULES,
         wm_version="https://sbp.example/wm/koopman/1.0.0",
+        probe_ids=probe_ids if probe_ids is not None else {"Running": RUNNING_PROBE},
     )
     return worker, reader, used_sink
 
@@ -253,3 +264,84 @@ class TestUnconfiguredPaths:
         )
         assert await worker.step() == 0
         assert reader.calls == []
+
+
+class TestProbeSupply:
+    """プローブの供給（M8-02、ADR-0009）。
+
+    重点:
+
+    1. **置き場からロードする** — 起動時に学習する案は不変条件 10 が塞いだ（ワーカーは
+       真値を読めない）。
+    2. **無いものを飛ばさない** — 飛ばすと、接地しているつもりのフルーエントが静かに欠ける。
+    3. **プローブ IRI を組み立てない**（不変条件 5）— 来歴に存在しない版を書かない。
+    """
+
+    @staticmethod
+    def _stored_probe(
+        tmp_path: Path, *, probe_id: str = RUNNING_PROBE, status: str = "active"
+    ) -> LocalArtifactStore:
+        """学習・較正済みのプローブを置き場に入れる。"""
+        rng = np.random.default_rng(11)
+        latents = rng.normal(size=(60, DIM))
+        labels = latents[:, 0] > 0.0
+        probe = LinearProbe(dim=DIM, seed=11).fit(latents, labels, epochs=80)
+        probe.attach_calibrator(TemperatureScaler().fit(probe.logits(latents), labels))
+
+        spec = ProbeSpec(
+            probe_id=probe_id,
+            grounds="https://sbp.example/core#Running",
+            kind=ProbeKind.CLASSIFIER,
+            wm_version="https://sbp.example/wm/koopman/1.0.0",
+            status=status,  # type: ignore[arg-type]
+            metrics=ProbeMetrics(auroc=0.95, ece=0.02, alignment_residual=0.04, n_samples=60),
+            ontology_version="0.5.0",
+        )
+        store = LocalArtifactStore(tmp_path)
+        store.put(artifact_key(spec), dumps(bundle_probe(probe, spec)))
+        return store
+
+    def test_a_stored_probe_becomes_a_runnable_set(self, tmp_path: Path) -> None:
+        """置き場に入れたプローブがそのまま走る束になる。"""
+        store = self._stored_probe(tmp_path)
+
+        probe_set = load_probe_set(store, probe_ids=(RUNNING_PROBE,))
+
+        assert probe_set.fluents == ("Running",)
+        assert probe_set.probe_ids() == {"Running": RUNNING_PROBE}
+        assert probe_set.latent_dim == DIM
+        # 束は呼べる（較正を通るので値が返る = 不変条件 7 を満たしている）
+        assert probe_set(np.zeros((3, DIM)))["Running"].shape == (3,)
+
+    def test_a_missing_probe_is_an_error(self, tmp_path: Path) -> None:
+        """置き場に無い IRI は例外になる（黙って飛ばさない）。"""
+        store = self._stored_probe(tmp_path)
+
+        with pytest.raises(ArtifactNotFoundError):
+            load_probe_set(store, probe_ids=(RUNNING_PROBE, "https://sbp.example/probe/X/1.0.0"))
+
+    def test_a_candidate_only_store_cannot_build_a_set(self, tmp_path: Path) -> None:
+        """``candidate`` しか無ければ束が組めない（空の束を作らない）。"""
+        store = self._stored_probe(tmp_path, status="candidate")
+
+        with pytest.raises(BridgeError, match="no active probe"):
+            load_probe_set(store, probe_ids=(RUNNING_PROBE,))
+
+    def test_latest_cannot_be_requested(self, tmp_path: Path) -> None:
+        """``latest`` は置き場のキーにならない（過去の説明が静かに変わる）。"""
+        store = self._stored_probe(tmp_path)
+
+        with pytest.raises(BridgeError, match="latest"):
+            load_probe_set(store, probe_ids=("https://sbp.example/probe/Running/latest",))
+
+    @pytest.mark.asyncio
+    async def test_a_fluent_without_a_probe_iri_is_refused(self) -> None:
+        """プローブ IRI を持たないフルーエントは昇格させない（不変条件 5）。
+
+        以前はローカル名から IRI を組み立てていた。それは「置き場に無い版の IRI を来歴に
+        書く」経路で、辿れない証拠を作る。
+        """
+        worker, _reader, _sink = _worker(rows=_latents(40), probe_ids={})
+
+        with pytest.raises(BridgeError, match="no probe IRI"):
+            await worker.step()

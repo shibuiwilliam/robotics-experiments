@@ -16,6 +16,7 @@ from sbp.knowledge.artifacts import (
     parse_s3_uri,
 )
 from sbp.knowledge.assertions import AssertionRow, AssertionStore
+from sbp.knowledge.entities import entities_of_type, site_prefix
 from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph, schema_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
 from sbp.knowledge.hybrid import plan as plan_hybrid
@@ -64,6 +65,7 @@ __all__ = [
     "Selectivity",
     "aggregation_rules",
     "belief_graph",
+    "entities_of_type",
     "group_by_whole",
     "is_scenario_graph",
     "parse_s3_uri",
@@ -72,5 +74,6 @@ __all__ = [
     "plan_regrounding",
     "scenario_graph",
     "schema_graph",
+    "site_prefix",
     "summarise_regrounding",
 ]

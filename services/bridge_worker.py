@@ -13,7 +13,11 @@
 **ウォーターマークで進む。** 「最後に処理した潜在の時刻」を実体ごとに持ち、それより後だけを
 読む（``LatentIndex.since`` は右開）。これが無いと、同じ変化点から事象を繰り返し昇格する。
 ウォーターマークは**プロセス内に持つ**ので、再起動すると進んだところから再開できない
-——``TODO(question)``: 投影テーブルに逃がすか、昇格済みイベントから復元するかが未決。
+（M8-03 で投影テーブルに逃がす）。
+
+**プローブは置き場から版指定でロードする**（ADR-0009）。起動時に学習する案は不変条件 10 が
+塞いだ——ワーカーは真値を読めないので、そもそも学習できない。接地する実体は知識グラフから
+型で引き、明示で渡せば上書きできる（カナリアのため）。
 
 **このワーカーは永続化しない**（``bridge`` 層の規約）。潜在索引は読むだけで、出力はイベント
 だけである。読み出しが ``services`` 側にあるのは、``bridge`` が ``knowledge`` を import
@@ -29,8 +33,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sbp.bridge.lifting import lift_events, load_event_calculus
+from sbp.bridge.probes import ProbeKind, ProbeSpec
+from sbp.bridge.runner import ProbeSet
+from sbp.bridge.serialization import artifact_key, loads, restore_probe
 from sbp.core import vocab
 from sbp.core.config import Settings
+from sbp.core.errors import BridgeError, ConfigError
 from sbp.core.logging import get_logger
 from services.runtime import ReadinessCheck, WorkerRuntime
 
@@ -41,7 +49,10 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
     from sbp.bridge.lifting import EventCalculusRules, LiftedEvent
+    from sbp.bridge.probes import LinearProbe
     from sbp.core.events import EventEnvelope
+    from sbp.eventlog.producer import KafkaEventProducer
+    from sbp.knowledge.artifacts import ArtifactStore
 
     LatentReader = Callable[
         [str, datetime | None, int], Awaitable[Sequence[tuple[datetime, NDArray[np.float64]]]]
@@ -123,6 +134,7 @@ class BridgeWorker:
         rules: EventCalculusRules | None = None,
         wm_version: str | None = None,
         level: str = "mid",
+        probe_ids: Mapping[str, str] | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -134,6 +146,9 @@ class BridgeWorker:
         rules: 事象計算の規則（``None`` なら ``ontology/process`` から読む）。
         wm_version: 潜在を作った WM 版の IRI（証拠に残す）。
         level: 潜在の階層。既定は ``mid``（設備状態が最も素直に出る階層）。
+        probe_ids: フルーエントのローカル名 → プローブ IRI。昇格したイベントの証拠に
+            「どのプローブが言ったか」を残す。**IRI を組み立てない**（不変条件 5）
+            ——``ProbeSet.probe_ids()`` から渡す。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -148,6 +163,7 @@ class BridgeWorker:
         self._rules = rules if rules is not None else load_rules()
         self._wm_version = wm_version
         self._level = level
+        self._probe_ids = dict(probe_ids or {})
         self.watermarks: dict[str, datetime] = {}
         self.lifted_total = 0
         if not self._entities:
@@ -219,13 +235,22 @@ class BridgeWorker:
             self.watermarks[entity] = timestamps[-1]
             return 0
 
+        # **プローブ IRI は束ねが持っているものを使う**（不変条件 5: IRI を組み立てない）。
+        # 以前はローカル名から文字列で組んでいたが、それは「存在しない版の IRI を来歴に
+        # 書く」経路だった——説明を辿れない証拠は証拠ではない
+        missing = sorted(set(probe_outputs) - set(self._probe_ids))
+        if missing:
+            raise BridgeError(
+                f"no probe IRI for fluents {missing}; lifted events would carry a fabricated "
+                "provenance that cannot be traced back to a stored probe version"
+            )
         lifted = lift_events(
             subject=entity,
             probe_outputs=probe_outputs,
             timestamps=timestamps,
             rules=self._rules,
             settings=self.settings.bridge,
-            probe_ids={name: f"https://sbp.example/probe/{name}/1.0.0" for name in probe_outputs},
+            probe_ids={name: self._probe_ids[name] for name in probe_outputs},
             wm_version=self._wm_version,
         )
         for event in lifted:
@@ -260,16 +285,196 @@ class BridgeWorker:
         return await self.runtime.run(self.step, max_iterations=max_iterations)
 
 
+def load_probe_set(
+    store: ArtifactStore,
+    *,
+    probe_ids: Sequence[str],
+    site: str | None = None,
+    operating_mode: str | None = None,
+) -> ProbeSet:
+    """置き場からプローブを読み、``active`` な束を組む（ADR-0009）。
+
+    **版は ``probe_ids`` が持つ。** 置き場のキーは IRI の末尾 2 節から組まれるので
+    （:func:`sbp.bridge.serialization.artifact_key`）、``latest`` を渡すと落ちる。
+
+    **1 本も読めなければ落ちる。** :class:`~sbp.bridge.runner.ProbeSet` が空の束を拒否する
+    ——空の束で接地を続けると「変化が無かった」と区別できない。
+
+    Args:
+        store: 成果物の置き場。
+        probe_ids: ロードするプローブの IRI（版を含む）。
+        site: 拠点識別子（``validity_sites`` で絞る）。
+        operating_mode: 運転モード（``operating_modes`` で絞る）。
+
+    Returns:
+        走らせる束。
+
+    Raises:
+        ArtifactNotFoundError: 置き場に無い IRI を指定した場合。**無いものを飛ばさない**
+            ——飛ばすと、接地しているつもりのフルーエントが静かに欠ける。
+    """
+    entries: list[tuple[LinearProbe, ProbeSpec]] = []
+    for probe_id in probe_ids:
+        key = artifact_key(_spec_stub(probe_id))
+        bundle = loads(store.get(key))
+        entries.append(restore_probe(bundle))
+    probe_set = ProbeSet(entries, site=site, operating_mode=operating_mode)
+    log.info(
+        "worker.probes_loaded",
+        worker=WORKER_NAME,
+        requested=len(probe_ids),
+        active=len(probe_set),
+        fluents=probe_set.fluents,
+        wm_version=probe_set.wm_version,
+    )
+    return probe_set
+
+
+def _spec_stub(probe_id: str) -> ProbeSpec:
+    """キーを組むためだけの最小の :class:`ProbeSpec`。
+
+    :func:`sbp.bridge.serialization.artifact_key` は ``probe_id`` しか見ないが、引数は
+    ``ProbeSpec`` である（キーの組み方を 1 箇所に置くため）。置き場から読む前は実体の
+    メタデータを持っていないので、ここで最小のものを作る。
+
+    Args:
+        probe_id: プローブの IRI（版を含む）。
+    """
+    return ProbeSpec(
+        probe_id=probe_id,
+        grounds=probe_id,
+        kind=ProbeKind.CLASSIFIER,
+        wm_version="urn:sbp:unknown",
+        ontology_version=vocab.ONTOLOGY_VERSION,
+    )
+
+
+async def build_worker(
+    settings: Settings | None = None,
+    *,
+    site_id: str,
+    probe_ids: Sequence[str],
+    wm_version: str,
+    level: str = "mid",
+    ground_types: Sequence[str] = (vocab.core.Asset,),
+    entities: Sequence[str] = (),
+) -> tuple[BridgeWorker, KafkaEventProducer]:
+    """実運用の配線を組む（潜在索引 → プローブ → 事象昇格 → Redpanda）。
+
+    Args:
+        settings: 設定（既定は環境から読む）。
+        site_id: 拠点識別子（トピック名と実体の絞り込みに使う）。
+        probe_ids: ロードするプローブの IRI（版を含む）。
+        wm_version: 読む潜在を作った WM 版の IRI。**プローブの ``wm_version`` と一致する
+            こと**を検査する——違う潜在空間のプローブを走らせると、次元が合えば動いてしまう。
+        level: 潜在の階層。
+        ground_types: 接地対象の型 IRI（``vocab`` から渡す。不変条件 5）。
+        entities: 接地する実体を明示で指定する（カナリア用）。空なら知識グラフから引く。
+
+    Returns:
+        ``(ワーカー, producer)``。呼び出し側が ``producer.stop()`` を担う。
+
+    Raises:
+        BridgeError: プローブの束の ``wm_version`` が引数と食い違う場合。
+    """
+    import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
+
+    from sbp.core.events import EventLayer, topic_name  # noqa: PLC0415
+    from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        HttpGraphStore,
+        LatentIndex,
+        S3ArtifactStore,
+        entities_of_type,
+    )
+
+    resolved = settings or Settings()
+    probe_set = load_probe_set(
+        S3ArtifactStore.from_settings(resolved),
+        probe_ids=probe_ids,
+        site=site_id,
+    )
+    if probe_set.wm_version != wm_version:
+        raise BridgeError(
+            f"probe set belongs to {probe_set.wm_version} but the worker was asked to read "
+            f"latents of {wm_version}; the same latent matrix would be read in two spaces "
+            "(design §4.8)"
+        )
+
+    targets = tuple(entities)
+    if not targets:
+        targets = tuple(
+            entities_of_type(HttpGraphStore(resolved), types=ground_types, site=site_id)
+        )
+
+    connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
+    index = LatentIndex(connection)
+
+    async def reader(
+        entity: str, after: datetime | None, limit: int
+    ) -> Sequence[tuple[datetime, NDArray[np.float64]]]:
+        """潜在索引から 1 実体ぶんを読む。"""
+        return await index.since(
+            entity=entity, wm_version=wm_version, level=level, after=after, limit=limit
+        )
+
+    producer = KafkaEventProducer(resolved)
+    await producer.start()
+    topic = topic_name(site_id, EventLayer.BRIDGE, "physical")
+
+    def sink(event: EventEnvelope) -> object:
+        """昇格したイベントを送る（送信の完了は producer のフラッシュで待つ）。"""
+        return asyncio.create_task(producer.send(topic, event))
+
+    worker = BridgeWorker(
+        resolved,
+        entities=targets,
+        reader=reader,
+        probes=probe_set,
+        sink=sink,
+        wm_version=wm_version,
+        level=level,
+        probe_ids=probe_set.probe_ids(),
+    )
+    log.info(
+        "worker.wired",
+        worker=WORKER_NAME,
+        site_id=site_id,
+        entities=len(targets),
+        probes=len(probe_set),
+        topic=topic,
+    )
+    return worker, producer
+
+
 def main() -> int:
     """エントリポイント。
 
-    **プローブの供給元を設定していない。** 学習済みプローブの重みをどこから読むかが未決で
-    （レジストリは場所と版の管理だけを行い、重みの直列化は未実装——``docs/PROGRESS.md`` の
-    既知の制約）、``TODO(question)``: S3 から読むか、プロセス起動時に学習するかを決める必要が
-    ある。接地する実体の一覧も、知識グラフから引く（型で絞る）か設定で渡すかが未決。
+    プローブの IRI と WM 版は環境から渡す（``SBP_BRIDGE_PROBE_IDS`` / ``SBP_BRIDGE_WM_VERSION``
+    を読む ``Settings.bridge`` の項目）。**既定値を置かない**——適当な版を既定にすると、
+    設定漏れが「別の版のプローブで接地していた」という形で現れる（ADR-0009）。
     """
-    worker = BridgeWorker()
-    asyncio.run(worker.run())
+
+    async def _run() -> None:
+        settings = Settings()
+        if not settings.bridge.probe_ids or not settings.bridge.wm_version:
+            raise ConfigError(
+                "bridge-worker needs SBP_BRIDGE_PROBE_IDS and SBP_BRIDGE_WM_VERSION; "
+                "without them there is no probe to run and no latent space to read "
+                "(ADR-0009). A default version here would silently ground with the wrong one."
+            )
+        worker, producer = await build_worker(
+            settings,
+            site_id=settings.site_id,
+            probe_ids=settings.bridge.probe_ids,
+            wm_version=settings.bridge.wm_version,
+        )
+        try:
+            await worker.run()
+        finally:
+            await producer.stop()
+
+    asyncio.run(_run())
     return 0
 
 
