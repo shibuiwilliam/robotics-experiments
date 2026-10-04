@@ -39,7 +39,7 @@ src/sbp/
   llm/         Provider 抽象（anthropic / openai / gemini）、構造化出力、プロンプト版管理、replay
   api/         FastAPI: GraphQL（strawberry）、SPARQL プロキシ、ストリーム購読、コマンド
   testing/     合成データ生成 SynthWorld（テスト用フィクスチャ。ユースケース検証ではない）
-services/      ワーカーのエントリポイント（bridge-worker, belief-worker, reconcile-worker, scheduler-worker）
+services/      ワーカーのエントリポイント（bridge-worker, belief-worker, reconcile-worker, scheduler-worker, learning-worker）
 infra/         compose.yaml、sql/（alembic）、prometheus/（任意）
 docs/          design/（正典）、adr/、runbooks/、STATUS.md（進捗。CLAUDE.md に進捗を書かない）
 tests/         unit/ integration/ contract/ property/ fixtures/

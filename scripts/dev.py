@@ -47,6 +47,8 @@ WORKERS: dict[str, str] = {
     "belief": "services.belief_worker",
     "reconcile": "services.reconcile_worker",
     "scheduler": "services.scheduler_worker",
+    # 5 番目のワーカー（M8-08、ADR-0012）。人の判断を適用する
+    "learning": "services.learning_worker",
 }
 """``--workers`` で選べるワーカー（名前 → モジュール）。"""
 

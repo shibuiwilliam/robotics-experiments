@@ -101,7 +101,7 @@ sbp/
 ├── value/*.yaml            # 不一致の深刻度に使う業務価値（設計書 §8.2）
 ├── mappings/*.yaml         # 業務記録 → Record / BusinessEvent の写像（ADR-0006）
 ├── observation/*.yaml      # 観測手段の割り当て（フルーエント → kind / reliability / cost。ADR-0011）
-├── services/               # ワーカー: bridge-worker, belief-worker, reconcile-worker, scheduler-worker
+├── services/               # ワーカー: bridge / belief / reconcile / scheduler / learning（ADR-0012）
 │                           # 1 ワーカー 1 プロセス、SIGTERM graceful shutdown、起動時に Settings と疎通検査
 ├── infra/
 │   ├── compose.yaml        # 4 サービス固定: redpanda / postgres(timescaledb-ha+pgvector) / oxigraph / minio。

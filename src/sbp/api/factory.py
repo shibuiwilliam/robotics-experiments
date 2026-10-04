@@ -10,9 +10,13 @@
 ヘッダから要求者を作り、それ以外では ``principal_resolver`` を渡さない——``create_app`` は
 未設定なら信念クエリを**すべて拒否する**（既定は拒否）。「未設定なら通す」経路を作らない。
 
-**配線できないものは渡さない。** ストリーム購読とコマンドのハンドラは、それぞれ決めるべき
-ことが残っている（購読は ADR-0008 の未決、コマンドは M8-08 の学習信号の適用）。``None`` を
-渡せば ``create_app`` が 503 を返すので、「動いているように見えて何もしない」状態にならない。
+**配線できないものは渡さない。** ストリーム購読の方式は未決（ADR-0008 の未決）なので
+``None`` を渡す——``create_app`` が 503 を返すので、「動いているように見えて何もしない」状態に
+ならない。
+
+**コマンドは受け付けるだけ**（M8-08、ADR-0012）。人の判断を作業キューに積み、適用は
+``learning-worker`` が行う。ハンドラが重い仕事をすると、HTTP のタイムアウトが人の判断を
+失わせる。
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI, Request
 
     from sbp.core.metrics import MetricSample
+    from sbp.knowledge.decisions import DecisionRow
 
 __all__ = ["build_app", "dev_principal_resolver"]
 
@@ -115,7 +120,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     Returns:
         FastAPI アプリ。
     """
-    from sbp.knowledge import AssertionStore, HttpGraphStore, MetricStore  # noqa: PLC0415
+    from sbp.api.commands import build_command_handler  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        AssertionStore,
+        DecisionQueue,
+        HttpGraphStore,
+        MetricStore,
+    )
 
     resolved = settings or Settings()
     store = HttpGraphStore(resolved)
@@ -125,14 +136,27 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     # （既定 30 秒）で接続が作られ続ける
     state: dict[str, Any] = {"connection": None}
 
-    async def read_metrics() -> list[MetricSample]:
-        """系列ごとの最新値を返す。"""
+    def _connection() -> Any:
+        """lifespan が開いた接続。開く前に使われたら落とす。
+
+        空や既定値を返すと、「指標が無い」「判断が積めた」のように**失敗が成功に見える**。
+        """
         connection = state["connection"]
         if connection is None:
-            # lifespan が開く前（起動直後）に叩かれた場合。空ではなく例外にする
-            # ——空を返すと「スクレイプ成功、系列 0 件」と読まれる（所見 32）
-            raise RuntimeError("metric store is not connected yet")
-        return await MetricStore(connection, site=resolved.site_id).latest()
+            raise RuntimeError("postgres is not connected yet (lifespan has not started)")
+        return connection
+
+    async def enqueue_decision(row: DecisionRow) -> bool:
+        """人の判断を作業キューに積む（適用は learning-worker。ADR-0012）。
+
+        Args:
+            row: 判断。
+        """
+        return await DecisionQueue(_connection(), site=resolved.site_id).enqueue(row)
+
+    async def read_metrics() -> list[MetricSample]:
+        """系列ごとの最新値を返す。"""
+        return await MetricStore(_connection(), site=resolved.site_id).latest()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -156,7 +180,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         # **購読とコマンドは渡さない。** 購読の方式は未決（ADR-0008）、コマンドのハンドラは
         # 学習信号の適用（M8-08）が決める。None なら create_app が 503 を返す
         stream_reader=None,
-        command_handler=None,
+        command_handler=build_command_handler(enqueue_decision),
         principal_resolver=(dev_principal_resolver(resolved) if resolved.env == "dev" else None),
         metric_reader=read_metrics,
     )
