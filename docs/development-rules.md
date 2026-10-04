@@ -40,7 +40,8 @@
 ### 2.2 現在地
 
 里程の状態は `docs/STATUS.md`、タスクの状態は `docs/TASK.md`、実装中に判明した事実は
-`docs/PROGRESS.md` にある。本書はそれらを参照するだけで、進捗を二重に持たない。
+`docs/PROGRESS.md`、**人の判断を待つ事項は `docs/HITL.md`** にある。本書はそれらを参照するだけで、
+進捗を二重に持たない。
 
 - 独立リポジトリ化は完了済み（ADR-0001）。
 - セットアップ確認: Claude Code で `/context` を実行し Memory files に `CLAUDE.md` が出ていること。`.claude/settings.json` が効いていれば、`.env` の読み取り・生成物（`schemas/`, `vocab.py`）の編集は自動的に拒否される。
@@ -112,7 +113,8 @@ sbp/
 │   ├── design/sbp-design.md  # 正典。実装前に該当章だけ Read（@ で全文 import しない）
 │   ├── adr/NNNN-<slug>.md    # 設計判断の記録（MADR 形式、テンプレは 0000）
 │   ├── runbooks/             # 運用手順（再接地差分レポート形式など）
-│   └── STATUS.md             # マイルストーン進捗。進捗はここだけに書く
+│   ├── STATUS.md             # マイルストーン進捗。里程の粒度はここだけに書く
+│   └── HITL.md               # 人の判断を待つ事項の管理簿（優先度順）
 └── tests/
     ├── unit/<module>/      # 外部 I/O は Protocol でモック。pytest-socket でネットワーク遮断
     ├── integration/        # -m integration、Compose 必須。未起動は skip でなく明示エラー
@@ -255,7 +257,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 
 ## 8. 開発フロー
 
-1. **マイルストーン順守**: M0 骨格 → M1 統合 → M2 接地 → M3 推論 → M4 WM → M5 閉ループ → M6 進化 → M7 運用。**M(n) の統合テストが緑になるまで M(n+1) に着手しない。** タスク粒度の計画・ゲート定義は `docs/TASK.md`、里程粒度の現在地は `docs/STATUS.md`（CLAUDE.md に進捗を書かない）。
+1. **マイルストーン順守**: M0 骨格 → M1 統合 → M2 接地 → M3 推論 → M4 WM → M5 閉ループ → M6 進化 → M7 運用 → M8 配線。**M(n) の統合テストが緑になるまで M(n+1) に着手しない。** タスク粒度の計画・ゲート定義は `docs/TASK.md`、里程粒度の現在地は `docs/STATUS.md`（CLAUDE.md に進捗を書かない）。
 2. **着手前**: 設計書の該当章だけ Read（§3.1 の対応表）。大きな変更（新モジュール・オントロジー MAJOR・ストア変更・サービス追加）は plan mode で計画→承認→実装。
 3. **概念が必要になったら**: コードで定義せず、オントロジー変更手順（§6.1）を先に回す。
 4. **設計から逸れる判断**: 先に `docs/adr/NNNN-<slug>.md`（テンプレは `0000-template.md`。触る層・不変条件への影響・semver 判定・再接地要否・未決を必ず書く）。
@@ -303,8 +305,9 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 | `.claude/rules/infra-testing.md` | infra/・tests/・services/・Makefile 向け | §6.6 |
 | `.claude/settings.json` + `hooks/post-edit.sh` | 機械的ガードレール | §9 |
 | `docs/adr/0000-template.md` | ADR テンプレート | §8-4 |
-| `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M7 分解・運用・リスク） | §8-1 |
+| `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M8 分解・運用・リスク） | §8-1 |
 | `docs/PROMPT.md` | 開発遂行用プロンプト集（TASK.md を 1 セッションずつ消化するための定型指示文） | §8 |
 | `docs/PROGRESS.md` | 開発経過（実装中に判明した事実、ADR に至らなかった判断、既知の制約） | §8 |
-| `docs/STATUS.md` | マイルストーン進捗サマリ（現在: M0 着手前） | §2.2, §8-1 |
+| `docs/STATUS.md` | マイルストーン進捗サマリと規模の実測（現在: M0〜M7 完了 / M8 進行中） | §2.2, §8-1 |
+| `docs/HITL.md` | 人の判断を待つ事項の管理簿。決まったら ADR を起票して本書から消す | §8 |
 | `.env.example` | 全環境変数の一覧（Kafka/PG/SPARQL/S3/MPS/LLM/書き戻し） | §7 |

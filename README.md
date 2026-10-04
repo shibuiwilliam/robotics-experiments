@@ -23,9 +23,10 @@ UI（`apps/ui`、Node 20+）を触るときは `make ui-install` → `make check
 
 コマンド一覧と開発規約は `CLAUDE.md`、詳細は `docs/development-rules.md` を参照。
 
-> 現在地: **M0〜M7 完了**（ゲート G0〜G7 通過）。計画上のマイルストーンは出し切り、残るのは
-> 横断タスクと「実データに当てるまで確かめられない」種類の制約である（`docs/STATUS.md`、
-> `docs/PROGRESS.md` の既知の制約）。
+> 現在地: **M0〜M7 完了**（ゲート G0〜G7 通過）/ **M8「配線」進行中（16 / 22）**。
+> ゲート G8 の 3 条件のうち 2 つ（G0〜G7 維持、`TODO(question)` 0 件）は満たしている。
+> 残るのは M8 の 6 件、**人の判断を待つ 21 件**（`docs/HITL.md`）、「実データに当てるまで
+> 確かめられない」種類の制約である（`docs/STATUS.md`、`docs/PROGRESS.md` の既知の制約）。
 
 CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 不要）が落ちたら
 `integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。
@@ -37,11 +38,12 @@ CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 
 | `docs/design/sbp-design.md` | **正典**となる詳細設計書（v0.1、全 18 章 + 付録）。実装前に該当章だけ読む |
 | `CLAUDE.md` | 毎セッション読み込まれる基幹ルール（層依存・不変条件 12 箇条・規約） |
 | `docs/development-rules.md` | ディレクトリ構成・ファイルの役割・開発規約の統合整理 |
-| `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M7 タスク分解・運用・リスク） |
+| `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M8 タスク分解・運用・リスク） |
 | `docs/PROMPT.md` | 開発遂行用プロンプト集（セッション運営・タスク実行・マイルストーン別・横断・運用・リカバリ） |
 | `docs/PROGRESS.md` | 開発経過の記録（実装中に判明した事実、ADR に至らなかった判断、既知の制約） |
-| `docs/adr/` | 設計判断の記録（MADR 形式。テンプレは `0000-template.md`） |
-| `docs/STATUS.md` | マイルストーン進捗（M0〜M7）。進捗はここだけに書く |
+| `docs/adr/` | 設計判断の記録（MADR 形式、15 件。テンプレは `0000-template.md`） |
+| `docs/HITL.md` | **人の判断を待つ事項の管理簿**（優先度順。決まったら ADR を起票して本書から消す） |
+| `docs/STATUS.md` | マイルストーン進捗（M0〜M8）と規模の実測。里程の粒度はここだけに書く |
 | `.claude/rules/*.md` | 層別の詳細ルール（paths 連動で該当ファイルを開くと自動読込） |
 | `.claude/settings.json` | Claude Code のガードレール（ルートの `settings.json` はここへのシンボリックリンク） |
 | `docs/runbooks/` | 運用手順（再接地 / 版昇格 / 障害対応 / バックアップ・リストア / ローカル環境） |

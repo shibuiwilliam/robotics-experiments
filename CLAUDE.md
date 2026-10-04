@@ -41,7 +41,7 @@ src/sbp/
   testing/     合成データ生成 SynthWorld（テスト用フィクスチャ。ユースケース検証ではない）
 services/      ワーカーのエントリポイント（bridge-worker, belief-worker, reconcile-worker, scheduler-worker, learning-worker）
 infra/         compose.yaml、sql/（alembic）、prometheus/（任意）
-docs/          design/（正典）、adr/、runbooks/、STATUS.md（進捗。CLAUDE.md に進捗を書かない）
+docs/          design/（正典）、adr/、runbooks/、STATUS.md（進捗。CLAUDE.md に進捗を書かない）、HITL.md（人の判断待ち）
 tests/         unit/ integration/ contract/ property/ fixtures/
 ```
 
@@ -127,7 +127,7 @@ tests/         unit/ integration/ contract/ property/ fixtures/
 - 大きな変更（新モジュール、オントロジー MAJOR、ストア変更、サービス追加）は plan mode で計画 → 承認 → 実装。
 - 着手前に `docs/design/sbp-design.md` の該当章を読む。層ごとの詳細ルールは `.claude/rules/*.md`（paths 付き）にあり、該当ファイルを開くと自動で読み込まれる。
 - 完了の定義: 型が通る、テストがある、`make check` 緑、docstring / ADR / CHANGELOG 更新、ログに相関 ID。
-- 不明な業務仕様は推測で埋めず、`TODO(question)` と ADR の「未決」に残して質問する。
+- 不明な業務仕様は推測で埋めず、`TODO(question)` と ADR の「未決」に残して質問する。**人の判断を待つ事項は `docs/HITL.md`** に集約する（どこにも全体が無い状態を作らない）。
 
 ## やってはいけないこと
 - 「正」フラグや `is_true` 列を作る。真実ではなく信念を管理する。
