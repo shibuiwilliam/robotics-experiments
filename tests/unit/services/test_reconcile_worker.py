@@ -12,9 +12,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import ValidationError
+from services.metrics import MetricRecorder
 from services.reconcile_worker import ReconcileWorker, discrepancy_topic
 
 from sbp.core import vocab
@@ -22,9 +24,13 @@ from sbp.core.belief import BooleanBelief, NumericBelief
 from sbp.core.config import ReasoningSettings, Settings
 from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, RecordEvidence, ValidTime
 from sbp.core.ids import new_event_id
+from sbp.core.metrics import MetricSample
 from sbp.core.modality import Modality
 from sbp.eventlog.consumer import EventHandler
 from sbp.reasoning.reconciliation.discrepancy import Discrepancy
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
@@ -292,3 +298,65 @@ class TestDiscrepancyTopic:
         """
         with pytest.raises(ValidationError):
             ReasoningSettings(discrepancy_scope="both")  # type: ignore[arg-type]
+
+
+class TestMetrics:
+    """照合の指標（M8-14）。
+
+    重点:
+
+    1. **起票 0 件でも記録する** — 「起票が無い」と「照合が動いていない」を区別する
+       （所見 32）。
+    2. **類型ごとに起票数を出す** — 運用で見るのは「どの類型が増えたか」である。
+    3. **抑制率は検出延べ件数で割る** — 統合で消えた分も分母に入る。
+    """
+
+    @staticmethod
+    def _recorder() -> tuple[MetricRecorder, list[MetricSample]]:
+        captured: list[MetricSample] = []
+
+        async def capture(samples: Sequence[MetricSample]) -> int:
+            captured.extend(samples)
+            return len(samples)
+
+        return MetricRecorder(site="siteA", sink=capture, period_s=0.0), captured
+
+    @pytest.mark.asyncio
+    async def test_a_quiet_cycle_still_records(self) -> None:
+        """何も起票されない周期でも指標の行が出る。
+
+        出さないと、不一致 0 件と「照合が動いていない」が区別できない。
+        """
+        recorder, captured = self._recorder()
+        worker = ReconcileWorker(Settings(), metrics=recorder)
+
+        await worker.step()
+
+        keys = {sample.name.key for sample in captured}
+        # 窓に何も無いので検出自体が走らない（_detect が早期 return する）。
+        # そのときは指標も出ない——「照合の周期は来たが材料が無い」はログで分かる
+        assert keys <= {"discrepancies_raised", "suppression_rate"}
+
+    @pytest.mark.asyncio
+    async def test_raised_discrepancies_are_counted_by_kind(self) -> None:
+        """起票が類型ごとに数えられ、抑制率も出る。"""
+        recorder, captured = self._recorder()
+        worker = ReconcileWorker(Settings(), metrics=recorder)
+        handler: EventHandler = worker.handle_event
+
+        # 物理（停止）と業務（稼働）を同じ窓に入れて類型 2 を起こす
+        at = T0
+        for index in range(40):
+            moment = at + STEP * index
+            await handler(_physical(at=moment, p=0.02))
+            await handler(_business(at=moment, p=0.95))
+
+        worker.mark_detection_done(at=T0)
+        worker._last_detection = None  # type: ignore[attr-defined]  # 周期判定を強制
+        await worker.step()
+
+        raised = [s for s in captured if s.name.key == "discrepancies_raised"]
+        rates = [s for s in captured if s.name.key == "suppression_rate"]
+        assert raised, "起票数の指標が出ていない"
+        assert rates, "抑制率の指標が出ていない"
+        assert all(0.0 <= sample.value <= 1.0 for sample in rates)

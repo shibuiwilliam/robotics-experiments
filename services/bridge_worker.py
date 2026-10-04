@@ -41,6 +41,8 @@ from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.errors import BridgeError, ConfigError
 from sbp.core.logging import get_logger
+from sbp.core.time import now
+from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -145,6 +147,7 @@ class BridgeWorker:
         level: str = "mid",
         probe_ids: Mapping[str, str] | None = None,
         watermarks: WatermarkSink | None = None,
+        metrics: MetricRecorder | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -161,6 +164,7 @@ class BridgeWorker:
             ——``ProbeSet.probe_ids()`` から渡す。
         watermarks: ウォーターマークの永続化（``None`` ならプロセス内だけに持つ）。
             起動時に :meth:`restore_watermarks` を呼んで前回の位置を戻す。
+        metrics: 指標の記録（``None`` なら測らない）。M8-14。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -177,6 +181,7 @@ class BridgeWorker:
         self._level = level
         self._probe_ids = dict(probe_ids or {})
         self._watermark_sink = watermarks
+        self._metrics = metrics
         self.watermarks: dict[str, datetime] = {}
         self.lifted_total = 0
         if not self._entities:
@@ -241,6 +246,8 @@ class BridgeWorker:
         total = 0
         for entity in self._entities:
             total += await self._ground(entity)
+        if self._metrics is not None:
+            await self._metrics.flush(at=now())
         if total:
             log.info(
                 "worker.bridge_cycle",
@@ -305,10 +312,40 @@ class BridgeWorker:
         for event in lifted:
             self._emit(event)
         self.lifted_total += len(lifted)
+        self._measure(entity, lifted, latest=timestamps[-1])
         # **最後まで処理してからウォーターマークを進める。** 先に進めると、送信に失敗した
         # イベントが二度と昇格されない（潜在は残っているが読み直さない）
         await self._advance(entity, timestamps[-1])
         return len(lifted)
+
+    def _measure(self, entity: str, lifted: Sequence[LiftedEvent], *, latest: datetime) -> None:
+        """事象昇格の指標を記録する（M8-14）。
+
+        ``lifting_delay`` は「事象が起きた時刻から昇格イベントを出すまで」。**潜在が
+        索引に入るまでの時間も含む**ので、プローブの計算時間だけではない——運用で見たいのは
+        「物理の変化が信念に届くまで」であり、その全体がこの値である。
+
+        昇格 0 件のときは**最後に読んだ潜在の時刻**で遅延を出す。昇格が無いときに何も
+        書かないと、「変化が無かった」と「接地が止まっている」が区別できない（所見 32）。
+
+        Args:
+            entity: 実体 IRI。
+            lifted: 昇格したイベント。
+            latest: このループで読んだ最後の潜在の時刻。
+        """
+        if self._metrics is None:
+            return
+        at = now()
+        labels = {"entity": entity}
+        if lifted:
+            for event in lifted:
+                delay = max(0.0, (at - event.valid_time.start).total_seconds())
+                self._metrics.record("lifting_delay", delay, at=at, labels=labels)
+        else:
+            # 昇格が無くても「どこまで見たか」を遅延として出す
+            self._metrics.record(
+                "lifting_delay", max(0.0, (at - latest).total_seconds()), at=at, labels=labels
+            )
 
     def _emit(self, event: LiftedEvent) -> None:
         """昇格したイベントを送る。``sink`` が無ければ送らない。"""
@@ -437,6 +474,7 @@ async def build_worker(
     from sbp.knowledge import (  # noqa: PLC0415
         HttpGraphStore,
         LatentIndex,
+        MetricStore,
         S3ArtifactStore,
         WatermarkStore,
         entities_of_type,
@@ -464,6 +502,7 @@ async def build_worker(
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
     index = LatentIndex(connection)
     watermarks = WatermarkStore(connection, worker=WORKER_NAME, wm_version=wm_version, level=level)
+    metrics = MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write)
 
     async def reader(
         entity: str, after: datetime | None, limit: int
@@ -491,6 +530,7 @@ async def build_worker(
         level=level,
         probe_ids=probe_set.probe_ids(),
         watermarks=watermarks,
+        metrics=metrics,
     )
     log.info(
         "worker.wired",

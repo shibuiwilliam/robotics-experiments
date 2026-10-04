@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from services.belief_worker import BeliefWorker, default_ingest
+from services.metrics import MetricRecorder
 
 from sbp.core import vocab
 from sbp.core.assertion import Assertion
@@ -23,6 +24,7 @@ from sbp.core.config import Settings
 from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
+from sbp.core.time import now
 from sbp.eventlog.consumer import EventHandler
 from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink
 
@@ -395,3 +397,67 @@ class TestSituationCoupling:
 
         rows = [row for row in sink.written if row.subject == PUMP]
         assert len(rows) == 1, "結合が成立していないのに調整が書かれている"
+
+
+class TestMetrics:
+    """信念更新の指標（M8-14）。
+
+    重点:
+
+    1. **寄与率は正規化される** — ``SourceContribution`` は対数尤度比の大きさで、
+       ``contrib_*`` の単位は ratio（0〜1）。生の値を入れると値域検証で落ちる。
+    2. **滞留は負にならない** — 合成データや時計のずれで未来の事象が来ることがある。
+    3. **指標が無くても動く** — `metrics=None` で測らないだけ。
+    """
+
+    @staticmethod
+    def _recorder() -> MetricRecorder:
+        return MetricRecorder(site="siteA", sink=None, period_s=0.0)
+
+    @pytest.mark.asyncio
+    async def test_an_update_records_latency_and_contributions(self) -> None:
+        """信念更新 1 件でレイテンシ・寄与率・エントロピー・滞留が記録される。"""
+        recorder = self._recorder()
+        worker = BeliefWorker(Settings(), sink=_Sink(), metrics=recorder)
+        worker.attach_driver(_Driver([[_event_for(PUMP, at=T0, p=0.9)]]))
+
+        await worker.handle_event(_event_for(PUMP, at=T0, p=0.9))
+
+        # 寄与率 3 件 + レイテンシ + 滞留 + エントロピー
+        assert recorder.buffered >= 5
+
+    @pytest.mark.asyncio
+    async def test_the_contributions_are_normalised(self) -> None:
+        """寄与率が 0〜1 に正規化されている（値域検証を通る）。
+
+        正規化せずに入れると ``MetricSample`` が ``ConfigError`` を投げる。例外が出ないこと
+        自体が正規化されている証拠である。
+        """
+        recorder = self._recorder()
+        worker = BeliefWorker(Settings(), sink=_Sink(), metrics=recorder)
+
+        # 例外にならない（生の寄与の大きさは 1 を超えうる）
+        await worker.handle_event(_event_for(PUMP, at=T0, p=0.99))
+
+        assert recorder.buffered > 0
+
+    @pytest.mark.asyncio
+    async def test_a_future_event_does_not_make_the_lag_negative(self) -> None:
+        """未来の事象でも滞留が負にならない（``event_log_lag`` は秒で負を許さない）。"""
+        recorder = self._recorder()
+        worker = BeliefWorker(Settings(), sink=_Sink(), metrics=recorder)
+        future = now() + timedelta(hours=1)
+
+        # 例外にならない（下限 0 にしている）
+        await worker.handle_event(_event_for(PUMP, at=future, p=0.9))
+
+        assert recorder.buffered > 0
+
+    @pytest.mark.asyncio
+    async def test_without_a_recorder_nothing_is_measured(self) -> None:
+        """指標の記録が無くても信念更新は動く。"""
+        worker = BeliefWorker(Settings(), sink=_Sink())
+
+        await worker.handle_event(_event_for(PUMP, at=T0, p=0.9))
+
+        assert worker.applied_total == 1

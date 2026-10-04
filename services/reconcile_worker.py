@@ -32,6 +32,7 @@ from sbp.reasoning.reconciliation import DetectionContext, reconcile
 from sbp.reasoning.reconciliation.notify import discrepancy_event
 from sbp.reasoning.reconciliation.rules import detect_state
 from sbp.reasoning.windows import WindowStore
+from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from sbp.eventlog.producer import KafkaEventProducer
     from sbp.integration.reliability import ReliabilityRegistry
     from sbp.reasoning.reconciliation.discrepancy import Discrepancy
+    from sbp.reasoning.reconciliation.engine import ReconciliationOutcome
     from sbp.reasoning.reconciliation.severity import BusinessValueRegistry
 
     EventDriver = Callable[[EventHandler, int], Awaitable[int]]
@@ -88,6 +90,7 @@ class ReconcileWorker:
         values: BusinessValueRegistry | None = None,
         reliability: ReliabilityRegistry | None = None,
         entity_types: dict[str, str] | None = None,
+        metrics: MetricRecorder | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -115,6 +118,7 @@ class ReconcileWorker:
         )
         self._driver = driver
         self._sink = sink
+        self._metrics = metrics
         # 空のレジストリを既定にする。**価値が登録されていない型は深刻度の価値項が
         # 中間値になる**（0 ではない——`BusinessValueRegistry` の設計）。登録忘れを
         # 「価値ゼロ＝起票しない」にしないための仕様である。
@@ -228,6 +232,8 @@ class ReconcileWorker:
         if self.detection_due(at=at):
             self.mark_detection_done(at=at)
             raised = self._detect(at=at)
+        if self._metrics is not None:
+            await self._metrics.flush(at=at)
         if received or raised:
             log.info(
                 "worker.reconcile_cycle",
@@ -281,6 +287,7 @@ class ReconcileWorker:
             self._emit(discrepancy)
         self.raised_total += len(outcome.triaged)
         self.suppressed_total += len(outcome.suppressed)
+        self._measure(outcome, at=at)
         if outcome.suppressed:
             # 抑制したことを数える。**抑制率を見ないと「不一致が無い」と区別できない**
             log.info(
@@ -290,6 +297,31 @@ class ReconcileWorker:
                 reasons=[d.suppression.reason for d in outcome.suppressed if d.suppression],
             )
         return len(outcome.triaged)
+
+    def _measure(self, outcome: ReconciliationOutcome, *, at: datetime) -> None:
+        """照合 1 周ぶんの指標を記録する（M8-14）。
+
+        **起票 0 件でも記録する。** 「起票が無い」ことと「照合が動いていない」ことは、
+        指標の行が来るかどうかでしか区別できない（所見 32）。抑制率も同じ理由で、
+        抑制が 0 のときに 0.0 を書く。
+
+        Args:
+            outcome: 照合の結果。
+            at: 照合時刻。
+        """
+        if self._metrics is None:
+            return
+        kinds = {str(int(d.kind)) for d in outcome.triaged}
+        # 類型ごとに起票数を出す（運用で見るのは「どの類型が増えたか」である）
+        for kind in sorted(kinds):
+            count = sum(1 for d in outcome.triaged if str(int(d.kind)) == kind)
+            self._metrics.record("discrepancies_raised", float(count), at=at, labels={"kind": kind})
+        if not kinds:
+            self._metrics.record("discrepancies_raised", 0.0, at=at, labels={"kind": "none"})
+
+        detected = outcome.total_detected
+        rate = 0.0 if detected == 0 else len(outcome.suppressed) / detected
+        self._metrics.record("suppression_rate", rate, at=at)
 
     def _emit(self, discrepancy: Discrepancy) -> None:
         """不一致を出す。``sink`` が無ければ出さない。"""
@@ -371,6 +403,7 @@ async def build_worker(
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
     from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
+    from sbp.knowledge import MetricStore  # noqa: PLC0415
     from services.belief_worker import kafka_driver  # noqa: PLC0415
 
     resolved = settings or Settings()
@@ -390,7 +423,11 @@ async def build_worker(
             producer.send(topic, discrepancy_event(discrepancy, site_id=site_id))
         )
 
-    worker = ReconcileWorker(resolved, sink=sink)
+    worker = ReconcileWorker(
+        resolved,
+        sink=sink,
+        metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
+    )
 
     consumer = KafkaEventConsumer(
         resolved,

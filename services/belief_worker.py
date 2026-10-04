@@ -43,6 +43,7 @@ from sbp.knowledge.relations import (
 )
 from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink, propagate
 from sbp.reasoning.ingest import BeliefIngest, default_transition
+from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.consumer import EventHandler, KafkaEventConsumer
     from sbp.knowledge.store import GraphStore
+    from sbp.reasoning.ingest import IngestOutcome
 
     EventDriver = Callable[["EventHandler", int], Awaitable[int]]
     """``(ハンドラ, 最大件数) -> 処理した件数``。
@@ -158,6 +160,7 @@ class BeliefWorker:
         sink: AssertionSink | None = None,
         ingest: BeliefIngest | None = None,
         relations: RelationProvider | None = None,
+        metrics: MetricRecorder | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -168,6 +171,7 @@ class BeliefWorker:
         relations: 事前 → 強い関係（``None`` なら結合を回さない）。**事前を引数に取るのは、
             ``propagate`` が結合の参照する実体すべての事前を要求するため**——持っていない
             実体を含む関係を渡すと例外になる。
+        metrics: 指標の記録（``None`` なら測らない）。M8-14。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -179,6 +183,7 @@ class BeliefWorker:
         self._driver = driver
         self._sink = sink
         self._relations = relations
+        self._metrics = metrics
         self.ingest = ingest if ingest is not None else default_ingest(self.settings)
         self.applied_total = 0
         if driver is None:
@@ -241,12 +246,56 @@ class BeliefWorker:
         Args:
             event: 処理するイベント。
         """
+        started = now()
         outcome = self.ingest.handle(event)
         if not outcome.applied:
             return
         assert outcome.assertion is not None  # applied が真なら必ずある
         self._write(outcome.assertion)
         self.applied_total += 1
+        self._measure(event, outcome, started=started)
+
+    def _measure(self, event: EventEnvelope, outcome: IngestOutcome, *, started: datetime) -> None:
+        """信念更新 1 件ぶんの指標を記録する（M8-14）。
+
+        **寄与率は正規化する。** ``SourceContribution`` は対数尤度比の絶対値（大きさ）を
+        持ち、``contrib_*`` 指標は単位が ``ratio``（0〜1）である。生の大きさをそのまま
+        入れると ``MetricSample`` の値域検証で落ちる——落ちることで取り違えに気付ける。
+
+        Args:
+            event: 処理したイベント。
+            outcome: 信念更新の結果。
+            started: 処理の開始時刻（レイテンシの基準）。
+        """
+        if self._metrics is None:
+            return
+        at = now()
+        update = outcome.update
+        assert update is not None  # applied が真のときだけ呼ばれる
+        labels = {"entity": outcome.entity, "fluent": outcome.fluent or ""}
+
+        self._metrics.record("update_latency", (at - started).total_seconds(), at=at, labels=labels)
+        # イベントログの滞留: 事象が起きた時刻から信念に入るまで。**負にならないよう
+        # 下限 0 にする**——合成データや時計のずれで未来の事象が来ることがある
+        lag = max(0.0, (at - event.valid_time.start).total_seconds())
+        self._metrics.record("event_log_lag", lag, at=at, labels={"topic": "bridge.physical"})
+
+        contrib = update.contribution
+        total = contrib.observed + contrib.record + contrib.plan
+        if total > 0.0:
+            for source, magnitude in (
+                ("contrib_observed", contrib.observed),
+                ("contrib_record", contrib.record),
+                ("contrib_plan", contrib.plan),
+            ):
+                self._metrics.record(source, magnitude / total, at=at, labels=labels)
+
+        self._metrics.record(
+            "belief_entropy",
+            BooleanBelief(p=update.posterior).entropy_nats,
+            at=at,
+            labels=labels,
+        )
 
     async def step(self) -> int:
         """1 ループ。最大 ``batch_size`` 件を処理し、必要なら結合を回す。
@@ -272,6 +321,9 @@ class BeliefWorker:
                 tracked=self.ingest.tracked_entities,
                 coupled=coupled,
             )
+        if self._metrics is not None:
+            await self._metrics.flush(at=at)
+
         applied = self.applied_total - before
         if received:
             log.info(
@@ -500,14 +552,19 @@ async def build_worker(
     from sbp.core.events import EventLayer, topic_name  # noqa: PLC0415
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
-    from sbp.knowledge import AssertionStore, HttpGraphStore  # noqa: PLC0415
+    from sbp.knowledge import AssertionStore, HttpGraphStore, MetricStore  # noqa: PLC0415
 
     resolved = settings or Settings()
     store = HttpGraphStore(resolved)
     graph = AssertionStore(store, site_id=site_id)
 
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
-    worker = BeliefWorker(resolved, sink=graph.assert_, relations=graph_relations(store))
+    worker = BeliefWorker(
+        resolved,
+        sink=graph.assert_,
+        relations=graph_relations(store),
+        metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
+    )
 
     consumer = KafkaEventConsumer(
         resolved,

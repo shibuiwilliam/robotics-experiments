@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from services.bridge_worker import BridgeWorker, load_probe_set, load_rules
+from services.metrics import MetricRecorder
 
 from sbp.bridge.calibration import TemperatureScaler
 from sbp.bridge.lifting import load_event_calculus
@@ -25,10 +26,13 @@ from sbp.bridge.serialization import artifact_key, bundle_probe, dumps
 from sbp.core.config import Settings
 from sbp.core.errors import ArtifactNotFoundError, BridgeError, DependencyUnavailableError
 from sbp.core.events import EventEnvelope
+from sbp.core.metrics import MetricSample
 from sbp.core.modality import Modality
 from sbp.knowledge.artifacts import LocalArtifactStore
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from numpy.typing import NDArray
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
@@ -99,6 +103,7 @@ def _worker(
     sink: _Sink | None = None,
     probe_ids: dict[str, str] | None = None,
     watermarks: object = None,
+    metrics: MetricRecorder | None = None,
 ) -> tuple[BridgeWorker, _Reader, _Sink]:
     reader = _Reader(rows if rows is not None else [])
     used_sink = sink if sink is not None else _Sink()
@@ -116,6 +121,7 @@ def _worker(
         wm_version="https://sbp.example/wm/koopman/1.0.0",
         probe_ids=probe_ids if probe_ids is not None else {"Running": RUNNING_PROBE},
         watermarks=watermarks,  # type: ignore[arg-type]
+        metrics=metrics,
     )
     return worker, reader, used_sink
 
@@ -445,3 +451,57 @@ class TestWatermarkPersistence:
 
         assert worker.watermarks[PUMP] == already, "疎通検査より前に戻っている"
         assert reader.calls == [], "疎通検査で落ちたので潜在は読んでいない"
+
+
+class TestMetrics:
+    """事象昇格の指標（M8-14）。
+
+    重点:
+
+    1. **昇格 0 件でも記録する** — 「変化が無かった」と「接地が止まっている」を区別する
+       （所見 32）。
+    2. **遅延は負にならない** — 合成データでは未来の潜在がありうる。
+    """
+
+    @staticmethod
+    def _recorder() -> tuple[MetricRecorder, list[MetricSample]]:
+        """``step()`` の終わりに flush されるので、書かれた標本を捕まえる。"""
+        captured: list[MetricSample] = []
+
+        async def capture(samples: Sequence[MetricSample]) -> int:
+            captured.extend(samples)
+            return len(samples)
+
+        return MetricRecorder(site="siteA", sink=capture, period_s=0.0), captured
+
+    @pytest.mark.asyncio
+    async def test_lifting_records_a_delay(self) -> None:
+        """昇格したら遅延が記録される。"""
+        recorder, captured = self._recorder()
+        worker, _reader, _sink = _worker(rows=_latents(40), metrics=recorder)
+
+        lifted = await worker.step()
+
+        assert lifted >= 1
+        delays = [s for s in captured if s.name.key == "lifting_delay"]
+        assert len(delays) == lifted
+        assert all(sample.labels["entity"] == PUMP for sample in delays)
+        assert all(sample.value >= 0.0 for sample in delays)
+
+    @pytest.mark.asyncio
+    async def test_no_lifting_still_records(self) -> None:
+        """昇格が無くても遅延を記録する。
+
+        何も書かないと、「変化が無かった」と「接地が止まっている」が区別できない。
+        """
+        recorder, captured = self._recorder()
+
+        def always_running(latents: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
+            """変化点の無いプローブ出力（全区間成立）。"""
+            return {"Running": np.full(latents.shape[0], 0.95)}
+
+        worker, _reader, _sink = _worker(rows=_latents(40), probes=always_running, metrics=recorder)
+
+        assert await worker.step() == 0
+        delays = [s for s in captured if s.name.key == "lifting_delay"]
+        assert len(delays) == 1, "昇格 0 件のときに遅延が記録されていない"
