@@ -25,7 +25,8 @@ from pathlib import Path
 import pytest
 
 from sbp.api.commands import CurationCommand, ResolutionCommand
-from sbp.api.schema import DiscrepancyType, ExpectationType
+from sbp.api.schema import ConceptProposalType, DiscrepancyType, ExpectationType
+from sbp.reasoning.discovery import ProposalStatus
 from sbp.reasoning.expectation import ExpectationStatus
 from sbp.reasoning.reconciliation import (
     DiscrepancyKind,
@@ -213,19 +214,24 @@ def test_the_topics_the_ui_reads_exist() -> None:
         assert suffix in site_classes, f"UI が読む <site>.{suffix} が scripts/topics.py に無い"
 
 
-def test_the_ui_does_not_silently_return_empty_for_unwired_reads() -> None:
-    """未配線の読み出しが空を返さない。
+def test_a_failed_read_is_not_rendered_as_an_empty_result() -> None:
+    """読めなかったことを空として描かない（所見 32）。
 
-    空を返すと「提案が無い」と読まれ、発見ループが動いていないことと区別できない（所見 32）。
-    概念提案はトピックも API 資源も無いので、明示的に失敗する形にしてある（M8-19）。
+    **「提案が無い」と「発見ループが動いていない」は違う。** M8-19 で `fetchProposals` が
+    GraphQL に繋がったので、以前の「未配線だから例外」という形は無くなった——残るべき保証は
+    **失敗が空に化けないこと**である。
+
+    2 点を検査する: (1) GraphQL の応答に `errors` があれば投げる、(2) 画面が提案の読み出しの
+    失敗を独立した状態として持つ（他のビューを落とさず、理由を出す）。
     """
-    source = _strip_comments(_source(UI_API))
-    match = re.search(r"export async function fetchProposals.*?\n\}", source, re.DOTALL)
-    assert match is not None
+    api = _strip_comments(_source(UI_API))
+    assert re.search(r"payload\.errors[\s\S]{0,120}throw new ApiError", api), (
+        "GraphQL の errors を投げていない（空の成功として描かれる）"
+    )
 
-    body = match.group(0)
-    assert "throw new ApiError" in body, "未配線なのに空を返している"
-    assert "/stream/" not in body, "存在しないトピックを読んでいる"
+    app = _strip_comments(_source(REPO_ROOT / "apps/ui/src/App.tsx"))
+    assert "proposalError" in app, "提案の読み出しの失敗を画面が区別していない"
+    assert "setProposals([])" in app, "失敗時に一覧を空に戻していない（古い内容が残る）"
 
 
 def test_the_expectation_status_values_match_the_backend() -> None:
@@ -262,3 +268,54 @@ def test_the_ui_does_not_read_expectations_from_the_stream() -> None:
 
     assert "/stream/" not in match.group(0), "期待をストリームから読んでいる"
     assert "expectations(" in match.group(0), "GraphQL の資源を引いていない"
+
+
+def test_the_proposal_status_values_match_the_backend() -> None:
+    """UI の提案の採否が ``ProposalStatus`` と一致する（M8-19）。
+
+    **小文字である。** backend の ``StrEnum`` の値で、不一致（所見 83）と期待（所見 86）では
+    UI が大文字の別名を持っていて API と一致していなかった。
+    """
+    found = _string_union(_source(UI_TYPES), "ProposalStatus")
+
+    assert found == {status.value for status in ProposalStatus}
+
+
+def test_the_queried_proposal_fields_exist_on_the_graphql_type() -> None:
+    """UI が要求する提案のフィールドが GraphQL の型に実在する。
+
+    以前の UI は ``label`` / ``rationale`` という**backend に無い名前**を使っていた（所見 85）。
+    """
+    source = _source(UI_API)
+    match = re.search(r"const PROPOSAL_FIELDS = `(.*?)`", source, re.DOTALL)
+    assert match is not None, "PROPOSAL_FIELDS が UI に無い"
+    requested = set(match.group(1).split())
+    available = set(ConceptProposalType.__annotations__)
+
+    missing = requested - available
+    assert not missing, f"UI が要求するフィールドが GraphQL の型に無い: {sorted(missing)}"
+
+
+def test_the_ui_does_not_read_proposals_from_the_stream() -> None:
+    """UI が提案をイベントストリームから読んでいない（M8-19）。
+
+    **以前は存在しないトピックを読んでいた**（`central.reasoning.concept`。所見 85）
+    ——トピックも API 資源も無く、読めば必ず失敗する形で出荷されていた。
+    """
+    source = _strip_comments(_source(UI_API))
+    match = re.search(r"export async function fetchProposals.*?\n\}", source, re.DOTALL)
+    assert match is not None
+
+    assert "/stream/" not in match.group(0), "提案をストリームから読んでいる"
+    assert "proposals(" in match.group(0), "GraphQL の資源を引いていない"
+
+
+def test_the_ui_reads_no_stream_at_all() -> None:
+    """**UI にストリームの読み出しが 1 つも残っていない**（M8-18 / M8-19）。
+
+    4 ビューすべてが GraphQL の資源を読む。`/stream/{topic}` の購読方式は未決のまま
+    （ADR-0008 の未決）で、いまは消費者が 1 人も居ない——残っていると「動くはず」と読まれる。
+    """
+    source = _strip_comments(_source(UI_API))
+
+    assert "/stream/" not in source, "UI がまだストリームを読んでいる"

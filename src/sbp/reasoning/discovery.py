@@ -84,6 +84,21 @@ class ProposalStatus(StrEnum):
         """オントロジーに入るか。"""
         return self in {ProposalStatus.ACCEPTED, ProposalStatus.REVISED}
 
+    @property
+    def is_curated(self) -> bool:
+        """人が採否を決めたか（curation の待ち行列から外れる）。"""
+        return self is not ProposalStatus.PROPOSED
+
+    @property
+    def rank(self) -> int:
+        """ライフサイクル上の位置（後退の検出に使う）。
+
+        **採否が入った提案を ``proposed`` に戻せない**ようにするための順序である（所見 80 と
+        同じ対処）。採択・修正採択・却下は**同じ位置**で、互いに遷移しない——人が判断を
+        やり直すなら、新しい提案として出す。
+        """
+        return 0 if self is ProposalStatus.PROPOSED else 1
+
 
 @dataclass(frozen=True, slots=True)
 class LatentCluster:

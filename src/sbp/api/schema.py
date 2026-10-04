@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sbp.knowledge.assertions import AssertionRow
+    from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 else:  # Protocol の注釈を実行時にも解決できるようにする
@@ -355,6 +356,65 @@ class BeliefSource:
 
 
 @strawberry.type
+class ConceptProposalType:
+    """概念提案 1 件（M8-19、ADR-0015）。
+
+    **判断材料を数値で返す。** ``supportCount``（支持する標本数）と ``coverage``（既存概念での
+    被覆率）は提案した時点の値で、設計書 §11.2 の curation 検査が使う——「標本 10 件未満は
+    偶然のクラスタと区別できない」「被覆率 50% 超なら既存概念の調整で足りる」。
+
+    **潜在の重心は返さない**（ADR-0015）。潜在索引のもので、ここに置くと再接地で食い違う。
+
+    Attributes:
+        proposalId: 識別子。
+        name: ローカル名。
+        definition: 一文の定義（成立条件）。
+        superclass: 上位概念のローカル名。
+        status: 採否（``proposed`` / ``accepted`` / ``revised`` / ``rejected``）。
+        rejectedAlternatives: 既存概念で説明しようとして足りなかった点。**空では提案できない。**
+        supportCount: 支持する標本数（提案時に導出した値）。
+        coverage: 既存概念での被覆率（同）。
+        signalCount: 根拠になった signal の数。
+        proposedAt: 提案時刻（未記録なら ``null``）。
+        curationNote: 採否の理由（未判断なら空）。
+    """
+
+    proposalId: str  # noqa: N815 — GraphQL は camelCase
+    name: str
+    definition: str
+    superclass: str
+    status: str
+    rejectedAlternatives: list[str]  # noqa: N815
+    supportCount: int  # noqa: N815
+    coverage: float
+    signalCount: int  # noqa: N815
+    proposedAt: datetime | None  # noqa: N815
+    curationNote: str  # noqa: N815
+
+    @classmethod
+    def from_record(cls, record: ConceptProposalRecord) -> ConceptProposalType:
+        """作業項目レコードから作る。
+
+        Args:
+            record: 表の行。
+        """
+        payload = record.payload
+        return cls(
+            proposalId=str(record.proposal_id),
+            name=record.name,
+            definition=str(payload.get("definition", "")),
+            superclass=record.superclass,
+            status=record.status,
+            rejectedAlternatives=[str(item) for item in payload.get("rejected_alternatives", ())],
+            supportCount=record.support_count,
+            coverage=record.coverage,
+            signalCount=len(payload.get("signals", ())),
+            proposedAt=record.proposed_at,
+            curationNote=str(payload.get("curation_note", "")),
+        )
+
+
+@strawberry.type
 class Query:
     """読み取り専用のクエリ根（設計書 §10.1）。"""
 
@@ -513,6 +573,54 @@ class Query:
             rows=len(records),
         )
         return [ExpectationType.from_record(record) for record in records]
+
+    @strawberry.field(description="curation 待ちの概念提案を支持の多い順に返す")
+    def proposals(
+        self,
+        info: strawberry.Info,
+        includeCurated: bool = False,  # noqa: N803 — GraphQL は camelCase
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[ConceptProposalType]:
+        """概念提案の curation 待ち行列を返す（設計書 §8.6 / §11.2、M8-19）。
+
+        **支持の多い順に返す。** 偶然のクラスタと区別できない提案を先頭に置くと、人の判断の
+        時間が弱い提案に使われる。
+
+        **既定で採否が入ったものを除く。** 判断済みの履歴で画面が埋まらないようにする。
+
+        **ABAC を通す。** 提案は潜在のクラスタ構造についての情報であり、語彙の拡張提案である
+        ——どちらも機密度を持つ。
+
+        Args:
+            info: strawberry の文脈（``proposals`` に読み出し関数を持つ）。
+            includeCurated: 採否が入ったものも含めるか。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: ``limit`` が範囲外、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        reader = info.context.get("proposals")
+        if reader is None:
+            raise ValueError(
+                "概念提案の読み出しが設定されていない（create_app に proposal_reader を渡す）"
+            )
+        records = reader(include_curated=includeCurated, limit=limit)
+        log.info(
+            "api.proposals_queried",
+            principal=principal.subject,
+            include_curated=includeCurated,
+            rows=len(records),
+        )
+        return [ConceptProposalType.from_record(record) for record in records]
 
     @strawberry.field(description="API とストアの疎通")
     def health(self, info: strawberry.Info) -> HealthType:

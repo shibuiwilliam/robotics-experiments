@@ -16,6 +16,7 @@ from sbp.knowledge.artifacts import (
     parse_s3_uri,
 )
 from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_beliefs
+from sbp.knowledge.concepts import ConceptProposalRecord, ConceptProposalStore
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, site_prefix
@@ -53,6 +54,8 @@ __all__ = [
     "AssertionRow",
     "AssertionStore",
     "CompatibilityMatrix",
+    "ConceptProposalRecord",
+    "ConceptProposalStore",
     "DecisionKind",
     "DecisionQueue",
     "DecisionRow",

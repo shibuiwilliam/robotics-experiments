@@ -51,7 +51,7 @@ export function App(): React.JSX.Element {
   const [beliefs, setBeliefs] = useState<readonly Belief[]>([]);
   const [expectations, setExpectations] = useState<readonly Expectation[]>([]);
   const [proposals, setProposals] = useState<readonly ConceptProposal[]>([]);
-  // 概念提案は未配線（M8-19）。**空と「読めない」を区別して画面に出す**（所見 32）
+  // 読めなかったときの理由。**空と「読めない」を区別して画面に出す**（所見 32）
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [subject] = useState(DEFAULT_SUBJECT);
 
@@ -68,8 +68,9 @@ export function App(): React.JSX.Element {
   const load = useCallback(async () => {
     if (apiUrl === "") return;
     try {
-      // **概念提案は未配線なので別に扱う**（読む先が無い。M8-19）。Promise.all に混ぜると、
-      // 1 つの未配線が画面全体を落とす——配線済みのビューは動かす
+      // **概念提案も GraphQL になった**（M8-19）。それでも別に扱うのは残す——発見ループの
+      // 周期実行が未配線（M8-09）で表が空のままなので、**空と「読めない」を画面で区別する**
+      // 必要がある（所見 32）
       const [queue, board, rows] = await Promise.all([
         fetchDiscrepancies(apiUrl),
         fetchExpectations(apiUrl),
@@ -189,7 +190,7 @@ export function App(): React.JSX.Element {
         <>
           {proposalError === null ? null : (
             <p className="unwired" role="status">
-              <strong>概念提案は未配線である</strong>——{proposalError}
+              <strong>概念提案を読めなかった</strong>——{proposalError}
             </p>
           )}
           <ConceptCuration

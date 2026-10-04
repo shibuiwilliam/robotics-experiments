@@ -52,6 +52,7 @@ from sbp.core.errors import ActionError
 from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.knowledge.decisions import DecisionKind
+from sbp.reasoning.discovery import ProposalStatus
 from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.reconciliation import (
     Discrepancy,
@@ -87,6 +88,8 @@ if TYPE_CHECKING:
     """``実体 IRI -> フルーエント型 IRI: 確信度``（``knowledge.current_beliefs`` を包む）。"""
     ExpectationSink = Callable[["ExpectationRecord"], Awaitable[None]]
     """期待を作業項目表に書く（``ExpectationStore.upsert``）。"""
+    ProposalCurator = Callable[[str, str, int, str], Awaitable[bool]]
+    """``(提案 ID, 採否, rank, 理由) -> 更新できたか``（``ConceptProposalStore.curate``）。"""
 
 __all__ = [
     "LearningWorker",
@@ -140,6 +143,7 @@ class LearningWorker:
         contracts: ActionRegistry | None = None,
         beliefs: BeliefReader | None = None,
         expectations: ExpectationSink | None = None,
+        proposals: ProposalCurator | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -156,6 +160,8 @@ class LearningWorker:
             ——「知らないことを満たしているとみなさない」の帰結である。設計書 §9.3）。
         expectations: 期待の書き込み（``None`` なら**実行しない**。実行したのに期待を
             書けないと、効果の検証が永久にできず学習が止まる）。
+        proposals: 概念提案の採否の反映（``None`` なら**提案が画面に残り続ける**。採否は
+            記録されるが、提案は ``proposed`` のまま）。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -171,6 +177,7 @@ class LearningWorker:
         self._contracts = contracts
         self._beliefs = beliefs
         self._expectations = expectations
+        self._proposals = proposals
         # **プロセス内にしか無い。** 再起動で消えるので、冪等の鍵が防ぐのは「同じ判断の
         # 二度適用」だけで、「別の判断で短時間に 2 回」は再起動後に通る（ADR-0014 の未決 1）
         self._rate_limits = RateLimitState()
@@ -279,7 +286,7 @@ class LearningWorker:
         if row.kind is DecisionKind.RESOLUTION:
             return await self._apply_resolution(row, at=at)
         if row.kind is DecisionKind.CURATION:
-            return self._apply_curation(row)
+            return await self._apply_curation(row)
         if row.kind is DecisionKind.ACTION:
             return await self._apply_action(row, at=at)
         raise ValueError(f"unknown decision kind {row.kind!r}")
@@ -362,11 +369,17 @@ class LearningWorker:
             )
         return reconstruct_discrepancy(row, resolution=resolution, at=at), "reconstructed"
 
-    def _apply_curation(self, row: DecisionRow) -> dict[str, Any]:
-        """概念提案の採否を記録する。
+    async def _apply_curation(self, row: DecisionRow) -> dict[str, Any]:
+        """概念提案の採否を記録し、**提案の状態を進める**（M8-19、ADR-0015）。
 
         **採択してもオントロジーには触らない**（M6-04 の決定）。MINOR 版の起票は人の手作業で、
         自動で語彙を増やさない。
+
+        **状態を進めるのがここの仕事である。** 初版は記録するだけで、採否を入れても提案が
+        ``proposed`` のまま残り、**同じ提案が永久に curation の画面に出続けていた**。
+
+        **本体を読み戻さずに更新する。** 読み戻すと重心を欠いた提案を書き直すことになり、
+        payload が劣化する（ADR-0015 の往復の非対称性）。
 
         Args:
             row: 判断（``kind=curation``）。
@@ -375,9 +388,26 @@ class LearningWorker:
             適用の要約。
         """
         accepted = bool(row.payload.get("accepted"))
+        note = str(row.payload.get("reason", ""))
+        status = ProposalStatus.ACCEPTED if accepted else ProposalStatus.REJECTED
+        curated = False
+        if self._proposals is not None:
+            curated = await self._proposals(row.subject, status.value, status.rank, note)
+            if not curated:
+                # 行が無い、または既に採否が入っている。**例外にしない**——人の判断は
+                # 失わせず、「提案が見つからなかった」ことを要約に残す
+                log.warning(
+                    "worker.proposal_not_updated",
+                    worker=WORKER_NAME,
+                    correlation_id=row.subject,
+                    detail="提案が表に無い、または既に採否が入っている",
+                )
         summary = {
             "accepted": accepted,
             "proposal_id": row.subject,
+            "status": status.value,
+            # 表の状態を進められたか（偽なら提案が画面に残り続ける）
+            "proposal_updated": curated,
             # 採択しても語彙は増えない。人が ontology/ を編集して make gen を回す
             "ontology_changed": False,
         }
@@ -667,6 +697,7 @@ async def build_worker(
     from sbp.actions import ActionRegistry  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
+        ConceptProposalStore,
         DecisionQueue,
         DiscrepancyStore,
         ExpectationStore,
@@ -681,6 +712,7 @@ async def build_worker(
     observations = ObservationQueue(connection, site=site_id)
     store = DiscrepancyStore(connection, site=site_id)
     expectations = ExpectationStore(connection, site=site_id)
+    proposals = ConceptProposalStore(connection, site=site_id)
     contracts = ActionRegistry.from_directory(Path("actions"))
     assertions = AssertionStore(HttpGraphStore(resolved), site_id=site_id)
 
@@ -693,6 +725,17 @@ async def build_worker(
             entity: 対象実体の IRI。
         """
         return await asyncio.to_thread(current_beliefs, assertions, entity=entity)
+
+    async def curate_proposal(proposal_id: str, status: str, rank: int, note: str) -> bool:
+        """概念提案の採否を表に反映する。
+
+        Args:
+            proposal_id: 提案の識別子。
+            status: 新しい採否の値。
+            rank: その採否の `ProposalStatus.rank`。
+            note: 採否の理由。
+        """
+        return await proposals.curate(proposal_id, status=status, rank=rank, note=note)
 
     async def write_expectation(record: ExpectationRecord) -> None:
         """期待を作業項目表に書く。
@@ -710,6 +753,7 @@ async def build_worker(
         contracts=contracts,
         beliefs=read_beliefs,
         expectations=write_expectation,
+        proposals=curate_proposal,
     )
     log.info(
         "worker.wired",

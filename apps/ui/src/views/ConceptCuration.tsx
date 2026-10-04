@@ -74,11 +74,12 @@ function ProposalCard({
 
   return (
     <li className="proposal">
-      <h3>{proposal.label}</h3>
-      <p className="rationale">{proposal.rationale}</p>
+      <h3>{proposal.name}</h3>
+      <p className="rationale">{proposal.definition}</p>
       <p className="stats">
         支持 {proposal.supportCount} 件 · 既存概念での被覆率{" "}
-        {(proposal.coverage * 100).toFixed(1)}%
+        {(proposal.coverage * 100).toFixed(1)}% · 根拠 {proposal.signalCount} 件
+        {proposal.superclass === "" ? null : ` · 上位 ${proposal.superclass}`}
       </p>
 
       <details open={proposal.rejectedAlternatives.length > 0}>

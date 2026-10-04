@@ -185,22 +185,39 @@ export async function fetchExpectations(
   return data.expectations;
 }
 
+const PROPOSAL_FIELDS = `
+  proposalId name definition superclass status rejectedAlternatives
+  supportCount coverage signalCount proposedAt curationNote
+`;
+
 /**
- * 概念提案を読む。**まだ読む先が無い。**
+ * curation 待ちの概念提案を読む（GraphQL の `proposals`。M8-19）。
  *
- * 以前は `central.reasoning.concept` を読んでいたが、**そのトピックは存在しない**
- * （`scripts/topics.py` にも無く、提案を出す周期ジョブも未実装。所見 85）。
+ * **以前は存在しないトピックを読んでいた**（`central.reasoning.concept`。所見 85）。トピックも
+ * API 資源も無く、型も backend と別物だった。
  *
- * **空の配列を返さない。** 返すと「提案が無い」と読まれ、発見ループが動いていないことと
- * 区別できない（所見 32）。配線されるまで明示的に失敗させる——永続化と API 資源は M8-19。
+ * **支持の多い順に返る。** 偶然のクラスタと区別できない提案（標本が少ない）を先頭に置くと、
+ * 人の判断の時間が弱い提案に使われる（設計書 §11.2）。
+ *
+ * **既定で採否が入ったものを除く。** 判断済みの履歴で画面が埋まらないようにする。
  */
 export async function fetchProposals(
-  _apiUrl: string,
-  _limit = 50,
+  apiUrl: string,
+  params: { includeCurated?: boolean; limit?: number } = {},
 ): Promise<readonly ConceptProposal[]> {
-  throw new ApiError(
-    "概念提案の読み出しは未配線（トピックも API 資源も無い。M8-19）。空を返さないのは、提案が無いことと発見ループが動いていないことを区別するため",
+  const data = await graphql<{ proposals: ConceptProposal[] }>(
+    apiUrl,
+    `query Proposals($includeCurated: Boolean!, $limit: Int!) {
+      proposals(includeCurated: $includeCurated, limit: $limit) {
+        ${PROPOSAL_FIELDS}
+      }
+    }`,
+    {
+      includeCurated: params.includeCurated ?? false,
+      limit: params.limit ?? 50,
+    },
   );
+  return data.proposals;
 }
 
 /**

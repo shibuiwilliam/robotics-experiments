@@ -290,11 +290,16 @@ describe("checkProposal", () => {
   function proposal(overrides: Partial<ConceptProposal> = {}): ConceptProposal {
     return {
       proposalId: "p-1",
-      label: "VibrationAnomaly",
-      rationale: "既存の Faulted では説明できない振動の増大が停止の前段に現れる",
+      name: "VibrationAnomaly",
+      definition: "既存の Faulted では説明できない振動の増大が停止の前段に現れる",
+      superclass: "Fluent",
+      status: "proposed",
+      rejectedAlternatives: ["Faulted の閾値調整", "UnderMaintenance の拡張"],
       supportCount: 548,
       coverage: 0.0,
-      rejectedAlternatives: ["Faulted の閾値調整", "UnderMaintenance の拡張"],
+      signalCount: 2,
+      proposedAt: "2026-06-10T09:00:00Z",
+      curationNote: "",
       ...overrides,
     };
   }
@@ -321,8 +326,16 @@ describe("checkProposal", () => {
     expect(check.problems.join()).toContain("既存概念");
   });
 
-  it("根拠が短い提案は通さない", () => {
-    expect(checkProposal(proposal({ rationale: "必要" })).ready).toBe(false);
+  it("定義が短い提案は通さない", () => {
+    expect(checkProposal(proposal({ definition: "必要" })).ready).toBe(false);
+  });
+
+  it("ローカル名が無い提案は通さない", () => {
+    // **オントロジーに入る名前が決まっていない提案は採択できない**（採択は MINOR 版の起票に
+    // 進む。M6-04）
+    const check = checkProposal(proposal({ name: "  " }));
+    expect(check.ready).toBe(false);
+    expect(check.problems.join()).toContain("ローカル名");
   });
 });
 

@@ -147,6 +147,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     from sbp.api.commands import build_command_handler  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
+        ConceptProposalRecord,
+        ConceptProposalStore,
         DecisionQueue,
         DiscrepancyStore,
         ExpectationStore,
@@ -210,6 +212,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = ExpectationStore(_connection(), site=resolved.site_id)
         return _run_sync(store.board(target=target, include_terminal=include_terminal, limit=limit))
 
+    def read_proposals(
+        *, include_curated: bool = False, limit: int = 50
+    ) -> list[ConceptProposalRecord]:
+        """curation 待ちの概念提案を同期の形で返す（M8-19）。
+
+        Args:
+            include_curated: 採否が入ったものも含めるか。
+            limit: 返す件数の上限。
+        """
+        store = ConceptProposalStore(_connection(), site=resolved.site_id)
+        return _run_sync(store.queue(include_curated=include_curated, limit=limit))
+
     async def read_metrics() -> list[MetricSample]:
         """系列ごとの最新値を返す。"""
         return await MetricStore(_connection(), site=resolved.site_id).latest()
@@ -241,6 +255,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         metric_reader=read_metrics,
         discrepancy_reader=read_discrepancies,
         expectation_reader=read_expectations,
+        proposal_reader=read_proposals,
     )
     app.router.lifespan_context = lifespan
     return app

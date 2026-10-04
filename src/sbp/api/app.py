@@ -40,12 +40,15 @@ if TYPE_CHECKING:
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
     from sbp.core.metrics import MetricSample
+    from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 
     MetricReader = Callable[[], Awaitable[Sequence["MetricSample"]]]
     """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
     ExpectationReader = Callable[..., Sequence["ExpectationRecord"]]
+    ProposalReader = Callable[..., Sequence["ConceptProposalRecord"]]
+    """curation 待ちの概念提案を返す（``ConceptProposalStore.queue`` を包む）。"""
     """期待ボードを返す（``ExpectationStore.board`` を包む。同期）。"""
     DiscrepancyReader = Callable[..., Sequence["DiscrepancyRecord"]]
     """不一致キューを返す（``DiscrepancyStore.queue`` を包む）。
@@ -95,6 +98,7 @@ def create_app(
     metric_reader: MetricReader | None = None,
     discrepancy_reader: DiscrepancyReader | None = None,
     expectation_reader: ExpectationReader | None = None,
+    proposal_reader: ProposalReader | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -114,6 +118,9 @@ def create_app(
         discrepancy_reader: 不一致キューを返すもの（``DiscrepancyStore.queue`` を包む。
             M8-12）。``None`` だと GraphQL の ``discrepancies`` が**エラーを返す**——空の列を
             返すと「不一致が無い」と「配線していない」が区別できない（所見 32）。
+        proposal_reader: curation 待ちの概念提案を返すもの（``ConceptProposalStore.queue`` を
+            包む。``None`` なら ``proposals`` クエリが失敗する——**空を返さない**。「提案が無い」
+            と「読めない」を区別する、所見 32）。
         expectation_reader: 期待ボードを返すもの（``ExpectationStore.board`` を包む。
             M8-18）。``None`` だと GraphQL の ``expectations`` が**エラーを返す**
             （空の列を返すと「期待が無い」と「配線していない」が区別できない）。
@@ -139,6 +146,7 @@ def create_app(
             "principal": principal,
             "discrepancies": discrepancy_reader,
             "expectations": expectation_reader,
+            "proposals": proposal_reader,
         }
 
     app = FastAPI(
@@ -266,6 +274,7 @@ def create_app(
         abac=principal_resolver is not None,
         discrepancies=discrepancy_reader is not None,
         expectations=expectation_reader is not None,
+        proposals=proposal_reader is not None,
     )
     if principal_resolver is None:
         log.warning(

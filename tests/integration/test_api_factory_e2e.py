@@ -19,6 +19,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+import numpy as np
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
@@ -27,7 +28,19 @@ from sbp.api.factory import build_app
 from sbp.core.config import Settings
 from sbp.core.metrics import MetricSample, metric
 from sbp.core.time import Interval, now
-from sbp.knowledge import DiscrepancyStore, ExpectationStore, MetricStore
+from sbp.knowledge import (
+    ConceptProposalStore,
+    DiscrepancyStore,
+    ExpectationStore,
+    MetricStore,
+)
+from sbp.reasoning.concept_store import to_record as concept_to_record
+from sbp.reasoning.discovery import (
+    ConceptProposal,
+    DiscoverySignal,
+    DiscoveryTrigger,
+    LatentCluster,
+)
 from sbp.reasoning.expectation import Expectation, ExpectationStatus, ExpectedEffect
 from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.reconciliation import (
@@ -352,3 +365,101 @@ class TestExpectationResource:
 
         assert response.status_code == 200
         assert response.json().get("errors"), "要求者なしで期待が返っている"
+
+
+class TestProposalResource:
+    """概念 curation の GraphQL 資源（M8-19、ADR-0015）。
+
+    **UI が読む先がこれである。** 以前は存在しないトピック（`central.reasoning.concept`）を
+    読んでいて、型も backend と別物だった（所見 85）。
+    """
+
+    @pytest.fixture
+    def seeded_proposal(self, settings: Settings) -> Iterator[str]:
+        """提案を 1 件書いてから消す。"""
+        cluster = LatentCluster(
+            cluster_id=7,
+            member_indices=tuple(range(548)),
+            centroid=np.zeros(16, dtype=np.float64),
+            mean_probe_activation=0.0,
+            density=1.5,
+        )
+        proposal = ConceptProposal(
+            name="VibrationAnomalyE2E",
+            definition="既存の Faulted では説明できない振動の増大が停止の前段に現れる",
+            superclass="Fluent",
+            rejected_alternatives=("Faulted の閾値調整",),
+            signals=(
+                DiscoverySignal(
+                    trigger=DiscoveryTrigger.LOW_COVERAGE_CLUSTER,
+                    entities=("https://sbp.example/site/siteA/asset/P-E2E-CONCEPT",),
+                    strength=0.873,
+                    evidence=("cluster:7",),
+                    note="既知プローブが反応しない高密度クラスタ",
+                    cluster=cluster,
+                ),
+            ),
+            proposed_at=now().replace(microsecond=0),
+        )
+
+        async def write() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                await ConceptProposalStore(connection, site=settings.site_id).upsert(
+                    concept_to_record(proposal)
+                )
+                await connection.commit()
+
+        async def clean() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "DELETE FROM concept_proposals WHERE proposal_id = %s",
+                        (str(proposal.proposal_id),),
+                    )
+                await connection.commit()
+
+        asyncio.run(write())
+        yield str(proposal.proposal_id)
+        asyncio.run(clean())
+
+    def test_the_queue_is_served_over_graphql(
+        self, settings: Settings, seeded_proposal: str
+    ) -> None:
+        """curation の待ち行列が GraphQL で読める（判断材料つき）。"""
+        dev_settings = settings.model_copy(update={"env": "dev"})
+        with TestClient(build_app(dev_settings)) as client:
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """{ proposals(limit: 50) {
+                        proposalId name definition superclass status rejectedAlternatives
+                        supportCount coverage signalCount proposedAt curationNote
+                    } }"""
+                },
+                headers={"X-SBP-Principal": OPERATOR},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert not payload.get("errors"), payload.get("errors")
+        found = [
+            row for row in payload["data"]["proposals"] if row["proposalId"] == seeded_proposal
+        ]
+        assert found, "書いた提案が待ち行列に出ていない"
+        assert found[0]["status"] == "proposed"
+        assert found[0]["name"] == "VibrationAnomalyE2E"
+        # 判断材料（設計書 §11.2）が数値で返る
+        assert found[0]["supportCount"] == 548
+        assert found[0]["coverage"] == 0.0
+        assert found[0]["signalCount"] == 1
+        assert found[0]["rejectedAlternatives"] == ["Faulted の閾値調整"]
+        assert found[0]["curationNote"] == ""
+
+    def test_the_queue_requires_a_principal(self, settings: Settings, seeded_proposal: str) -> None:
+        """要求者を名乗らなければ提案を返さない（既定は拒否）。"""
+        del seeded_proposal
+        with TestClient(build_app(settings)) as client:
+            response = client.post("/graphql", json={"query": "{ proposals { proposalId } }"})
+
+        assert response.status_code == 200
+        assert response.json().get("errors"), "要求者なしで提案が返っている"

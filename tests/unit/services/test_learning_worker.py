@@ -19,6 +19,7 @@ import pytest
 from services.learning_worker import LearningWorker, reconstruct_discrepancy
 
 from sbp.core.config import Settings
+from sbp.core.time import now
 from sbp.knowledge.decisions import DecisionKind, DecisionRow
 from sbp.reasoning.reconciliation import Resolution, ResolutionOutcome
 
@@ -386,3 +387,98 @@ class TestTraceability:
         discrepancy = reconstruct_discrepancy(row, resolution=resolution, at=T0)
 
         assert discrepancy.subjects == (PUMP,)
+
+
+class TestCurationAdvancesTheProposal:
+    """概念提案の採否が表の状態を進める（M8-19、ADR-0015）。
+
+    **初版は記録するだけだった。** 採否を入れても提案が `proposed` のまま残り、**同じ提案が
+    永久に curation の画面に出続けていた。**
+    """
+
+    @staticmethod
+    def _row(*, accepted: bool = True) -> DecisionRow:
+        return DecisionRow(
+            decision_id="c-1",
+            kind=DecisionKind.CURATION,
+            subject="9a8b7c6d-5e4f-4321-9876-543210fedcba",
+            decided_by="https://sbp.example/id/person/owner",
+            payload={
+                "decision_id": "c-1",
+                "proposal_id": "9a8b7c6d-5e4f-4321-9876-543210fedcba",
+                "accepted": accepted,
+                "reason": "既存の Faulted では説明できない区別である",
+                "decided_by": "https://sbp.example/id/person/owner",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_acceptance_moves_the_proposal(self) -> None:
+        """採択が提案を ``accepted`` に進める。"""
+        calls: list[tuple[str, str, int, str]] = []
+
+        async def curate(proposal_id: str, status: str, rank: int, note: str) -> bool:
+            calls.append((proposal_id, status, rank, note))
+            return True
+
+        worker = LearningWorker(Settings(env="test"), proposals=curate)
+
+        summary = await worker._dispatch(self._row(), at=now())  # pyright: ignore[reportPrivateUsage]
+
+        assert summary["accepted"] is True
+        assert summary["status"] == "accepted"
+        assert summary["proposal_updated"] is True
+        assert calls[0][1] == "accepted"
+        assert calls[0][3] == "既存の Faulted では説明できない区別である"
+        # 採択してもオントロジーには触らない（M6-04 の決定）
+        assert summary["ontology_changed"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_rejection_moves_the_proposal(self) -> None:
+        """却下も状態を進める（理由が残る）。
+
+        却下理由が残らないと、同じ提案が次の発見サイクルで繰り返される。
+        """
+        captured: list[str] = []
+
+        async def curate(proposal_id: str, status: str, rank: int, note: str) -> bool:
+            del proposal_id, rank, note
+            captured.append(status)
+            return True
+
+        worker = LearningWorker(Settings(env="test"), proposals=curate)
+
+        summary = await worker._dispatch(self._row(accepted=False), at=now())  # pyright: ignore[reportPrivateUsage]
+
+        assert summary["status"] == "rejected"
+        assert captured == ["rejected"]
+
+    @pytest.mark.asyncio
+    async def test_an_unwired_curator_still_records_the_decision(self) -> None:
+        """配線が無くても人の判断は失わせない。
+
+        **提案は画面に残り続ける**ので、要約でそれが分かるようにする（黙って成功にしない）。
+        """
+        worker = LearningWorker(Settings(env="test"))
+
+        summary = await worker._dispatch(self._row(), at=now())  # pyright: ignore[reportPrivateUsage]
+
+        assert summary["accepted"] is True
+        assert summary["proposal_updated"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_missing_proposal_is_reported_not_raised(self) -> None:
+        """提案が表に無ければ要約に残す（例外にしない）。
+
+        例外にすると判断が失敗として再試行され、永久に適用されない。
+        """
+
+        async def curate(proposal_id: str, status: str, rank: int, note: str) -> bool:
+            del proposal_id, status, rank, note
+            return False
+
+        worker = LearningWorker(Settings(env="test"), proposals=curate)
+
+        summary = await worker._dispatch(self._row(), at=now())  # pyright: ignore[reportPrivateUsage]
+
+        assert summary["proposal_updated"] is False

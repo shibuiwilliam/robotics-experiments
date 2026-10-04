@@ -258,12 +258,42 @@ describe("fetchExpectations", () => {
 });
 
 describe("fetchProposals", () => {
-  it("未配線なので空を返さず失敗する（所見 32）", async () => {
-    // 空を返すと「提案が無い」と読まれ、発見ループが動いていないことと区別できない
-    await expect(fetchProposals("http://api")).rejects.toThrow(ApiError);
+  const proposal = {
+    proposalId: "9a8b7c6d-5e4f-4321-9876-543210fedcba",
+    name: "VibrationAnomaly",
+    definition: "既存の Faulted では説明できない振動の増大が停止の前段に現れる",
+    superclass: "Fluent",
+    status: "proposed",
+    rejectedAlternatives: ["Faulted の閾値調整"],
+    supportCount: 548,
+    coverage: 0.0,
+    signalCount: 2,
+    proposedAt: "2026-06-10T09:00:00Z",
+    curationNote: "",
+  };
+
+  it("GraphQL の proposals を読む（M8-19）", async () => {
+    // **以前は存在しないトピックを読んでいた**（`central.reasoning.concept`。所見 85）
+    const fetchMock = stubFetch({ body: { data: { proposals: [proposal] } } });
+    const rows = await fetchProposals("http://api");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.name).toBe("VibrationAnomaly");
+    expect(String(fetchMock.mock.calls[0]![0])).toBe("http://api/graphql");
   });
 
-  it("失敗の理由に未配線であることが出る", async () => {
-    await expect(fetchProposals("http://api")).rejects.toThrow(/未配線/);
+  it("既定で採否が入ったものを除く", async () => {
+    const fetchMock = stubFetch({ body: { data: { proposals: [] } } });
+    await fetchProposals("http://api");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as {
+      variables: Record<string, unknown>;
+    };
+    expect(body.variables["includeCurated"]).toBe(false);
+  });
+
+  it("読めなければ空を返さず失敗する（所見 32）", async () => {
+    // 空を返すと「提案が無い」と読まれ、発見ループが動いていないことと区別できない
+    stubFetch({ body: { errors: [{ message: "概念提案の読み出しが設定されていない" }] } });
+    await expect(fetchProposals("http://api")).rejects.toThrow(ApiError);
   });
 });

@@ -122,8 +122,11 @@ export function checkProposal(proposal: ConceptProposal): CurationCheck {
       "却下した代替案が無い。既存概念で説明できないことを示さない提案は採否を判断できない（設計書 §11.2）",
     );
   }
-  if (proposal.rationale.trim().length < 20) {
-    problems.push("根拠が短すぎる（なぜこの区別が必要かを 20 文字以上で）");
+  if (proposal.definition.trim().length < 20) {
+    problems.push("定義が短すぎる（なぜこの区別が必要かを 20 文字以上で）");
+  }
+  if (proposal.name.trim() === "") {
+    problems.push("ローカル名が無い（オントロジーに入る名前が決まっていない）");
   }
   if (proposal.supportCount < 10) {
     problems.push(

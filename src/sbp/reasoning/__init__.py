@@ -17,6 +17,8 @@ from sbp.reasoning.belief import (
     TransitionPrior,
     update_belief,
 )
+from sbp.reasoning.concept_store import from_record as concept_from_record
+from sbp.reasoning.concept_store import to_record as concept_to_record
 from sbp.reasoning.coupling import (
     AggregationRule,
     CouplingResult,
@@ -192,6 +194,8 @@ __all__ = [
     "apply_resolution",
     "cluster_latents",
     "compute_severity",
+    "concept_from_record",
+    "concept_to_record",
     "convert_resolution",
     "detect_existence",
     "detect_identity",

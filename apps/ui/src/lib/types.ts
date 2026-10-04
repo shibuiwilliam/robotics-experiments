@@ -139,15 +139,44 @@ export interface Expectation {
   readonly ontologyVersion: string;
 }
 
-/** 概念提案 1 件（`sbp.reasoning.discovery.ConceptProposal`）。 */
+/**
+ * 提案の採否（`sbp.reasoning.discovery.ProposalStatus` の値そのもの）。
+ *
+ * **小文字である。** backend の `StrEnum` の値で、大文字にすると API が受け付けない
+ * （不一致と期待で同じずれ方をした。所見 83 / 86）。
+ */
+export type ProposalStatus = "proposed" | "accepted" | "revised" | "rejected";
+
+/**
+ * 概念提案 1 件（`sbp.reasoning.discovery.ConceptProposal`）。
+ *
+ * **API の契約に合わせてある**（M8-19）。以前は `label` / `rationale` という UI 独自の名前で、
+ * backend には存在しなかった（所見 85）。`name` / `definition` が backend の名前である。
+ *
+ * **潜在の重心は来ない**（ADR-0015）。判断に要る 2 つのスカラー（`supportCount` /
+ * `coverage`）は提案した時点の導出値で、API がそれを返す。
+ */
 export interface ConceptProposal {
   readonly proposalId: string;
-  readonly label: string;
-  readonly rationale: string;
-  readonly supportCount: number;
-  readonly coverage: number;
+  /** ローカル名（`Running` のような、オントロジーに入る名前）。 */
+  readonly name: string;
+  /** 一文の定義（成立条件）。 */
+  readonly definition: string;
+  /** 上位概念のローカル名。 */
+  readonly superclass: string;
+  readonly status: ProposalStatus;
   /** 却下した代替案。**空の提案は採否を判断できない**（設計書 §11.2）。 */
   readonly rejectedAlternatives: readonly string[];
+  /** 支持する標本数（提案時の導出値）。 */
+  readonly supportCount: number;
+  /** 既存概念での被覆率（同）。 */
+  readonly coverage: number;
+  /** 根拠になった signal の数。 */
+  readonly signalCount: number;
+  /** 提案時刻（未記録なら `null`）。 */
+  readonly proposedAt: string | null;
+  /** 採否の理由（未判断なら空）。 */
+  readonly curationNote: string;
 }
 
 /**
