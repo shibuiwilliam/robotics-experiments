@@ -48,22 +48,57 @@ class _Sink:
         self.issued.append(query)
 
 
+class _Means:
+    """固定の手段を返すレジストリの代役（``MeansRegistry.for_fluent`` と同じ形）。"""
+
+    def __init__(self, means: ObservationMeans, *, overrides: dict[str, ObservationMeans]) -> None:
+        self.default = means
+        self._overrides = overrides
+
+    def for_fluent(self, fluent: str) -> ObservationMeans:
+        return self._overrides.get(fluent, self.default)
+
+
+def _sources(
+    requests: list[ObservationRequest], priors: dict[tuple[str, str], float]
+) -> tuple[object, object]:
+    """非同期の供給元を作る（実運用は作業キューと知識グラフ）。"""
+
+    async def provide_requests() -> list[ObservationRequest]:
+        return requests
+
+    async def provide_priors(
+        keys: object,
+    ) -> dict[tuple[str, str], float]:
+        del keys  # 代役は全件返す（本物は鍵で絞る）
+        return priors
+
+    return provide_requests, provide_priors
+
+
 def _worker(
     *,
     requests: list[ObservationRequest] | None = None,
     priors: dict[tuple[str, str], float] | None = None,
     means: ObservationMeans | None = None,
+    overrides: dict[str, ObservationMeans] | None = None,
+    issued: object = None,
 ) -> tuple[SchedulerWorker, _Sink]:
     sink = _Sink()
     pending = requests if requests is not None else []
+    provide_requests, provide_priors = _sources(pending, priors if priors is not None else {})
     worker = SchedulerWorker(
         Settings(),
-        requests=lambda: pending,
-        priors=lambda: priors if priors is not None else {},
+        requests=provide_requests,  # type: ignore[arg-type]
+        priors=provide_priors,  # type: ignore[arg-type]
         sink=sink,
-        means=means
-        if means is not None
-        else ObservationMeans(kind=QueryKind.SAMPLING_RATE, reliability=0.9, cost=0.05),
+        means=_Means(  # type: ignore[arg-type]
+            means
+            if means is not None
+            else ObservationMeans(kind=QueryKind.SAMPLING_RATE, reliability=0.9, cost=0.05),
+            overrides=overrides or {},
+        ),
+        issued=issued,  # type: ignore[arg-type]
     )
     return worker, sink
 
@@ -175,8 +210,8 @@ class TestPeriod:
         pending = [_request()]
         worker = SchedulerWorker(
             Settings(),
-            requests=lambda: pending,
-            priors=lambda: {},  # 事前が無いので変換できない
+            requests=_sources(pending, {})[0],  # type: ignore[arg-type]
+            priors=_sources(pending, {})[1],  # type: ignore[arg-type]  事前が無いので変換できない
             sink=_Sink(),
         )
         await worker.step()
@@ -195,7 +230,10 @@ class TestUnconfiguredPaths:
     @pytest.mark.asyncio
     async def test_without_a_prior_source_nothing_happens(self) -> None:
         """事前の供給元が無ければ何もしない。"""
-        worker = SchedulerWorker(Settings(), requests=lambda: [_request()])
+        worker = SchedulerWorker(
+            Settings(),
+            requests=_sources([_request()], {})[0],  # type: ignore[arg-type]
+        )
         assert await worker.step() == 0
 
     @pytest.mark.asyncio
@@ -203,8 +241,8 @@ class TestUnconfiguredPaths:
         """sink が無くても計画は進む（dry 相当）。"""
         worker = SchedulerWorker(
             Settings(),
-            requests=lambda: [_request()],
-            priors=lambda: {(PUMP, RUNNING): 0.5},
+            requests=_sources([_request()], {(PUMP, RUNNING): 0.5})[0],  # type: ignore[arg-type]
+            priors=_sources([_request()], {(PUMP, RUNNING): 0.5})[1],  # type: ignore[arg-type]
         )
         assert await worker.step() == 1
         assert worker.issued_total == 1
@@ -216,3 +254,84 @@ class TestUnconfiguredPaths:
         assert worker.budget.max_queries == settings.scheduler_max_queries
         assert worker.budget.total_cost == settings.scheduler_total_cost
         assert worker.budget.max_human_queries == settings.max_human_queries_per_hour
+
+
+class TestMeansAssignment:
+    """フルーエントごとの観測手段（M8-05、ADR-0011）。"""
+
+    @pytest.mark.asyncio
+    async def test_the_means_is_resolved_per_fluent(self) -> None:
+        """手段はフルーエントごとに引く。
+
+        全件に同じ手段を当てると、人の確認でしか確かめられないフルーエントも
+        「サンプリング率を上げれば分かる」ことになり、信頼度とコストが実態から外れる。
+        """
+        worker, sink = _worker(
+            requests=[_request(fluent=RUNNING), _request(fluent=FAULTED)],
+            priors={(PUMP, RUNNING): 0.5, (PUMP, FAULTED): 0.5},
+            overrides={
+                FAULTED: ObservationMeans(
+                    kind=QueryKind.RECORD_RECHECK, reliability=0.92, cost=0.05
+                )
+            },
+        )
+
+        await worker.step()
+
+        kinds = {query.fluents[0]: query.kind for query in sink.issued}
+        assert kinds[RUNNING] is QueryKind.SAMPLING_RATE
+        assert kinds[FAULTED] is QueryKind.RECORD_RECHECK
+
+    @pytest.mark.asyncio
+    async def test_issued_queries_are_recorded(self) -> None:
+        """発行がフックに通知される（作業キューの ``issued_at`` を立てるため）。"""
+        recorded: list[str] = []
+
+        def record(query: ObservationQuery) -> None:
+            recorded.append(query.query_id)
+
+        worker, sink = _worker(
+            requests=[_request()],
+            priors={(PUMP, RUNNING): 0.5},
+            issued=record,
+        )
+
+        await worker.step()
+
+        assert len(sink.issued) == 1
+        assert recorded == [sink.issued[0].query_id]
+
+    @pytest.mark.asyncio
+    async def test_nothing_is_recorded_when_nothing_is_issued(self) -> None:
+        """発していないときにフックを呼ばない（「頼んだ」の記録が増えない）。"""
+        recorded: list[str] = []
+
+        def record(query: ObservationQuery) -> None:
+            recorded.append(query.query_id)
+
+        worker, sink = _worker(
+            requests=[_request()],
+            priors={},  # 事前が無いので変換できない
+            issued=record,
+        )
+
+        await worker.step()
+
+        assert sink.issued == []
+        assert recorded == []
+
+    @pytest.mark.asyncio
+    async def test_a_fallback_means_applies_without_a_registry(self) -> None:
+        """レジストリを渡さなくても動く（単体テストと使い捨ての実行のため）。"""
+        sink = _Sink()
+        provide_requests, provide_priors = _sources([_request()], {(PUMP, RUNNING): 0.5})
+        worker = SchedulerWorker(
+            Settings(),
+            requests=provide_requests,  # type: ignore[arg-type]
+            priors=provide_priors,  # type: ignore[arg-type]
+            sink=sink,
+        )
+
+        await worker.step()
+
+        assert [query.kind for query in sink.issued] == [QueryKind.SAMPLING_RATE]

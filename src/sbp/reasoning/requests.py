@@ -19,6 +19,11 @@
 **深刻度をそのまま価値にする。** 要求の ``utility`` は照合が付けた深刻度（事業価値 × 不一致の
 大きさ、0〜1 に正規化済み）で、スケジューラの ``value`` はまさに ``v(x)`` である。
 ここで再計算すると、照合とスケジューラで別の価値観が並ぶ。
+
+**手段はフルーエントごとに解決する**（M8-05、ADR-0011）。全件に同じ手段を当てると、人の確認で
+しか確かめられないフルーエントも「サンプリング率を上げれば分かる」ことになり、信頼度と
+コストが実態から外れる。解決は呼び出し側の関数（``MeansResolver``）に委ねる——宣言の読み込みは
+:mod:`sbp.reasoning.means` の仕事で、ここは変換だけを持つ。
 """
 
 from __future__ import annotations
@@ -30,11 +35,14 @@ from sbp.core.logging import get_logger
 from sbp.reasoning.scheduler import ObservationQuery, QueryKind
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from sbp.reasoning.reconciliation.learning import ObservationRequest
 
-__all__ = ["ObservationMeans", "SkippedRequest", "to_queries", "to_query"]
+    MeansResolver = Callable[[str], "ObservationMeans"]
+    """``フルーエント IRI -> 観測手段``。:meth:`sbp.reasoning.means.MeansRegistry.for_fluent`。"""
+
+__all__ = ["MeansResolver", "ObservationMeans", "SkippedRequest", "to_queries", "to_query"]
 
 log = get_logger(__name__)
 
@@ -78,14 +86,15 @@ def to_query(
     request: ObservationRequest,
     *,
     priors: Mapping[tuple[str, str], float],
-    means: ObservationMeans,
+    means: ObservationMeans | MeansResolver,
 ) -> ObservationQuery | None:
     """要求 1 件をクエリにする。
 
     Args:
         request: 照合が出した追加観測の要求。
         priors: ``(実体, フルーエント)`` → 現在の信念（事前確率）。
-        means: 観測手段の性質。
+        means: 観測手段。単一の :class:`ObservationMeans`、またはフルーエント IRI から
+            手段を返す関数（``MeansResolver``）。
 
     Returns:
         ``ObservationQuery``、事前が無ければ ``None``。
@@ -94,16 +103,17 @@ def to_query(
     prior = priors.get(key)
     if prior is None:
         return None
+    resolved = means(request.fluent) if callable(means) else means
     return ObservationQuery(
         query_id=f"{request.discrepancy_id}:{request.fluent}",
-        kind=means.kind,
+        kind=resolved.kind,
         entity=request.entity,
         fluents=(request.fluent,),
         prior={request.fluent: prior},
         # 深刻度をそのまま v(x) にする（照合とスケジューラで価値観を二重に持たない）
         value={request.fluent: request.utility},
-        reliability=means.reliability,
-        cost=means.cost,
+        reliability=resolved.reliability,
+        cost=resolved.cost,
         reason=f"{request.reason}（discrepancy={request.discrepancy_id}）",
     )
 
@@ -112,7 +122,7 @@ def to_queries(
     requests: Sequence[ObservationRequest],
     *,
     priors: Mapping[tuple[str, str], float],
-    means: ObservationMeans,
+    means: ObservationMeans | MeansResolver,
 ) -> tuple[list[ObservationQuery], list[SkippedRequest]]:
     """要求の列をクエリの列にする。
 
@@ -122,7 +132,7 @@ def to_queries(
     Args:
         requests: 要求の列。
         priors: 現在の信念。
-        means: 観測手段の性質。
+        means: 観測手段。単一の手段、またはフルーエントごとに解決する関数。
 
     Returns:
         ``(クエリの列, 変換できなかった要求の列)``。

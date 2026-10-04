@@ -310,7 +310,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-02** bridge-worker のプローブ供給配線 — M8-01 の束ねを置き場から読み、`active` だけを走らせる。接地する実体の一覧の供給元を決める（ADR）。`TODO(question)` を消す → 完了（ADR-0009。`sbp.bridge.runner.ProbeSet`、`sbp.knowledge.entities.entities_of_type`、`build_worker`。プローブ IRI の組み立て（不変条件 5 違反）も除去。単体 45 件）
 - [x] **M8-03** ウォーターマークの永続化 — 再起動で進んだところから再開する。投影テーブル（alembic）に逃がす。`TODO(question)` を消す → 完了（alembic 0003 `grounding_watermarks`、`sbp.knowledge.watermarks.WatermarkStore`。キーに WM 版と階層を含める。単体 5 件 + 統合 3 件）
 - [x] **M8-04** 不一致イベントの送信先の決定と配線 — 中央集約か拠点別か（ADR）。`reconcile_worker.main()` の sink を埋め、`TODO(question)` を消す → 完了（ADR-0010。既定は拠点トピック、`SBP_REASONING_DISCREPANCY_SCOPE=central` で切替。`sbp.reasoning.reconciliation.notify`。単体 14 件）
-- [ ] **M8-05** scheduler-worker の要求供給配線 — `ObservationRequest` の供給元（イベントログ / 投影テーブル）を決め（ADR）、観測手段の割り当てを実装する。`TODO(question)` を消す
+- [x] **M8-05** scheduler-worker の要求供給配線 — `ObservationRequest` の供給元（イベントログ / 投影テーブル）を決め（ADR）、観測手段の割り当てを実装する。`TODO(question)` を消す → 完了（ADR-0011。要求は作業キュー（alembic 0004 `observation_requests`）、手段は `observation/*.yaml`。**要求は主張ではないのでイベントログに載せられない**——様相格子に席が無い。単体 34 件 + 統合 12 件。キューに書く側は M8-08）
 - [ ] **M8-06** Grafana ダッシュボード — `infra/prometheus/` と observability profile のダッシュボード JSON（6 領域 25 指標。指標名は列挙で固定済み）
 - [ ] **M8-07** `SituationLink` による実体間結合 — 同一 Situation に属する実体の結合（現在は部分−全体のみ）。Situation の所属を引くクエリを `sbp.knowledge.relations` に足す
 - [ ] **M8-08** 学習信号の適用ワーカー — UI/API に入った人の判断を受けて、書き戻し・プローブ再学習・概念採択を実行する。**人の承認が前提**（自動適用しない）

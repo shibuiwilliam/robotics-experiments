@@ -97,6 +97,10 @@ sbp/
 │   └── testing/            #   SynthWorld（合成データ・唯一の真値 oracle 保持者）。ユースケース検証ではない
 │
 ├── actions/*.yaml          # ActionType 定義（設計書 §9.1 形式）。compensation 未定義は登録拒否
+├── reliability/*.yaml      # 情報源信頼性モデルの初期値（設計書 §7.3）。更新は update_from_resolution()
+├── value/*.yaml            # 不一致の深刻度に使う業務価値（設計書 §8.2）
+├── mappings/*.yaml         # 業務記録 → Record / BusinessEvent の写像（ADR-0006）
+├── observation/*.yaml      # 観測手段の割り当て（フルーエント → kind / reliability / cost。ADR-0011）
 ├── services/               # ワーカー: bridge-worker, belief-worker, reconcile-worker, scheduler-worker
 │                           # 1 ワーカー 1 プロセス、SIGTERM graceful shutdown、起動時に Settings と疎通検査
 ├── infra/
@@ -214,6 +218,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 - 1 コネクタ 1 ファイル、`Connector` Protocol（`pull(since)`, `stream()`）。開発は `mock/`（SQLite+台本）、実接続は設定でのみ有効化。`is_about` 未解決は `UnresolvedRef` として残す（捨てない）。
 - 写像は RML/R2RML、写像ごとに契約テスト。業務スキーマ変更はスキーマ指紋比較で検知し `MappingDriftDetected` イベントとして出す（例外にしない）。
 - 信頼性モデルは `DataSource × 記録型` ごと（時刻ずれ分布・誤記率・欠落率・系統誤差）。初期値 `reliability/*.yaml`、更新は `update_from_resolution()`。尤度は `log p`。
+- 観測手段（フルーエント → `kind` / `reliability` / `cost`）は `observation/*.yaml`。**オントロジーに置かない**——コストと信頼度は拠点が持つ計測器の性質で、拠点ごとに違う（ADR-0011）。宣言したフルーエントがオントロジーに実在することを読み込み時に検査する。
 - 書き戻しは冪等 `command_id`、既定 `SBP_WRITEBACK_MODE=dry`。
 - LLM の入口は `sbp.llm.Provider` のみ。モデル ID はコードに書かず `.env` + `routing.yaml`。出力は pydantic → SHACL の順で検証し `inferred` 登録、来歴に provider/model/prompt_version(hash)。文書抽出スキーマは根拠スパン必須。
 - `SBP_LLM_MODE=replay` が既定。replay でネットワークを使わず、fixture が無ければ**黙って live に落ちず失敗**させる。プロンプトは `prompts/<task>/<version>.md` で版管理。
