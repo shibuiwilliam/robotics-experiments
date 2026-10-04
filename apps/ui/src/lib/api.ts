@@ -108,27 +108,43 @@ export async function fetchBeliefs(
   return data.beliefs;
 }
 
+const DISCREPANCY_FIELDS = `
+  discrepancyId kind status subjects severity
+  detectedAt detector assertions evidence assigneeRole ontologyVersion
+`;
+
 /**
- * 不一致キューを読む（イベントストリームから）。
+ * 不一致キューを読む（GraphQL の `discrepancies`。ADR-0013、M8-16）。
  *
- * GraphQL ではなく `/stream/{topic}` を読むのは、不一致がイベントであって信念ではない
- * からである（`bridge` はイベントを出すだけ、という層の規約がそのまま API の形に出る）。
+ * **以前はイベントストリームを読んでいた**（`/stream/{topic}`）。しかし起票イベントは
+ * **通知**であって不一致そのものではなく、`EventEnvelope` に全体を入れる場所が無い
+ * （所見 62）。「各イベントの `payload` が `Discrepancy` である」という前提は成立していな
+ * かったので、資源を引く形に変えた。
+ *
+ * **既定で終端状態を除く。** 解決済み・抑制済みを毎回返すと、キューの上位が履歴で埋まる。
  */
 export async function fetchDiscrepancies(
   apiUrl: string,
-  topic = "central.reasoning.discrepancy",
-  limit = 50,
+  params: {
+    kind?: number;
+    includeTerminal?: boolean;
+    limit?: number;
+  } = {},
 ): Promise<readonly Discrepancy[]> {
-  const response = await fetch(
-    `${apiUrl}/stream/${encodeURIComponent(topic)}?limit=${limit}`,
+  const data = await graphql<{ discrepancies: Discrepancy[] }>(
+    apiUrl,
+    `query Discrepancies($kind: Int, $includeTerminal: Boolean!, $limit: Int!) {
+      discrepancies(kind: $kind, includeTerminal: $includeTerminal, limit: $limit) {
+        ${DISCREPANCY_FIELDS}
+      }
+    }`,
+    {
+      kind: params.kind ?? null,
+      includeTerminal: params.includeTerminal ?? false,
+      limit: params.limit ?? 50,
+    },
   );
-  if (!response.ok) {
-    throw new ApiError(`ストリームが ${response.status} を返した`);
-  }
-  const payload = (await response.json()) as {
-    events: { payload: Discrepancy }[];
-  };
-  return payload.events.map((event) => event.payload);
+  return data.discrepancies;
 }
 
 /** 期待ボードを読む。 */
@@ -170,6 +186,13 @@ export async function fetchProposals(
  *
  * 副作用の経路を読み取りと分けておくのは、承認フロー（設計書 §9.2）の迂回を容易にしない
  * ためである。UI が信念を直接書く経路は存在しない（ADR-0008）。
+ *
+ * **受領は「適用された」ではない**（ADR-0012）。判断は作業キューに積まれ、`learning-worker`
+ * が適用する。適用の結果（観測要求が何件積まれたか、何が記録だけで止まっているか）を読む
+ * 経路は未実装である。
+ *
+ * **引数名は API の契約そのもの**（snake_case）。`extra="forbid"` なので、camelCase を送ると
+ * 400 で弾かれる——以前はそれで弾かれる形のまま出荷されていた（所見 83）。
  */
 export async function submitResolution(
   apiUrl: string,
@@ -178,7 +201,13 @@ export async function submitResolution(
   const response = await fetch(`${apiUrl}/commands/resolve_discrepancy`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(resolution),
+    body: JSON.stringify({
+      decision_id: resolution.decisionId,
+      discrepancy_id: resolution.discrepancyId,
+      outcome: resolution.outcome,
+      note: resolution.note,
+      resolved_by: resolution.resolvedBy,
+    }),
   });
   const payload = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
@@ -194,6 +223,8 @@ export async function submitResolution(
 export async function submitCuration(
   apiUrl: string,
   decision: {
+    /** 冪等の鍵（再送では同じ値を送る。ADR-0012）。 */
+    decisionId: string;
     proposalId: string;
     accepted: boolean;
     reason: string;
@@ -203,7 +234,14 @@ export async function submitCuration(
   const response = await fetch(`${apiUrl}/commands/curate_concept`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(decision),
+    // API の契約は snake_case（`extra="forbid"` なので camelCase は弾かれる）
+    body: JSON.stringify({
+      decision_id: decision.decisionId,
+      proposal_id: decision.proposalId,
+      accepted: decision.accepted,
+      reason: decision.reason,
+      decided_by: decision.decidedBy,
+    }),
   });
   const payload = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {

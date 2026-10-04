@@ -101,7 +101,12 @@ export function App(): React.JSX.Element {
       reason: string;
       decidedBy: string;
     }) => {
-      const result = await submitCuration(apiUrl, decision);
+      // 冪等の鍵はここで作る（ADR-0012）。**概念 curation のフォームは再送しない**ので
+      // 送信のたびに新しい値でよい——再送する形にするなら、解決と同じくフォーム側で持つ
+      const result = await submitCuration(apiUrl, {
+        decisionId: crypto.randomUUID(),
+        ...decision,
+      });
       setNotice(result.detail);
       if (result.accepted) await load();
     },

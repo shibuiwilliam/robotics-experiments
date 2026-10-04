@@ -10,17 +10,15 @@
 
 import { useState } from "react";
 
-import { RESOLUTION_EFFECTS, checkResolution, evidenceRows, isStale, visibleQueue } from "../lib/queue";
-import { formatConfidence } from "../lib/bitemporal";
-import type { Discrepancy, Resolution, ResolutionKind } from "../lib/types";
-
-const KIND_LABEL: Readonly<Record<string, string>> = {
-  EXISTENCE: "存在",
-  TIME: "時刻",
-  STATE: "状態",
-  IDENTITY: "同一性",
-  QUANTITY: "数量",
-};
+import {
+  RESOLUTION_EFFECTS,
+  checkResolution,
+  isStale,
+  referenceRows,
+  visibleQueue,
+} from "../lib/queue";
+import { DISCREPANCY_KIND_LABEL } from "../lib/types";
+import type { Discrepancy, Resolution, ResolutionOutcome } from "../lib/types";
 
 interface Props {
   readonly discrepancies: readonly Discrepancy[];
@@ -65,8 +63,8 @@ export function DiscrepancyQueue({
                   <span className="severity" style={{ opacity: 0.35 + item.severity * 0.65 }}>
                     {item.severity.toFixed(3)}
                   </span>
-                  <span className="kind">{KIND_LABEL[item.kind] ?? item.kind}</span>
-                  <span className="subject">{shortIri(item.subject)}</span>
+                  <span className="kind">{DISCREPANCY_KIND_LABEL[item.kind]}</span>
+                  <span className="subject">{subjectLabel(item)}</span>
                   {isStale(item, now) ? <span className="stale">滞留</span> : null}
                 </button>
               </li>
@@ -78,36 +76,35 @@ export function DiscrepancyQueue({
       {selected === undefined ? null : (
         <section className="detail" aria-label="証拠と解決">
           <h3>
-            {KIND_LABEL[selected.kind] ?? selected.kind}の不一致 ·{" "}
-            {shortIri(selected.subject)}
+            {DISCREPANCY_KIND_LABEL[selected.kind]}の不一致 · {subjectLabel(selected)}
           </h3>
           <p className="meta">
-            深刻度 {selected.severity.toFixed(3)} · 起票 {selected.raisedAt} · 状態{" "}
-            {selected.state}
+            深刻度 {selected.severity.toFixed(3)} · 検出 {selected.detectedAt} · 状態{" "}
+            {selected.status} · 検出器 <code>{selected.detector}</code> · オントロジー{" "}
+            {selected.ontologyVersion}
           </p>
 
           <table className="evidence">
             <caption>
-              三源の証拠。<strong>どちらが正しいかは示さない</strong>——判断は人がする。
+              不一致が参照しているもの。<strong>どちらが正しいかは示さない</strong>
+              ——判断は人がする。<strong>三源の並置（観測 / 記録 / 計画）はまだ作れていない</strong>
+              ——信念の本体を引く経路が無く、源は様相では分かれない（M8-17）。
             </caption>
             <tbody>
-              {evidenceRows(selected).map((row) => (
-                <tr key={row.label} className={row.isEmpty ? "row-empty" : undefined}>
+              {referenceRows(selected).map((row) => (
+                <tr
+                  key={row.label}
+                  className={row.isEmpty ? "row-empty" : undefined}
+                >
                   <th scope="row">{row.label}</th>
                   <td>
                     {row.isEmpty ? (
-                      <span className="none">この源には証拠が無い</span>
+                      <span className="none">参照が無い</span>
                     ) : (
                       <ul>
-                        {row.beliefs.map((belief) => (
-                          <li key={belief.assertionId}>
-                            <code>{shortIri(belief.predicate)}</code> = {belief.object}
-                            <span className="conf">
-                              {formatConfidence(belief.confidence)}
-                            </span>
-                            <span className="valid">
-                              [{belief.validFrom}, {belief.validTo ?? "…"})
-                            </span>
+                        {row.iris.map((iri) => (
+                          <li key={iri}>
+                            <code>{shortIri(iri)}</code>
                           </li>
                         ))}
                       </ul>
@@ -135,20 +132,26 @@ interface FormProps {
   readonly onResolve: (resolution: Resolution) => void;
 }
 
-const KINDS: readonly ResolutionKind[] = [
-  "RECORD_WRONG",
-  "OBSERVATION_WRONG",
-  "DEFINITION_MISMATCH",
-  "SYSTEMATIC_BIAS",
-  "NEEDS_OBSERVATION",
+/**
+ * 選べる解決結果（設計書 §8.2 の表の 4 行）。
+ *
+ * **抑制（系統誤差）は選択肢に無い。** 抑制は解決結果ではなく別の遷移（`Open → Suppressed`）
+ * であり、信頼性モデルで説明できる系統誤差に限られる（人がここで選ぶものではない）。
+ * 以前はここに `SYSTEMATIC_BIAS` があり、**API が受け付けない値を人に選ばせていた**（所見 83）。
+ */
+const OUTCOMES: readonly ResolutionOutcome[] = [
+  "physical_correct",
+  "record_correct",
+  "both_wrong",
+  "undetermined",
 ];
 
-const KIND_TEXT: Readonly<Record<ResolutionKind, string>> = {
-  RECORD_WRONG: "記録が誤っていた",
-  OBSERVATION_WRONG: "観測（推定）が誤っていた",
-  DEFINITION_MISMATCH: "どちらも正しく、定義が食い違っている",
-  SYSTEMATIC_BIAS: "系統的な偏り（月末バッチ・シフト境界など）",
-  NEEDS_OBSERVATION: "判断できない（追加観測が必要）",
+/** 解決結果の表示（名前の向きに注意: 物理が正しい = 記録が誤っていた）。 */
+const OUTCOME_TEXT: Readonly<Record<ResolutionOutcome, string>> = {
+  physical_correct: "物理が正しかった（記録が誤っていた）",
+  record_correct: "記録が正しかった（観測・推定が誤っていた）",
+  both_wrong: "どちらも誤っていた（定義が食い違っている）",
+  undetermined: "判断できない（追加観測が必要）",
 };
 
 function ResolutionForm({
@@ -156,9 +159,18 @@ function ResolutionForm({
   resolvedBy,
   onResolve,
 }: FormProps): React.JSX.Element {
-  const [kind, setKind] = useState<ResolutionKind>("RECORD_WRONG");
-  const [reason, setReason] = useState("");
-  const resolution: Resolution = { discrepancyId, kind, reason, resolvedBy };
+  const [outcome, setOutcome] = useState<ResolutionOutcome>("physical_correct");
+  const [note, setNote] = useState("");
+  // **冪等の鍵はフォームごとに 1 つ。** 再送（ネットワークの再試行、人の二度押し）で同じ値を
+  // 送る必要があるので、送信のたびに作らない（ADR-0012）
+  const [decisionId] = useState(() => crypto.randomUUID());
+  const resolution: Resolution = {
+    decisionId,
+    discrepancyId,
+    outcome,
+    note,
+    resolvedBy,
+  };
   const check = checkResolution(resolution);
 
   return (
@@ -171,16 +183,16 @@ function ResolutionForm({
     >
       <fieldset>
         <legend>解決の種別</legend>
-        {KINDS.map((option) => (
+        {OUTCOMES.map((option) => (
           <label key={option} className="choice">
             <input
               type="radio"
-              name="kind"
+              name="outcome"
               value={option}
-              checked={kind === option}
-              onChange={() => setKind(option)}
+              checked={outcome === option}
+              onChange={() => setOutcome(option)}
             />
-            <span className="choice-label">{KIND_TEXT[option]}</span>
+            <span className="choice-label">{OUTCOME_TEXT[option]}</span>
             <span className="choice-effect">→ {RESOLUTION_EFFECTS[option]}</span>
           </label>
         ))}
@@ -189,8 +201,8 @@ function ResolutionForm({
       <label className="reason">
         理由（必須。<strong>これが無いと学習信号にならない</strong>）
         <textarea
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
           rows={3}
           placeholder="何を見てそう判断したか"
         />
@@ -207,8 +219,22 @@ function ResolutionForm({
       <button type="submit" disabled={!check.valid}>
         解決として投入する
       </button>
+      <p className="hint">
+        投入は<strong>受け付けまで</strong>である（ADR-0012）。適用は
+        <code>learning-worker</code> が行い、何が適用されたかは判断の記録に残る。
+      </p>
     </form>
   );
+}
+
+/**
+ * 主体の表示。**複数ある場合は全部出す**（類型 4 は競合する 2 つの主張である）。
+ *
+ * 1 つだけ出すと、どちらの実体の話か分からない不一致ができる。
+ */
+function subjectLabel(discrepancy: Discrepancy): string {
+  if (discrepancy.subjects.length === 0) return "(主体なし)";
+  return discrepancy.subjects.map(shortIri).join(" / ");
 }
 
 /** IRI の末尾だけを出す（画面幅を IRI で埋めない）。 */

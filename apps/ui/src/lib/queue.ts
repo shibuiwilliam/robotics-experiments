@@ -10,23 +10,27 @@
  */
 
 import type {
-  Belief,
   Discrepancy,
   DiscrepancyState,
   Resolution,
-  ResolutionKind,
+  ResolutionOutcome,
 } from "./types";
 
-/** キューに出す状態（解決済み・抑制済みは出さない）。 */
-const ACTIONABLE: ReadonlySet<DiscrepancyState> = new Set([
-  "OPEN",
-  "TRIAGED",
-  "ASSIGNED",
+/**
+ * キューに出す状態（解決済み・抑制済みは出さない）。
+ *
+ * **API も終端状態を既定で除く**（ADR-0013）が、ここでも絞る——`includeTerminal: true` で
+ * 履歴を読んだときに、同じ一覧をキューとして表示しないためである。
+ */
+const ACTIONABLE: ReadonlySet<DiscrepancyState> = new Set<DiscrepancyState>([
+  "Open",
+  "Triaged",
+  "Assigned",
 ]);
 
 /** 人が手を付けるべき不一致か。 */
 export function isActionable(discrepancy: Discrepancy): boolean {
-  return ACTIONABLE.has(discrepancy.state);
+  return ACTIONABLE.has(discrepancy.status);
 }
 
 /**
@@ -40,7 +44,7 @@ export function queueOrder(
 ): Discrepancy[] {
   return [...discrepancies].sort((left, right) => {
     if (left.severity !== right.severity) return right.severity - left.severity;
-    return left.raisedAt < right.raisedAt ? -1 : 1;
+    return left.detectedAt < right.detectedAt ? -1 : 1;
   });
 }
 
@@ -51,47 +55,57 @@ export function visibleQueue(
   return queueOrder(discrepancies.filter(isActionable));
 }
 
-/** 証拠を並べた 1 行（観測 / 記録 / 計画のうち、この時刻に何があったか）。 */
-export interface EvidenceRow {
-  readonly label: "観測" | "記録" | "計画";
-  readonly beliefs: readonly Belief[];
-  /** 証拠が無い源（「見ていない」ことを空欄で誤魔化さないために明示する）。 */
+/** 根拠の 1 行（アサーションか証拠か、どの IRI か）。 */
+export interface ReferenceRow {
+  readonly label: "根拠アサーション" | "証拠（イベント・記録）";
+  readonly iris: readonly string[];
+  /** 参照が無い種別（「見ていない」ことを空欄で誤魔化さないために明示する）。 */
   readonly isEmpty: boolean;
 }
 
 /**
- * 三源を並置する。**証拠が無い源も行として出す。**
+ * 不一致が参照しているものを並べる。**空の種別も行として出す。**
  *
- * 空の源を行から落とすと、「記録が無かった」のか「記録を見ていない」のかが区別できない。
- * 不一致の判断で最も重要な情報がそこにあることが多い（存在の不一致はまさに片側が無い）。
+ * 空を行から落とすと、「根拠が無かった」のか「見ていない」のかが区別できない。
+ *
+ * **三源（観測 / 記録 / 計画）の並置はここでは作れない。** 不一致は参照先を IRI で持ち、
+ * 信念の本体を引くには別のクエリが要る。さらに**源は様相では分かれない**——業務記録由来の
+ * 信念も推定を経ると `inferred` になり、三源の区別は来歴の `contrib` にある。設計書 §8.2 の
+ * 「証拠並置」を実現するには、アサーション ID で信念を引く API と来歴から源を判定する経路が
+ * 必要で、別タスク（M8-17）にした。
  */
-export function evidenceRows(discrepancy: Discrepancy): EvidenceRow[] {
+export function referenceRows(discrepancy: Discrepancy): ReferenceRow[] {
   return [
     {
-      label: "観測",
-      beliefs: discrepancy.observedEvidence,
-      isEmpty: discrepancy.observedEvidence.length === 0,
+      label: "根拠アサーション",
+      iris: discrepancy.assertions,
+      isEmpty: discrepancy.assertions.length === 0,
     },
     {
-      label: "記録",
-      beliefs: discrepancy.recordedEvidence,
-      isEmpty: discrepancy.recordedEvidence.length === 0,
-    },
-    {
-      label: "計画",
-      beliefs: discrepancy.plannedEvidence,
-      isEmpty: discrepancy.plannedEvidence.length === 0,
+      label: "証拠（イベント・記録）",
+      iris: discrepancy.evidence,
+      isEmpty: discrepancy.evidence.length === 0,
     },
   ];
 }
 
-/** 解決種別の説明（人が選ぶときに「何が起きるか」を見せる）。 */
-export const RESOLUTION_EFFECTS: Readonly<Record<ResolutionKind, string>> = {
-  RECORD_WRONG: "情報源の信頼性を下げる（この系の記録を今後やや疑う）",
-  OBSERVATION_WRONG: "プローブに負のラベルを出す（次の学習で修正される）",
-  DEFINITION_MISMATCH: "概念の候補として記録する（新しい区別が必要かを検討する）",
-  SYSTEMATIC_BIAS: "抑制規則の候補にする（同種の不一致を起票しなくなる）",
-  NEEDS_OBSERVATION: "追加観測を要求する（判断を保留し、観測の予定を立てる）",
+/**
+ * 解決結果の説明（人が選ぶときに「何が起きるか」を見せる）。
+ *
+ * **API の語彙そのものを鍵にする**（`ResolutionOutcome`）。UI 独自の語彙を持つと、
+ * 対応表を書いた人が居なくなった時点でずれる（所見 83）。
+ *
+ * 括弧の中は**実際に起こること**で、ADR-0012 の「自動適用するもの / 記録するだけのもの」に
+ * 対応している——人に「適用される」と思わせない。
+ */
+export const RESOLUTION_EFFECTS: Readonly<Record<ResolutionOutcome, string>> = {
+  physical_correct:
+    "記録訂正の提案を作り、情報源の信頼性更新を記録する（書き戻しは既定 dry）",
+  record_correct:
+    "プローブの負例バッグを記録する（再学習は昇格ゲートを通る別の仕事で、自動では走らない）",
+  both_wrong:
+    "概念の候補として記録する（オントロジーへの追加は人の手作業。自動で語彙は増えない）",
+  undetermined: "追加観測を要求する（作業キューに積まれ、スケジューラが効用で選ぶ）",
 };
 
 /** 解決の入力が成立しているか。 */
@@ -109,7 +123,7 @@ export interface ResolutionCheck {
  */
 export function checkResolution(resolution: Resolution): ResolutionCheck {
   const problems: string[] = [];
-  if (resolution.reason.trim().length < 10) {
+  if (resolution.note.trim().length < 10) {
     problems.push(
       "理由を 10 文字以上書くこと。種別だけでは学習信号にならない（なぜそう判断したかが残らない）",
     );
@@ -117,11 +131,19 @@ export function checkResolution(resolution: Resolution): ResolutionCheck {
   if (resolution.resolvedBy.trim() === "") {
     problems.push("解決者が必要（来歴に human-review として残る）");
   }
-  if (resolution.discrepancyId.trim() === "") {
-    problems.push("どの不一致の解決かが必要");
+  if (!UUID_PATTERN.test(resolution.discrepancyId)) {
+    // API は UUID を要求する（文字列を許すと学習信号が元の不一致に辿れない。所見 77）
+    problems.push("不一致の識別子が UUID でない（API が受け付けない）");
+  }
+  if (resolution.decisionId.trim() === "") {
+    problems.push("冪等の鍵が必要（再送で同じ判断が 2 回適用されるのを防ぐ）");
   }
   return { valid: problems.length === 0, problems };
 }
+
+/** UUID の形（API の `discrepancy_id` は UUID。所見 77）。 */
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * 滞留の警告。**起票から時間が経った不一致を目立たせる。**
@@ -134,7 +156,7 @@ export function isStale(
   now: string,
   staleAfterHours = 72,
 ): boolean {
-  const raised = Date.parse(discrepancy.raisedAt);
+  const raised = Date.parse(discrepancy.detectedAt);
   const current = Date.parse(now);
   if (Number.isNaN(raised) || Number.isNaN(current)) return false;
   return current - raised > staleAfterHours * 3_600_000;

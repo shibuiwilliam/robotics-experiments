@@ -16,7 +16,7 @@ import {
 } from "../src/lib/expectations";
 import {
   checkResolution,
-  evidenceRows,
+  referenceRows,
   isActionable,
   isStale,
   queueOrder,
@@ -31,14 +31,17 @@ import type {
 
 function discrepancy(overrides: Partial<Discrepancy> & { discrepancyId: string }): Discrepancy {
   return {
-    kind: "STATE",
-    state: "OPEN",
-    subject: "urn:x:P-101",
+    // API の契約そのもの（番号の類型・API の状態名・複数主体・IRI の参照）。M8-16 で揃えた
+    kind: 2,
+    status: "Open",
+    subjects: ["urn:x:P-101"],
     severity: 0.5,
-    raisedAt: "2026-06-10T09:00:00Z",
-    observedEvidence: [],
-    recordedEvidence: [],
-    plannedEvidence: [],
+    detectedAt: "2026-06-10T09:00:00Z",
+    detector: "kind2",
+    assertions: [],
+    evidence: [],
+    assigneeRole: null,
+    ontologyVersion: "0.5.0",
     ...overrides,
   };
 }
@@ -58,16 +61,16 @@ function expectation(overrides: Partial<Expectation> & { expectationId: string }
 describe("queueOrder", () => {
   it("深刻度の降順（起票時刻順ではない）", () => {
     const rows = [
-      discrepancy({ discrepancyId: "old-mild", severity: 0.2, raisedAt: "2026-06-01T00:00:00Z" }),
-      discrepancy({ discrepancyId: "new-severe", severity: 0.9, raisedAt: "2026-06-10T00:00:00Z" }),
+      discrepancy({ discrepancyId: "old-mild", severity: 0.2, detectedAt: "2026-06-01T00:00:00Z" }),
+      discrepancy({ discrepancyId: "new-severe", severity: 0.9, detectedAt: "2026-06-10T00:00:00Z" }),
     ];
     expect(queueOrder(rows).map((r) => r.discrepancyId)).toEqual(["new-severe", "old-mild"]);
   });
 
   it("深刻度が同じなら古い順（放置を可視化する）", () => {
     const rows = [
-      discrepancy({ discrepancyId: "newer", severity: 0.5, raisedAt: "2026-06-10T00:00:00Z" }),
-      discrepancy({ discrepancyId: "older", severity: 0.5, raisedAt: "2026-06-01T00:00:00Z" }),
+      discrepancy({ discrepancyId: "newer", severity: 0.5, detectedAt: "2026-06-10T00:00:00Z" }),
+      discrepancy({ discrepancyId: "older", severity: 0.5, detectedAt: "2026-06-01T00:00:00Z" }),
     ];
     expect(queueOrder(rows).map((r) => r.discrepancyId)).toEqual(["older", "newer"]);
   });
@@ -85,11 +88,11 @@ describe("queueOrder", () => {
 describe("visibleQueue", () => {
   it("解決済み・抑制済みは出さない", () => {
     const rows = [
-      discrepancy({ discrepancyId: "open", state: "OPEN" }),
-      discrepancy({ discrepancyId: "assigned", state: "ASSIGNED" }),
-      discrepancy({ discrepancyId: "resolved", state: "RESOLVED" }),
-      discrepancy({ discrepancyId: "suppressed", state: "SUPPRESSED" }),
-      discrepancy({ discrepancyId: "learned", state: "LEARNED" }),
+      discrepancy({ discrepancyId: "open", status: "Open" }),
+      discrepancy({ discrepancyId: "assigned", status: "Assigned" }),
+      discrepancy({ discrepancyId: "resolved", status: "Resolved" }),
+      discrepancy({ discrepancyId: "suppressed", status: "Suppressed" }),
+      discrepancy({ discrepancyId: "learned", status: "Learned" }),
     ];
     expect(visibleQueue(rows).map((r) => r.discrepancyId).sort()).toEqual([
       "assigned",
@@ -98,42 +101,31 @@ describe("visibleQueue", () => {
   });
 
   it("triaged は手を付ける対象である", () => {
-    expect(isActionable(discrepancy({ discrepancyId: "t", state: "TRIAGED" }))).toBe(true);
+    expect(isActionable(discrepancy({ discrepancyId: "t", status: "Triaged" }))).toBe(true);
   });
 });
 
-describe("evidenceRows", () => {
-  it("証拠が無い源も行として出す", () => {
-    const rows = evidenceRows(discrepancy({ discrepancyId: "a" }));
-    expect(rows.map((row) => row.label)).toEqual(["観測", "記録", "計画"]);
+describe("referenceRows", () => {
+  it("参照が無い種別も行として出す", () => {
+    const rows = referenceRows(discrepancy({ discrepancyId: "a" }));
+    expect(rows.map((row) => row.label)).toEqual([
+      "根拠アサーション",
+      "証拠（イベント・記録）",
+    ]);
     expect(rows.every((row) => row.isEmpty)).toBe(true);
   });
 
-  it("「記録が無かった」と「記録を見ていない」を区別できる", () => {
+  it("「根拠が無かった」と「見ていない」を区別できる", () => {
     // 存在の不一致はまさに片側が無い場面であり、行が消えると判断材料が消える
-    const rows = evidenceRows(
+    const rows = referenceRows(
       discrepancy({
         discrepancyId: "a",
-        kind: "EXISTENCE",
-        observedEvidence: [
-          {
-            assertionId: "o1",
-            subject: "urn:x:P-101",
-            predicate: "ent:Running",
-            object: "true",
-            validFrom: "2026-06-10T09:00:00Z",
-            validTo: null,
-            txFrom: "2026-06-10T09:00:00Z",
-            txTo: null,
-            modality: "OBSERVED",
-            confidence: 0.95,
-            provenance: "prov:b1",
-            ontologyVersion: "0.5.0",
-          },
-        ],
+        kind: 1,
+        assertions: ["urn:sbp:assertion:1"],
       }),
     );
     expect(rows[0]!.isEmpty).toBe(false);
+    expect(rows[0]!.iris).toEqual(["urn:sbp:assertion:1"]);
     expect(rows[1]!.isEmpty).toBe(true);
   });
 });
@@ -141,9 +133,11 @@ describe("evidenceRows", () => {
 describe("checkResolution", () => {
   function resolution(overrides: Partial<Resolution> = {}): Resolution {
     return {
-      discrepancyId: "d-1",
-      kind: "RECORD_WRONG",
-      reason: "MES の完了打刻が実際の停止より 20 分遅れていた",
+      // API の契約そのもの（M8-16 で揃えた。snake_case への変換は api.ts が行う）
+      decisionId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      discrepancyId: "0f8fad5b-d9cb-469f-a165-70867728950e",
+      outcome: "physical_correct",
+      note: "MES の完了打刻が実際の停止より 20 分遅れていた",
       resolvedBy: "urn:x:person/op1",
       ...overrides,
     };
@@ -154,13 +148,13 @@ describe("checkResolution", () => {
   });
 
   it("理由が無いと通さない（種別だけでは学習信号にならない）", () => {
-    const check = checkResolution(resolution({ reason: "ミス" }));
+    const check = checkResolution(resolution({ note: "ミス" }));
     expect(check.valid).toBe(false);
     expect(check.problems.join()).toContain("学習信号");
   });
 
   it("空白だけの理由も通さない", () => {
-    expect(checkResolution(resolution({ reason: "          " })).valid).toBe(false);
+    expect(checkResolution(resolution({ note: "          " })).valid).toBe(false);
   });
 
   it("解決者が必要（来歴に human-review として残る）", () => {
@@ -169,23 +163,40 @@ describe("checkResolution", () => {
     expect(check.problems.join()).toContain("解決者");
   });
 
+  it("UUID でない不一致 ID を通さない（API が受け付けない。所見 77）", () => {
+    const check = checkResolution(resolution({ discrepancyId: "d-1" }));
+    expect(check.valid).toBe(false);
+    expect(check.problems.join()).toContain("UUID");
+  });
+
+  it("冪等の鍵が必要（再送で 2 回適用されるのを防ぐ）", () => {
+    const check = checkResolution(resolution({ decisionId: "" }));
+    expect(check.valid).toBe(false);
+    expect(check.problems.join()).toContain("冪等");
+  });
+
   it("問題は全部返す（1 つ直すたびに次が出る形にしない）", () => {
     const check = checkResolution(
-      resolution({ reason: "", resolvedBy: "", discrepancyId: "" }),
+      resolution({
+        note: "",
+        resolvedBy: "",
+        discrepancyId: "",
+        decisionId: "",
+      }),
     );
-    expect(check.problems.length).toBe(3);
+    expect(check.problems.length).toBe(4);
   });
 });
 
 describe("isStale", () => {
   it("72 時間を超えた不一致を滞留と見る", () => {
-    const row = discrepancy({ discrepancyId: "a", raisedAt: "2026-06-01T00:00:00Z" });
+    const row = discrepancy({ discrepancyId: "a", detectedAt: "2026-06-01T00:00:00Z" });
     expect(isStale(row, "2026-06-10T00:00:00Z")).toBe(true);
     expect(isStale(row, "2026-06-02T00:00:00Z")).toBe(false);
   });
 
   it("時刻が壊れていたら滞留と言わない（偽の警告を出さない）", () => {
-    const row = discrepancy({ discrepancyId: "a", raisedAt: "not-a-time" });
+    const row = discrepancy({ discrepancyId: "a", detectedAt: "not-a-time" });
     expect(isStale(row, "2026-06-10T00:00:00Z")).toBe(false);
   });
 });

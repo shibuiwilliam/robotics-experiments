@@ -1,0 +1,165 @@
+"""UI と API の契約が一致していることの契約テスト（M8-16）。
+
+**なぜ必要になったか。** M7-04 の UI は API の形を**手で写した型**で書かれており（ADR-0008 で
+GraphQL のコード生成を入れない決定）、API 側とずれても誰も気付かなかった。M8-16 で突き合わせた
+ところ、5 箇所ずれていた（``docs/PROGRESS.md`` 所見 83）:
+
+- 類型に ``QUANTITY`` という**存在しない値**があり、実在する ``NORM``（規範）が無かった
+- 状態が大文字（``OPEN``）で、API は ``Open`` を返す
+- 解決結果が UI 独自の 5 値で、**API が受け付けない**（``extra="forbid"``）
+- 証拠が ``Belief[]`` 埋め込みで、そんな経路は存在しなかった
+- 主体が単数で、API は複数返す
+
+UI 側のテストは全部通っていた——**自分で決めた型に対して自分で作った fixture を当てていた**ので、
+API と合っているかは一度も検査されていなかった。ここがその検査である。
+
+**TypeScript を解析しない。** 正規表現で値の列挙を抜き出すだけにしてある。構文解析を入れると
+tsc への依存が `make check` に入り、「追加のインストール無しで必ず走る」という方針が崩れる。
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+from sbp.api.commands import CurationCommand, ResolutionCommand
+from sbp.api.schema import DiscrepancyType
+from sbp.reasoning.reconciliation import (
+    DiscrepancyKind,
+    DiscrepancyStatus,
+    ResolutionOutcome,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+UI_TYPES = REPO_ROOT / "apps/ui/src/lib/types.ts"
+UI_API = REPO_ROOT / "apps/ui/src/lib/api.ts"
+
+
+def _source(path: Path) -> str:
+    """UI の原文を読む。
+
+    Args:
+        path: 読むファイル。
+    """
+    if not path.is_file():
+        pytest.skip(f"{path} が無い（UI を持たない構成）")
+    return path.read_text(encoding="utf-8")
+
+
+def _string_union(source: str, name: str) -> set[str]:
+    """``export type <name> = "a" | "b"`` の値を抜き出す。
+
+    Args:
+        source: TypeScript の原文。
+        name: 型の名前。
+    """
+    match = re.search(rf"export type {name} =(.*?);", source, re.DOTALL)
+    assert match is not None, f"{name} が UI に無い"
+    return set(re.findall(r'"([^"]+)"', match.group(1)))
+
+
+def test_the_discrepancy_state_values_match_the_backend() -> None:
+    """UI の状態の値が ``DiscrepancyStatus`` と一致する。
+
+    大文字の別名を持つと変換が必要になり、変換を忘れた経路で一致判定が静かに外れる。
+    """
+    found = _string_union(_source(UI_TYPES), "DiscrepancyState")
+
+    assert found == {status.value for status in DiscrepancyStatus}
+
+
+def test_the_resolution_outcomes_match_the_backend() -> None:
+    """UI の解決結果が ``ResolutionOutcome`` と一致する。
+
+    **ずれていると API が弾く**（``extra="forbid"`` と ``Literal``）。以前は UI 独自の 5 値
+    （``RECORD_WRONG`` など）で、投入が 400 になる形だった。
+    """
+    found = _string_union(_source(UI_TYPES), "ResolutionOutcome")
+
+    assert found == {outcome.value for outcome in ResolutionOutcome}
+
+
+def test_the_discrepancy_kinds_match_the_backend() -> None:
+    """UI の類型の番号と表示名が五類型をすべて覆う。
+
+    以前は ``QUANTITY`` という存在しない類型があり、実在する ``NORM`` が無かった。
+    """
+    source = _source(UI_TYPES)
+    match = re.search(r"export type DiscrepancyKind =(.*?);", source, re.DOTALL)
+    assert match is not None
+    numbers = {int(value) for value in re.findall(r"\b(\d)\b", match.group(1))}
+
+    assert numbers == {int(kind) for kind in DiscrepancyKind}
+
+    labels = re.search(r"DISCREPANCY_KIND_LABEL[^=]*=\s*\{(.*?)\};", source, re.DOTALL)
+    assert labels is not None
+    labelled = {int(key) for key in re.findall(r"(\d):", labels.group(1))}
+    assert labelled == numbers, "番号に表示名が無いものがある"
+
+
+def test_the_queried_discrepancy_fields_exist_on_the_graphql_type() -> None:
+    """UI が要求するフィールドが GraphQL の型に実在する。
+
+    **存在しないフィールドを要求すると GraphQL がエラーを返す**ので実行時には分かるが、
+    その時点では「UI が壊れている」としか分からない。ここで落ちれば原因が分かる。
+    """
+    source = _source(UI_API)
+    match = re.search(r"const DISCREPANCY_FIELDS = `(.*?)`", source, re.DOTALL)
+    assert match is not None, "DISCREPANCY_FIELDS が UI に無い"
+    requested = set(match.group(1).split())
+    available = set(DiscrepancyType.__annotations__)
+
+    missing = requested - available
+    assert not missing, f"UI が要求するフィールドが GraphQL の型に無い: {sorted(missing)}"
+
+
+def test_the_resolution_command_payload_matches_the_contract() -> None:
+    """UI が送るキーが ``ResolutionCommand`` のフィールドと一致する。
+
+    ``extra="forbid"`` なので、余分なキーも足りないキーも 400 になる。以前は camelCase を
+    送っており、**この形のまま出荷されていた**。
+    """
+    source = _source(UI_API)
+    match = re.search(
+        r"/commands/resolve_discrepancy.*?JSON\.stringify\(\{(.*?)\}\)",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None, "解決の投入が UI に無い"
+    sent = set(re.findall(r"^\s*([a-z_]+):", match.group(1), re.MULTILINE))
+    required = {
+        name for name, field in ResolutionCommand.model_fields.items() if field.is_required()
+    }
+
+    assert required <= sent, f"必須のキーが送られていない: {sorted(required - sent)}"
+    assert sent <= set(ResolutionCommand.model_fields), (
+        f"契約に無いキーを送っている: {sorted(sent - set(ResolutionCommand.model_fields))}"
+    )
+
+
+def test_the_curation_command_payload_matches_the_contract() -> None:
+    """概念採否の投入も契約と一致する。"""
+    source = _source(UI_API)
+    match = re.search(r"/commands/curate_concept.*?JSON\.stringify\(\{(.*?)\}\)", source, re.DOTALL)
+    assert match is not None, "概念採否の投入が UI に無い"
+    sent = set(re.findall(r"^\s*([a-z_]+):", match.group(1), re.MULTILINE))
+    required = {name for name, field in CurationCommand.model_fields.items() if field.is_required()}
+
+    assert required <= sent, f"必須のキーが送られていない: {sorted(required - sent)}"
+    assert sent <= set(CurationCommand.model_fields)
+
+
+def test_the_ui_does_not_read_discrepancies_from_the_stream() -> None:
+    """UI が不一致をイベントストリームから読んでいない。
+
+    起票イベントは**通知**であって不一致そのものではない（所見 62）。ストリームを読む形に
+    戻ると、「`payload` が `Discrepancy` である」という成立しない前提に戻る。
+    """
+    source = _source(UI_API)
+    match = re.search(r"export async function fetchDiscrepancies.*?\n\}", source, re.DOTALL)
+    assert match is not None
+
+    assert "/stream/" not in match.group(0), "不一致をストリームから読んでいる"
+    assert "discrepancies(" in match.group(0), "GraphQL の資源を引いていない"
