@@ -312,7 +312,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-04** 不一致イベントの送信先の決定と配線 — 中央集約か拠点別か（ADR）。`reconcile_worker.main()` の sink を埋め、`TODO(question)` を消す → 完了（ADR-0010。既定は拠点トピック、`SBP_REASONING_DISCREPANCY_SCOPE=central` で切替。`sbp.reasoning.reconciliation.notify`。単体 14 件）
 - [x] **M8-05** scheduler-worker の要求供給配線 — `ObservationRequest` の供給元（イベントログ / 投影テーブル）を決め（ADR）、観測手段の割り当てを実装する。`TODO(question)` を消す → 完了（ADR-0011。要求は作業キュー（alembic 0004 `observation_requests`）、手段は `observation/*.yaml`。**要求は主張ではないのでイベントログに載せられない**——様相格子に席が無い。単体 34 件 + 統合 12 件。キューに書く側は M8-08）
 - [x] **M8-06** Grafana ダッシュボード — `infra/prometheus/` と observability profile のダッシュボード JSON（6 領域 25 指標。指標名は列挙で固定済み） → 完了（ダッシュボードは **`METRICS` からの生成物**（`make gen` / `scripts/gen_dashboard.py`）。compose に prometheus + grafana（observability profile）、`sbp.knowledge.MetricStore`、API の `GET /metrics`。単体 4 件 + 契約 7 件 + 統合 7 件。**取り込み先の API を起動する経路が無い**ので M8-13 を起票）
-- [ ] **M8-07** `SituationLink` による実体間結合 — 同一 Situation に属する実体の結合（現在は部分−全体のみ）。Situation の所属を引くクエリを `sbp.knowledge.relations` に足す
+- [x] **M8-07** `SituationLink` による実体間結合 — 同一 Situation に属する実体の結合（現在は部分−全体のみ）。Situation の所属を引くクエリを `sbp.knowledge.relations` に足す → 完了（`situation_members()`。`graph_relations` が `(PartWhole, SituationLink)` の対を返すようにし、`propagate` の `situations` に繋いだ。参加者 1 件の Situation は落とす。単体 6 件）
 - [ ] **M8-08** 学習信号の適用ワーカー — UI/API に入った人の判断を受けて、書き戻し・プローブ再学習・概念採択を実行する。**人の承認が前提**（自動適用しない）
 - [ ] **M8-09** 発見ループの周期実行 — 概念発見（検出 → 提案 → curation）を周期ジョブにする。採用後のオントロジー MINOR 起票は人の手作業のまま（意図的）
 - [ ] **M8-10** LLM の live 経路 — 任意依存として SDK を 1 つ追加し、`live_factory` を実装する。fixture が無いときに黙って live に落ちないことをテストで固定

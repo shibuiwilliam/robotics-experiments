@@ -35,8 +35,13 @@ from sbp.core.config import Settings
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.time import now
-from sbp.knowledge.relations import aggregation_rules, group_by_whole, part_whole_edges
-from sbp.reasoning.coupling import AggregationRule, PartWhole, propagate
+from sbp.knowledge.relations import (
+    aggregation_rules,
+    group_by_whole,
+    part_whole_edges,
+    situation_members,
+)
+from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink, propagate
 from sbp.reasoning.ingest import BeliefIngest, default_transition
 from services.runtime import ReadinessCheck, WorkerRuntime
 
@@ -59,8 +64,15 @@ if TYPE_CHECKING:
     """アサーションを 1 件書く。戻り値は使わない（``assert_`` は ID を返す）。"""
     CommitHook = Callable[[], Awaitable[None]]
     """終了時のオフセットコミット。"""
-    RelationProvider = Callable[[Mapping[tuple[str, str], float]], Sequence[PartWhole]]
-    """``事前 -> 強い関係の列``。事前を渡すのは、関係の参照する実体を事前の集合で絞るため。"""
+    RelationProvider = Callable[
+        [Mapping[tuple[str, str], float]], tuple[Sequence[PartWhole], Sequence[SituationLink]]
+    ]
+    """``事前 -> (部分−全体の結合, 同一 Situation の結合)``。
+
+    事前を渡すのは、関係の参照する実体を事前の集合で絞るためである（``propagate`` は結合が
+    参照する実体すべての事前を要求する）。**2 種類を返す**のは、両者の因子の形が違うため
+    ——部分−全体は向きと集約規則を持ち、同一 Situation は対称で規則を持たない。
+    """
 
 log = get_logger(__name__)
 
@@ -305,13 +317,14 @@ class BeliefWorker:
         if not priors:
             return 0
 
-        couplings = self._relations(priors)
-        if not couplings:
+        couplings, links = self._relations(priors)
+        if not couplings and not links:
             return 0
 
         result = propagate(
             priors,
             part_wholes=couplings,
+            situations=links,
             max_iterations=self.settings.reasoning.bp_max_iterations,
         )
         if not result.converged:
@@ -381,25 +394,29 @@ def graph_relations(store: GraphStore) -> RelationProvider:
 
     **関係とオントロジーの読み出しを毎周期やり直す。** キャッシュしたくなるが、再接地や
     オントロジーの版上げで関係が変わったときに古い構造で結合し続けることになる。結合の周期は
-    既定 60 秒で、クエリ 2 本はその中では十分に軽い。
+    既定 60 秒で、クエリ 3 本はその中では十分に軽い。
 
     **集約規則が無いフルーエントは結合しない。** 既定値を埋めると、宣言忘れが
     「全部分が成立して初めて」という強い仮定として静かに効く（``knowledge.relations`` 参照）。
+
+    同一 Situation の結合（M8-07）は**集約規則を要求しない**。「同じ出来事に参加しているから
+    状態が揃いやすい」という弱い対称な制約で、all / any のような向きを持たないためである。
+    強さの既定（0.3）が部分−全体（0.8）より弱いのも同じ理由。
 
     Args:
         store: グラフストア。
 
     Returns:
-        ``事前 -> PartWhole の列``。
+        ``事前 -> (PartWhole の列, SituationLink の列)``。
     """
 
-    def provide(priors: Mapping[tuple[str, str], float]) -> list[PartWhole]:
+    def provide(
+        priors: Mapping[tuple[str, str], float],
+    ) -> tuple[list[PartWhole], list[SituationLink]]:
         entities = [entity for entity, _fluent in priors]
         # 事前を持っている実体だけに絞る（propagate は全実体の事前を要求する）
         grouped = group_by_whole(part_whole_edges(store), known_entities=entities)
-        if not grouped:
-            return []
-        rules = aggregation_rules(store)
+        rules = aggregation_rules(store) if grouped else {}
 
         couplings: list[PartWhole] = []
         for (entity, fluent), _prior in priors.items():
@@ -421,7 +438,19 @@ def graph_relations(store: GraphStore) -> RelationProvider:
                     rule=AggregationRule.from_iri(rule_iri),
                 )
             )
-        return couplings
+
+        # 同一 Situation の結合（M8-07）。**事前を持つ参加者が 2 件以上**のものだけを作る
+        # ——1 件では結合にならず、`SituationLink` の構築が例外になる
+        known = set(priors)
+        fluents = {fluent for _entity, fluent in priors}
+        links: list[SituationLink] = []
+        for situation, members in situation_members(store).items():
+            for fluent in sorted(fluents):
+                covered = tuple(member for member in members if (member, fluent) in known)
+                if len(covered) < 2:
+                    continue
+                links.append(SituationLink(situation=situation, members=covered, fluent=fluent))
+        return couplings, links
 
     return provide
 

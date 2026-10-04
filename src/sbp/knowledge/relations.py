@@ -18,6 +18,11 @@
 ``partOf`` は推移的（``owl:TransitiveProperty``）だが、**ここでは 1 段だけを返す**。
 推移閉包を展開して結合に入れると、同じ証拠が祖先へ複数の経路で伝わって二重に数えられる
 （孫 → 子 → 親 と 孫 → 親 の両方が因子になる）。多段の伝播は BP の反復が担う仕事である。
+
+同一 Situation の参加実体（``sbp:inSituation``）も読む（M8-07）。部分−全体と違って**向きが
+無い**ので対称な引き寄せになり、`sbp.reasoning.coupling.SituationLink` が受ける。
+**集約規則を要求しない**——「同じ出来事に参加しているから状態が揃いやすい」という弱い制約で、
+all / any のような向きを持たないためである。
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ __all__ = [
     "aggregation_rules",
     "group_by_whole",
     "part_whole_edges",
+    "situation_members",
 ]
 
 log = get_logger(__name__)
@@ -146,3 +152,60 @@ def group_by_whole(
             continue
         grouped.setdefault(whole, []).append(part)
     return grouped
+
+
+def situation_members(store: GraphStore, *, limit: int = 10_000) -> dict[str, list[str]]:
+    """同一 Situation に参加する実体を Situation ごとにまとめて読む（M8-07）。
+
+    ``<実体> sbp:inSituation <Situation>`` を読み、Situation ごとに参加実体を集める。
+
+    **参加者が 1 つだけの Situation を返さない。** 結合は 2 つ以上の実体の間にしか無く、
+    1 人の Situation を返すと呼び出し側が ``SituationLink`` の構築で例外になる
+    （``members`` が 2 件未満だと ``ReasoningError``）。
+
+    **Situation の階層は辿らない。** ``inSituation`` に推移性は宣言されておらず、
+    「同じ Situation に居る」は 1 段で定義される。親 Situation まで辿ると、同じ日の全設備が
+    1 つの結合になりうる——強い関係に限定する（設計書 §8.1）という前提が崩れる。
+
+    Args:
+        store: グラフストア。
+        limit: 読む三つ組の上限。打ち切ったことはログに出す——黙って切ると
+            「Situation が無い」ように見える。
+
+    Returns:
+        Situation IRI → 参加実体 IRI の列（順序は安定、2 件以上のものだけ）。
+    """
+    # 名前付きグラフと既定グラフの両方を見る（`part_whole_edges` と同じ理由。所見 45）。
+    sparql = f"""
+    SELECT DISTINCT ?member ?situation WHERE {{
+      {{ ?member <{vocab.core.inSituation}> ?situation }}
+      UNION
+      {{ GRAPH ?g {{ ?member <{vocab.core.inSituation}> ?situation }} }}
+      FILTER(isIRI(?member) && isIRI(?situation))
+    }}
+    ORDER BY ?situation ?member
+    LIMIT {limit + 1}
+    """
+    rows = store.query(sparql)
+    truncated = len(rows) > limit
+    grouped: dict[str, list[str]] = {}
+    for row in rows[:limit]:
+        member, situation = row.get("member"), row.get("situation")
+        if member is None or situation is None:
+            continue
+        grouped.setdefault(situation, []).append(member)
+    if truncated:
+        log.warning(
+            "knowledge.situation_members_truncated",
+            limit=limit,
+            detail="参加関係が上限を超えた。結合の対象が欠けている（黙って切っていない）",
+        )
+    # 参加者が 1 つだけの Situation は結合にならない
+    coupled = {situation: members for situation, members in grouped.items() if len(members) >= 2}
+    log.debug(
+        "knowledge.situation_members_read",
+        situations=len(coupled),
+        singletons=len(grouped) - len(coupled),
+        truncated=truncated,
+    )
+    return coupled

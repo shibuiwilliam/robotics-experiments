@@ -39,6 +39,7 @@ from sbp.knowledge.relations import (
     aggregation_rules,
     group_by_whole,
     part_whole_edges,
+    situation_members,
 )
 from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 from sbp.knowledge.watermarks import Watermark, WatermarkStore
@@ -83,5 +84,6 @@ __all__ = [
     "scenario_graph",
     "schema_graph",
     "site_prefix",
+    "situation_members",
     "summarise_regrounding",
 ]

@@ -24,7 +24,7 @@ from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
 from sbp.eventlog.consumer import EventHandler
-from sbp.reasoning.coupling import AggregationRule, PartWhole
+from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
@@ -210,13 +210,15 @@ def _event_for(entity: str, *, at: datetime, p: float) -> EventEnvelope:
 class TestCouplingCycle:
     """結合の周期で信念が伝播する（設計書 §8.1）。"""
 
-    def _relations(self, priors: Mapping[tuple[str, str], float]) -> list[PartWhole]:
-        """LINE-1 は P-101 と P-102 の全体（Running は all 集約）。"""
+    def _relations(
+        self, priors: Mapping[tuple[str, str], float]
+    ) -> tuple[list[PartWhole], list[SituationLink]]:
+        """LINE-1 は P-101 と P-102 の全体（Running は all 集約）。Situation の結合は無し。"""
         fluent = str(vocab.ent.Running)
         parts = tuple(entity for entity, name in priors if name == fluent and entity != LINE)
         if (LINE, fluent) not in priors or not parts:
-            return []
-        return [PartWhole(whole=LINE, parts=parts, fluent=fluent, rule=AggregationRule.ALL)]
+            return [], []
+        return [PartWhole(whole=LINE, parts=parts, fluent=fluent, rule=AggregationRule.ALL)], []
 
     @pytest.mark.asyncio
     async def test_coupling_writes_adjusted_beliefs(self) -> None:
@@ -283,7 +285,7 @@ class TestCouplingCycle:
         履歴が結合の周期で埋まる。
         """
         sink = _Sink()
-        worker = BeliefWorker(Settings(), sink=sink, relations=lambda _priors: [])
+        worker = BeliefWorker(Settings(), sink=sink, relations=lambda _priors: ([], []))
         worker.attach_driver(_Driver([[_event(at=T0)]]))
         await worker.step()
         # 関係が無ければ結合由来の文は 1 件も出ない
@@ -320,3 +322,76 @@ class TestDefaultIngest:
     def test_the_ontology_version_is_stamped(self) -> None:
         """アサーションに刻む版は稼働中の版。"""
         assert default_ingest(Settings()).ontology_version == vocab.ONTOLOGY_VERSION
+
+
+def _situation_relations(
+    priors: Mapping[tuple[str, str], float],
+) -> tuple[list[PartWhole], list[SituationLink]]:
+    """P-101 と P-102 が同じ Situation に参加している（M8-07）。
+
+    部分−全体と違って**向きが無い**ので、対称な引き寄せになる。集約規則も要らない。
+    """
+    fluent = str(vocab.ent.Running)
+    members = tuple(
+        entity for entity, name in priors if name == fluent and entity in {PUMP, PUMP_B}
+    )
+    if len(members) < 2:
+        return [], []
+    return [], [SituationLink(situation="urn:sbp:sit:line-stop", members=members, fluent=fluent)]
+
+
+class TestSituationCoupling:
+    """同一 Situation による結合（M8-07）。
+
+    重点:
+
+    1. **向きが無い** — 部分−全体と違って対称な引き寄せになる。
+    2. **集約規則を要求しない** — 「同じ出来事に参加しているから状態が揃いやすい」という
+       弱い制約で、all / any のような向きを持たない。
+    3. **部分−全体が無くても結合が回る** — 片方だけでも周期処理が進む。
+    """
+
+    @pytest.mark.asyncio
+    async def test_situation_members_pull_each_other(self) -> None:
+        """同じ Situation の実体どうしで信念が引き寄せられる。
+
+        P-101 は「止まっている」、P-102 は「動いている」と観測されたとき、同じ出来事に
+        参加しているなら両者は互いに寄る。
+        """
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink, relations=_situation_relations)
+        worker.attach_driver(
+            _Driver([[_event_for(PUMP, at=T0, p=0.05), _event_for(PUMP_B, at=T0, p=0.95)]])
+        )
+
+        await worker.step()
+
+        # 1 件目は前向きフィルタ、2 件目は結合後の調整
+        for entity in (PUMP, PUMP_B):
+            rows = [row for row in sink.written if row.subject == entity]
+            assert len(rows) == 2, f"{entity} の結合後の調整が書かれていない"
+
+        def _coupled(entity: str) -> float:
+            belief = [row for row in sink.written if row.subject == entity][1].belief
+            assert isinstance(belief, BooleanBelief)
+            return belief.p
+
+        # 互いに寄る（低い側は上がり、高い側は下がる）
+        assert _coupled(PUMP) > 0.05
+        assert _coupled(PUMP_B) < 0.95
+
+    @pytest.mark.asyncio
+    async def test_a_lone_member_does_not_couple(self) -> None:
+        """参加者が 1 件しか観測されていない Situation は結合にならない。
+
+        ``SituationLink`` は 2 件未満で例外になるので、provider 側で落とす必要がある。
+        """
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink, relations=_situation_relations)
+        worker.attach_driver(_Driver([[_event_for(PUMP, at=T0, p=0.05)]]))
+
+        # 例外にならず、結合後の書き込みも無い
+        await worker.step()
+
+        rows = [row for row in sink.written if row.subject == PUMP]
+        assert len(rows) == 1, "結合が成立していないのに調整が書かれている"

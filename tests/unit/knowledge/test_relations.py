@@ -17,6 +17,7 @@ from sbp.knowledge.relations import (
     aggregation_rules,
     group_by_whole,
     part_whole_edges,
+    situation_members,
 )
 from sbp.knowledge.store import EmbeddedGraphStore
 
@@ -132,3 +133,51 @@ class TestGroupByWhole:
     def test_none_means_no_filtering(self) -> None:
         """``None`` は「絞らない」。空集合との違いを保つ。"""
         assert len(group_by_whole(part_whole_edges(_store()), known_entities=None)) == 2
+
+
+class TestSituationMembers:
+    """同一 Situation の参加実体（M8-07）。
+
+    重点:
+
+    1. **参加者が 1 つだけの Situation を返さない** — 結合は 2 つ以上の間にしか無く、
+       1 件だと ``SituationLink`` の構築が例外になる。
+    2. **Situation の階層を辿らない** — 親まで辿ると同じ日の全設備が 1 つの結合になりうる。
+    3. **名前付きグラフも見る** — 既定グラフだけでは何も返らない（所見 45）。
+    """
+
+    @staticmethod
+    def _store() -> EmbeddedGraphStore:
+        """2 台が同じ Situation、1 台が別の Situation に単独で参加。"""
+        store = EmbeddedGraphStore()
+        store.load_turtle(
+            f"""
+            <{PUMP_A}> <{vocab.core.inSituation}> <urn:sbp:sit:stop-1> .
+            <{PUMP_B}> <{vocab.core.inSituation}> <urn:sbp:sit:stop-1> .
+            <{BEARING}> <{vocab.core.inSituation}> <urn:sbp:sit:alone> .
+            """,
+            graph="urn:sbp:test:situations",
+        )
+        return store
+
+    def test_members_are_grouped_by_situation(self) -> None:
+        """Situation ごとに参加実体がまとまる。"""
+        found = situation_members(self._store())
+
+        assert found == {"urn:sbp:sit:stop-1": [PUMP_A, PUMP_B]}
+
+    def test_a_single_member_situation_is_dropped(self) -> None:
+        """参加者が 1 つだけの Situation は返らない。"""
+        found = situation_members(self._store())
+
+        assert "urn:sbp:sit:alone" not in found
+
+    def test_no_situations_returns_empty(self) -> None:
+        """参加関係が無ければ空（例外にしない）。"""
+        assert situation_members(EmbeddedGraphStore()) == {}
+
+    def test_members_are_stable_in_order(self) -> None:
+        """順序が安定している（結合が周期ごとに変わらない）。"""
+        store = self._store()
+
+        assert situation_members(store) == situation_members(store)
