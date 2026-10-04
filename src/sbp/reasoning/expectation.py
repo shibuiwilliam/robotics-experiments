@@ -81,6 +81,26 @@ class ExpectationStatus(StrEnum):
             ExpectationStatus.UNDETERMINED,
         }
 
+    @property
+    def rank(self) -> int:
+        """ライフサイクル上の位置（進むほど大きい）。
+
+        **永続化での後退検出に使う**（M8-18。不一致の ``DiscrepancyStatus.rank`` と同じ理由）。
+        ``transition()`` は遷移表で守るが、表に書くときは複数の経路が同じ行を触るので、片方が
+        古い状態で上書きする事故が起こりうる（所見 80）。
+
+        3 つの判定（``Fulfilled`` / ``Violated`` / ``Undetermined``）は**同じ位置**である
+        ——どれも ``Active`` の次で、互いに遷移しない。
+        """
+        return {
+            ExpectationStatus.CREATED: 0,
+            ExpectationStatus.ACTIVE: 1,
+            ExpectationStatus.FULFILLED: 2,
+            ExpectationStatus.VIOLATED: 2,
+            ExpectationStatus.UNDETERMINED: 2,
+            ExpectationStatus.LEARNED: 3,
+        }[self]
+
 
 _ALLOWED: dict[ExpectationStatus, frozenset[ExpectationStatus]] = {
     ExpectationStatus.CREATED: frozenset({ExpectationStatus.ACTIVE}),

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -26,7 +27,9 @@ from sbp.api.factory import build_app
 from sbp.core.config import Settings
 from sbp.core.metrics import MetricSample, metric
 from sbp.core.time import Interval, now
-from sbp.knowledge import DiscrepancyStore, MetricStore
+from sbp.knowledge import DiscrepancyStore, ExpectationStore, MetricStore
+from sbp.reasoning.expectation import Expectation, ExpectationStatus, ExpectedEffect
+from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.reconciliation import (
     Discrepancy,
     DiscrepancyKind,
@@ -253,3 +256,99 @@ class TestDiscrepancyResource:
 
         assert response.status_code == 200
         assert response.json().get("errors"), "要求者なしで不一致が返っている"
+
+
+class TestExpectationResource:
+    """期待ボードの GraphQL 資源（M8-18）。
+
+    **UI が読む先がこれである。** 以前は存在しないトピック（`central.reasoning.expectation`）
+    を読んでおり、しかもイベントに全体が入らなかった（所見 85 / 86）。
+    """
+
+    @pytest.fixture
+    def seeded_expectation(self, settings: Settings) -> Iterator[str]:
+        """期待を 1 件書いてから消す。"""
+        created = now().replace(microsecond=0)
+        expectation = Expectation(
+            action_event=uuid4(),
+            action_type="https://sbp.example/ent#CreateEmergencyInspection",
+            target="https://sbp.example/site/siteA/asset/P-E2E-EXP",
+            expected_effects=(
+                ExpectedEffect(
+                    fluent="https://sbp.example/ent#Running",
+                    entity="https://sbp.example/site/siteA/asset/P-E2E-EXP",
+                    expected=0.9,
+                    lower=0.8,
+                    upper=1.0,
+                    deadline=created + timedelta(hours=1),
+                    origin="symbolic",
+                ),
+            ),
+            status=ExpectationStatus.ACTIVE,
+            created_at=created,
+            ontology_version="0.5.0",
+        )
+
+        async def write() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                await ExpectationStore(connection, site=settings.site_id).upsert(
+                    expectation_to_record(expectation)
+                )
+                await connection.commit()
+
+        async def clean() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "DELETE FROM expectations WHERE expectation_id = %s",
+                        (str(expectation.expectation_id),),
+                    )
+                await connection.commit()
+
+        asyncio.run(write())
+        yield str(expectation.expectation_id)
+        asyncio.run(clean())
+
+    def test_the_board_is_served_over_graphql(
+        self, settings: Settings, seeded_expectation: str
+    ) -> None:
+        """期待ボードが GraphQL で読める（2 面の判定が別々に返る）。"""
+        dev_settings = settings.model_copy(update={"env": "dev"})
+        with TestClient(build_app(dev_settings)) as client:
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """{ expectations(limit: 50) {
+                        expectationId status actionType target createdAt deadline
+                        symbolicVerdict rolloutVerdict method effectCount ontologyVersion
+                    } }"""
+                },
+                headers={"X-SBP-Principal": OPERATOR},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert not payload.get("errors"), payload.get("errors")
+        found = [
+            row
+            for row in payload["data"]["expectations"]
+            if row["expectationId"] == seeded_expectation
+        ]
+        assert found, "書いた期待がボードに出ていない"
+        assert found[0]["status"] == "Active"
+        assert found[0]["effectCount"] == 1
+        # 未検証なので両面が null（「当たり」として描かない）
+        assert found[0]["symbolicVerdict"] is None
+        assert found[0]["rolloutVerdict"] is None
+        assert found[0]["method"] is None
+
+    def test_the_board_requires_a_principal(
+        self, settings: Settings, seeded_expectation: str
+    ) -> None:
+        """要求者を名乗らなければ期待を返さない（既定は拒否）。"""
+        del seeded_expectation
+        with TestClient(build_app(settings)) as client:
+            response = client.post("/graphql", json={"query": "{ expectations { expectationId } }"})
+
+        assert response.status_code == 200
+        assert response.json().get("errors"), "要求者なしで期待が返っている"

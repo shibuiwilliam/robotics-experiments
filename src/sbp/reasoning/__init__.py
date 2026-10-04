@@ -44,6 +44,8 @@ from sbp.reasoning.expectation import (
     VerificationResult,
     verify_expectation,
 )
+from sbp.reasoning.expectation_store import from_record as expectation_from_record
+from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.explain import (
     Explanation,
     LatentSide,
@@ -197,6 +199,8 @@ __all__ = [
     "detect_state",
     "detect_time",
     "encode_intervention",
+    "expectation_from_record",
+    "expectation_to_record",
     "expected_information_gain",
     "explain_as_systematic",
     "explain_belief",

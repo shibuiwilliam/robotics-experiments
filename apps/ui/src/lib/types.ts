@@ -49,14 +49,18 @@ export type DiscrepancyState =
   | "Learned"
   | "Suppressed";
 
-/** 期待の状態（`sbp.reasoning.expectation`）。 */
+/**
+ * 期待の状態（`sbp.reasoning.expectation.ExpectationStatus` の値）。
+ *
+ * **API が返す文字列そのもの**（M8-18 で揃えた。以前は大文字の別名だった。所見 86）。
+ */
 export type ExpectationStatus =
-  | "CREATED"
-  | "ACTIVE"
-  | "FULFILLED"
-  | "VIOLATED"
-  | "UNDETERMINED"
-  | "LEARNED";
+  | "Created"
+  | "Active"
+  | "Fulfilled"
+  | "Violated"
+  | "Undetermined"
+  | "Learned";
 
 /** 信念 1 件。 */
 export interface Belief {
@@ -108,15 +112,31 @@ export interface Discrepancy {
   readonly ontologyVersion: string;
 }
 
-/** 期待 1 件。 */
+/**
+ * 期待 1 件（GraphQL の `expectations` が返す形。M8-18）。
+ *
+ * **判定は 2 面を別々に持つ。** 記号側（T 由来）と潜在側（rollout 由来）のどちらが外れたかで
+ * 原因が違う。**宣言していない面は `null`** ——片面しか効果を宣言していない期待で両面の判定を
+ * 要求すると、観測していない面が常に偽になって「違反」に見える。
+ *
+ * **`deadline` は `null` になりうる。** `Created` は期待効果をまだ持たないので期限が無い
+ * （以前の型は必須で、`Created` を表現できなかった）。
+ */
 export interface Expectation {
   readonly expectationId: string;
   readonly status: ExpectationStatus;
   readonly actionType: string;
-  readonly subject: string;
-  readonly deadline: string;
+  /** 対象実体の IRI（以前は `subject` と呼んでいたが、API は `target`）。 */
+  readonly target: string;
+  readonly createdAt: string;
+  readonly deadline: string | null;
   readonly symbolicVerdict: boolean | null;
   readonly rolloutVerdict: boolean | null;
+  /** 判定方法（未検証なら `null`）。 */
+  readonly method: string | null;
+  /** 宣言された期待効果の数。**0 なら何も期待していない**ことが読める。 */
+  readonly effectCount: number;
+  readonly ontologyVersion: string;
 }
 
 /** 概念提案 1 件（`sbp.reasoning.discovery.ConceptProposal`）。 */

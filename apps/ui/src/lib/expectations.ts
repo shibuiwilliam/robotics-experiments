@@ -58,12 +58,12 @@ export interface BoardColumn {
 
 /** 列の並び。**Violated を先に出す**（手を付けるべきものが上）。 */
 const COLUMN_ORDER: readonly ExpectationStatus[] = [
-  "VIOLATED",
-  "UNDETERMINED",
-  "ACTIVE",
-  "CREATED",
-  "FULFILLED",
-  "LEARNED",
+  "Violated",
+  "Undetermined",
+  "Active",
+  "Created",
+  "Fulfilled",
+  "Learned",
 ];
 
 /**
@@ -92,7 +92,9 @@ export function dueSoon(
   const current = Date.parse(now);
   if (Number.isNaN(current)) return [];
   return expectations.filter((expectation) => {
-    if (expectation.status !== "ACTIVE") return false;
+    if (expectation.status !== "Active") return false;
+    // `Created` は期限を持たない（効果がまだ無い）。`Active` でも null はありうるので守る
+    if (expectation.deadline === null) return false;
     const deadline = Date.parse(expectation.deadline);
     if (Number.isNaN(deadline)) return false;
     const remaining = deadline - current;

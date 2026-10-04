@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.decisions import DecisionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
+    from sbp.knowledge.expectations import ExpectationRecord
 
 __all__ = ["build_app", "dev_principal_resolver"]
 
@@ -148,6 +149,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         AssertionStore,
         DecisionQueue,
         DiscrepancyStore,
+        ExpectationStore,
         HttpGraphStore,
         MetricStore,
     )
@@ -195,6 +197,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = DiscrepancyStore(_connection(), site=resolved.site_id)
         return _run_sync(store.queue(kind=kind, include_terminal=include_terminal, limit=limit))
 
+    def read_expectations(
+        *, target: str | None = None, include_terminal: bool = False, limit: int = 50
+    ) -> list[ExpectationRecord]:
+        """期待ボードを同期の形で返す（M8-18）。
+
+        Args:
+            target: 対象実体で絞る。
+            include_terminal: 終端状態も含めるか。
+            limit: 返す件数の上限。
+        """
+        store = ExpectationStore(_connection(), site=resolved.site_id)
+        return _run_sync(store.board(target=target, include_terminal=include_terminal, limit=limit))
+
     async def read_metrics() -> list[MetricSample]:
         """系列ごとの最新値を返す。"""
         return await MetricStore(_connection(), site=resolved.site_id).latest()
@@ -225,6 +240,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         principal_resolver=(dev_principal_resolver(resolved) if resolved.env == "dev" else None),
         metric_reader=read_metrics,
         discrepancy_reader=read_discrepancies,
+        expectation_reader=read_expectations,
     )
     app.router.lifespan_context = lifespan
     return app

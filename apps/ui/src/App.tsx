@@ -16,7 +16,6 @@ import {
   fetchExpectations,
   fetchProposals,
   resolveApiUrl,
-  resolveSiteId,
   submitCuration,
   submitResolution,
 } from "./lib/api";
@@ -57,13 +56,11 @@ export function App(): React.JSX.Element {
   const [subject] = useState(DEFAULT_SUBJECT);
 
   let apiUrl = "";
-  let siteId = "";
   let configError: string | null = null;
   try {
-    const env = import.meta.env as Record<string, string | undefined>;
-    apiUrl = resolveApiUrl(env);
-    // トピック名は `<site>.<layer>.<class>`。拠点を間違えると存在しないトピックを読む（所見 85）
-    siteId = resolveSiteId(env);
+    // **拠点は要らなくなった。** すべての読み出しが GraphQL（API が拠点で絞る）になり、
+    // UI がトピック名を組む必要が無い（M8-18 で期待ボードも資源に移した）
+    apiUrl = resolveApiUrl(import.meta.env as Record<string, string | undefined>);
   } catch (caught) {
     configError = caught instanceof Error ? caught.message : String(caught);
   }
@@ -75,7 +72,7 @@ export function App(): React.JSX.Element {
       // 1 つの未配線が画面全体を落とす——配線済みのビューは動かす
       const [queue, board, rows] = await Promise.all([
         fetchDiscrepancies(apiUrl),
-        fetchExpectations(apiUrl, siteId),
+        fetchExpectations(apiUrl),
         fetchBeliefs(apiUrl, { subject }),
       ]);
       setDiscrepancies(queue);

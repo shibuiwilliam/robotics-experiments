@@ -24,25 +24,6 @@ export class ConfigurationError extends Error {}
 /** API の返したエラー。 */
 export class ApiError extends Error {}
 
-/**
- * 拠点を解決する（イベントログのトピック名に要る。M8-16）。
- *
- * **既定値を埋めない。** トピック名は `<site>.<layer>.<class>` で、拠点を間違えると
- * **存在しないトピックを読んで空を返す**——「イベントが無い」と「トピックが無い」が
- * 区別できない（所見 85）。
- */
-export function resolveSiteId(
-  env: Record<string, string | undefined>,
-): string {
-  const site = env["VITE_SBP_SITE_ID"];
-  if (site === undefined || site.trim() === "") {
-    throw new ConfigurationError(
-      "VITE_SBP_SITE_ID が未設定。トピック名は <site>.<layer>.<class> で、拠点を間違えると存在しないトピックを読んで空を返す（所見 85）",
-    );
-  }
-  return site.trim();
-}
-
 /** エンドポイントを解決する。 */
 export function resolveApiUrl(
   env: Record<string, string | undefined>,
@@ -166,32 +147,42 @@ export async function fetchDiscrepancies(
   return data.discrepancies;
 }
 
+const EXPECTATION_FIELDS = `
+  expectationId status actionType target createdAt deadline
+  symbolicVerdict rolloutVerdict method effectCount ontologyVersion
+`;
+
 /**
- * 期待ボードを読む。
+ * 期待ボードを読む（GraphQL の `expectations`。M8-18）。
  *
- * **トピックは拠点ごとである**（`<site>.reasoning.expectation`）。以前は
- * `central.reasoning.expectation` を読んでいたが、**そのトピックは存在しない**
- * （`scripts/topics.py` に無い。所見 85）——存在しないトピックは空を返すので、
- * 「期待が無い」と読めてしまっていた。
+ * **以前はイベントストリームを読んでいた**（`<site>.reasoning.expectation`）。しかし期待の
+ * 全体はイベントの封筒に入らない（`expected_effects` / `verification` / `history` を入れる
+ * 場所が無い。所見 62 / 86）ので、不一致と同じく資源を引く形にした。
  *
- * **型は API と一致していない**（所見 86）。`Expectation` の形はイベントの封筒に入らず、
- * 永続化と API 資源が未実装である（M8-18）。ここは経路だけを正しくしてある。
+ * **既定で終端状態を除く。** 検証済みの履歴でボードが埋まらないようにする。
  */
 export async function fetchExpectations(
   apiUrl: string,
-  siteId: string,
-  limit = 50,
+  params: {
+    target?: string;
+    includeTerminal?: boolean;
+    limit?: number;
+  } = {},
 ): Promise<readonly Expectation[]> {
-  const response = await fetch(
-    `${apiUrl}/stream/${encodeURIComponent(`${siteId}.reasoning.expectation`)}?limit=${limit}`,
+  const data = await graphql<{ expectations: Expectation[] }>(
+    apiUrl,
+    `query Expectations($target: String, $includeTerminal: Boolean!, $limit: Int!) {
+      expectations(target: $target, includeTerminal: $includeTerminal, limit: $limit) {
+        ${EXPECTATION_FIELDS}
+      }
+    }`,
+    {
+      target: params.target ?? null,
+      includeTerminal: params.includeTerminal ?? false,
+      limit: params.limit ?? 50,
+    },
   );
-  if (!response.ok) {
-    throw new ApiError(`ストリームが ${response.status} を返した`);
-  }
-  const payload = (await response.json()) as {
-    events: { payload: Expectation }[];
-  };
-  return payload.events.map((event) => event.payload);
+  return data.expectations;
 }
 
 /**

@@ -25,7 +25,8 @@ from pathlib import Path
 import pytest
 
 from sbp.api.commands import CurationCommand, ResolutionCommand
-from sbp.api.schema import DiscrepancyType
+from sbp.api.schema import DiscrepancyType, ExpectationType
+from sbp.reasoning.expectation import ExpectationStatus
 from sbp.reasoning.reconciliation import (
     DiscrepancyKind,
     DiscrepancyStatus,
@@ -225,3 +226,39 @@ def test_the_ui_does_not_silently_return_empty_for_unwired_reads() -> None:
     body = match.group(0)
     assert "throw new ApiError" in body, "未配線なのに空を返している"
     assert "/stream/" not in body, "存在しないトピックを読んでいる"
+
+
+def test_the_expectation_status_values_match_the_backend() -> None:
+    """UI の期待の状態が ``ExpectationStatus`` と一致する（M8-18）。
+
+    以前は大文字の別名（``ACTIVE``）で、API が返す ``Active`` と一致していなかった（所見 86）。
+    """
+    found = _string_union(_source(UI_TYPES), "ExpectationStatus")
+
+    assert found == {status.value for status in ExpectationStatus}
+
+
+def test_the_queried_expectation_fields_exist_on_the_graphql_type() -> None:
+    """UI が要求する期待のフィールドが GraphQL の型に実在する。"""
+    source = _source(UI_API)
+    match = re.search(r"const EXPECTATION_FIELDS = `(.*?)`", source, re.DOTALL)
+    assert match is not None, "EXPECTATION_FIELDS が UI に無い"
+    requested = set(match.group(1).split())
+    available = set(ExpectationType.__annotations__)
+
+    missing = requested - available
+    assert not missing, f"UI が要求するフィールドが GraphQL の型に無い: {sorted(missing)}"
+
+
+def test_the_ui_does_not_read_expectations_from_the_stream() -> None:
+    """UI が期待をイベントストリームから読んでいない（M8-18）。
+
+    期待の全体はイベントの封筒に入らない（``expected_effects`` / ``verification`` /
+    ``history`` を入れる場所が無い。所見 62 / 86）。
+    """
+    source = _strip_comments(_source(UI_API))
+    match = re.search(r"export async function fetchExpectations.*?\n\}", source, re.DOTALL)
+    assert match is not None
+
+    assert "/stream/" not in match.group(0), "期待をストリームから読んでいる"
+    assert "expectations(" in match.group(0), "GraphQL の資源を引いていない"

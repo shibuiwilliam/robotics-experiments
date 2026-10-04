@@ -15,7 +15,6 @@ import {
   fetchExpectations,
   fetchProposals,
   resolveApiUrl,
-  resolveSiteId,
   submitResolution,
 } from "../src/lib/api";
 
@@ -210,31 +209,51 @@ describe("fetchDiscrepancies", () => {
 });
 
 
-describe("resolveSiteId", () => {
-  it("未設定なら落とす（存在しないトピックを読むのを防ぐ）", () => {
-    expect(() => resolveSiteId({})).toThrow(ConfigurationError);
-  });
-
-  it("空白だけも落とす", () => {
-    expect(() => resolveSiteId({ VITE_SBP_SITE_ID: "   " })).toThrow(
-      ConfigurationError,
-    );
-  });
-
-  it("前後の空白を落として返す", () => {
-    expect(resolveSiteId({ VITE_SBP_SITE_ID: " siteA " })).toBe("siteA");
-  });
-});
-
 describe("fetchExpectations", () => {
-  it("拠点のトピックを読む（central ではない。所見 85）", async () => {
-    // `central.reasoning.expectation` は存在しない。存在しないトピックは空を返すので、
-    // 「期待が無い」と読めてしまっていた
-    const fetchMock = stubFetch({ body: { events: [] } });
-    await fetchExpectations("http://api", "siteA");
+  it("GraphQL の資源を読む（ストリームではない。M8-18）", async () => {
+    // 期待の全体はイベントの封筒に入らない（expected_effects / verification / history を
+    // 入れる場所が無い。所見 62 / 86）
+    const fetchMock = stubFetch({ body: { data: { expectations: [] } } });
+    await fetchExpectations("http://api");
     const url = String(fetchMock.mock.calls[0]![0]);
-    expect(url).toContain("siteA.reasoning.expectation");
-    expect(url).not.toContain("central.reasoning.expectation");
+    expect(url).toContain("/graphql");
+    expect(url).not.toContain("/stream/");
+  });
+
+  it("既定で終端状態を除く（履歴でボードが埋まらない）", async () => {
+    const fetchMock = stubFetch({ body: { data: { expectations: [] } } });
+    await fetchExpectations("http://api");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as {
+      variables: Record<string, unknown>;
+    };
+    expect(body.variables["includeTerminal"]).toBe(false);
+  });
+
+  it("期限が null の期待も返せる（Created は効果をまだ持たない）", async () => {
+    stubFetch({
+      body: {
+        data: {
+          expectations: [
+            {
+              expectationId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+              status: "Created",
+              actionType: "ent:CreateEmergencyInspection",
+              target: "urn:x:P-101",
+              createdAt: "2026-06-10T09:00:00Z",
+              deadline: null,
+              symbolicVerdict: null,
+              rolloutVerdict: null,
+              method: null,
+              effectCount: 0,
+              ontologyVersion: "0.5.0",
+            },
+          ],
+        },
+      },
+    });
+    const rows = await fetchExpectations("http://api");
+    expect(rows[0]!.deadline).toBeNull();
+    expect(rows[0]!.status).toBe("Created");
   });
 });
 

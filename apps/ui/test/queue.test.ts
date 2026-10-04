@@ -48,12 +48,17 @@ function discrepancy(overrides: Partial<Discrepancy> & { discrepancyId: string }
 
 function expectation(overrides: Partial<Expectation> & { expectationId: string }): Expectation {
   return {
-    status: "ACTIVE",
+    // API の契約そのもの（M8-18 で揃えた。`target` / `createdAt` / `method` / `effectCount`）
+    status: "Active",
     actionType: "ent:StopCmd",
-    subject: "urn:x:P-101",
+    target: "urn:x:P-101",
+    createdAt: "2026-06-10T09:00:00Z",
     deadline: "2026-06-10T10:00:00Z",
     symbolicVerdict: null,
     rolloutVerdict: null,
+    method: null,
+    effectCount: 1,
+    ontologyVersion: "0.5.0",
     ...overrides,
   };
 }
@@ -244,12 +249,12 @@ describe("blameFor", () => {
 
 describe("board", () => {
   it("違反を先頭の列に置く", () => {
-    expect(board([])[0]!.status).toBe("VIOLATED");
+    expect(board([])[0]!.status).toBe("Violated");
   });
 
   it("空の列も出す（「違反 0 件」と「違反の列が無い」は違う）", () => {
-    const columns = board([expectation({ expectationId: "a", status: "FULFILLED" })]);
-    const violated = columns.find((column) => column.status === "VIOLATED");
+    const columns = board([expectation({ expectationId: "a", status: "Fulfilled" })]);
+    const violated = columns.find((column) => column.status === "Violated");
     expect(violated).toBeDefined();
     expect(violated!.expectations).toEqual([]);
   });
@@ -275,7 +280,7 @@ describe("dueSoon", () => {
 
   it("検証中以外は数えない", () => {
     const rows = [
-      expectation({ expectationId: "done", status: "FULFILLED", deadline: "2026-06-10T10:00:00Z" }),
+      expectation({ expectationId: "done", status: "Fulfilled", deadline: "2026-06-10T10:00:00Z" }),
     ];
     expect(dueSoon(rows, "2026-06-10T09:45:00Z")).toEqual([]);
   });
@@ -318,5 +323,14 @@ describe("checkProposal", () => {
 
   it("根拠が短い提案は通さない", () => {
     expect(checkProposal(proposal({ rationale: "必要" })).ready).toBe(false);
+  });
+});
+
+
+describe("dueSoon（期限が無い期待）", () => {
+  it("期限が null の期待は「近い」ではない（Created は効果をまだ持たない）", () => {
+    // 以前の型は deadline を必須にしていたので、`Created` を表現できなかった（所見 86）
+    const rows = [expectation({ expectationId: "fresh", status: "Active", deadline: null })];
+    expect(dueSoon(rows, "2026-06-10T09:45:00Z")).toEqual([]);
   });
 });

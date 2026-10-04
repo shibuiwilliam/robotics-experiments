@@ -33,16 +33,19 @@ if TYPE_CHECKING:
 
     from sbp.knowledge.assertions import AssertionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
+    from sbp.knowledge.expectations import ExpectationRecord
 else:  # Protocol の注釈を実行時にも解決できるようにする
     Sequence = __import__("collections.abc", fromlist=["Sequence"]).Sequence
     AssertionRow = object
     DiscrepancyRecord = object
+    ExpectationRecord = object
 
 __all__ = [
     "BeliefReader",
     "BeliefSource",
     "BeliefType",
     "DiscrepancyType",
+    "ExpectationType",
     "Query",
     "build_schema",
 ]
@@ -176,6 +179,67 @@ class DiscrepancyType:
             assertions=[str(value) for value in payload.get("assertions", ())],
             evidence=[str(value) for value in payload.get("evidence", ())],
             assigneeRole=payload.get("assignee_role"),
+            ontologyVersion=str(payload.get("ontology_version", "")),
+        )
+
+
+@strawberry.type
+class ExpectationType:
+    """期待 1 件（M8-18）。
+
+    **判定は 2 面を別々に返す。** 記号側（T 由来）と潜在側（rollout 由来）のどちらが外れたかで
+    原因が違う（規則のずれ / WM の劣化 / アクションの失敗）。1 つにまとめると、UI が毎回
+    証拠を開いて同じ判断をすることになる。
+
+    **宣言していない面は ``null`` である。** 片面しか効果を宣言していない期待で両面の判定を
+    要求すると、観測していない面が常に偽になって「違反」に見える。
+
+    Attributes:
+        expectationId: 識別子。
+        status: ライフサイクル状態（``Created`` / ``Active`` / …）。
+        actionType: アクション型 IRI。
+        target: 対象実体の IRI。
+        createdAt: 生成時刻。
+        deadline: 期限（期待効果の最小値。``Created`` では ``null``）。
+        symbolicVerdict: 記号側の判定（未検証・未宣言は ``null``）。
+        rolloutVerdict: 潜在側の判定（同）。
+        method: 判定方法（未検証なら ``null``）。
+        effectCount: 宣言された期待効果の数。
+        ontologyVersion: 生成時のオントロジー版。
+    """
+
+    expectationId: str  # noqa: N815 — GraphQL は camelCase
+    status: str
+    actionType: str  # noqa: N815
+    target: str
+    createdAt: datetime  # noqa: N815
+    deadline: datetime | None
+    symbolicVerdict: bool | None  # noqa: N815
+    rolloutVerdict: bool | None  # noqa: N815
+    method: str | None
+    effectCount: int  # noqa: N815
+    ontologyVersion: str  # noqa: N815
+
+    @classmethod
+    def from_record(cls, record: ExpectationRecord) -> ExpectationType:
+        """作業項目レコードから作る。
+
+        Args:
+            record: 表の行。
+        """
+        payload = record.payload
+        verification = payload.get("verification") or {}
+        return cls(
+            expectationId=str(record.expectation_id),
+            status=record.status,
+            actionType=record.action_type,
+            target=record.target,
+            createdAt=record.created_at,
+            deadline=record.deadline,
+            symbolicVerdict=verification.get("symbolic_passed"),
+            rolloutVerdict=verification.get("rollout_passed"),
+            method=verification.get("method"),
+            effectCount=len(payload.get("expected_effects", ())),
             ontologyVersion=str(payload.get("ontology_version", "")),
         )
 
@@ -402,6 +466,53 @@ class Query:
             rows=len(records),
         )
         return [DiscrepancyType.from_record(record) for record in records]
+
+    @strawberry.field(description="期待ボードを期限の近い順に返す")
+    def expectations(
+        self,
+        info: strawberry.Info,
+        target: str | None = None,
+        includeTerminal: bool = False,  # noqa: N803 — GraphQL は camelCase
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[ExpectationType]:
+        """期待ボードを返す（設計書 §8.5、M8-18）。
+
+        **既定で終端状態を除く。** 検証済みの履歴でボードが埋まらないようにする。
+
+        **ABAC を通す。** 期待は実体の状態についての予測であり、信念と同じ機密度を持つ。
+
+        Args:
+            info: strawberry の文脈（``expectations`` に読み出し関数を持つ）。
+            target: 対象実体で絞る。
+            includeTerminal: 終端状態（``Learned``）も含めるか。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: ``limit`` が範囲外、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        reader = info.context.get("expectations")
+        if reader is None:
+            raise ValueError(
+                "期待の読み出しが設定されていない（create_app に expectation_reader を渡す）"
+            )
+        records = reader(target=target, include_terminal=includeTerminal, limit=limit)
+        log.info(
+            "api.expectations_queried",
+            principal=principal.subject,
+            target=target,
+            include_terminal=includeTerminal,
+            rows=len(records),
+        )
+        return [ExpectationType.from_record(record) for record in records]
 
     @strawberry.field(description="API とストアの疎通")
     def health(self, info: strawberry.Info) -> HealthType:

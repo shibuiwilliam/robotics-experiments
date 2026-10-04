@@ -12,13 +12,14 @@
 import { BLAME_EXPLANATION, blameFor, board, dueSoon } from "../lib/expectations";
 import type { Expectation, ExpectationStatus } from "../lib/types";
 
+// 鍵は API が返す状態の値そのもの（M8-18 で揃えた。所見 86）
 const STATUS_LABEL: Readonly<Record<ExpectationStatus, string>> = {
-  CREATED: "作成",
-  ACTIVE: "検証中",
-  FULFILLED: "成立",
-  VIOLATED: "違反",
-  UNDETERMINED: "判定不能",
-  LEARNED: "学習済み",
+  Created: "作成",
+  Active: "検証中",
+  Fulfilled: "成立",
+  Violated: "違反",
+  Undetermined: "判定不能",
+  Learned: "学習済み",
 };
 
 interface Props {
@@ -40,7 +41,7 @@ export function ExpectationBoard({
       {soon.length > 0 ? (
         <p className="due-soon">
           期限が近い検証が {soon.length} 件（30 分以内）:{" "}
-          {soon.map((expectation) => shortIri(expectation.subject)).join(", ")}
+          {soon.map((expectation) => shortIri(expectation.target)).join(", ")}
         </p>
       ) : null}
 
@@ -57,7 +58,7 @@ export function ExpectationBoard({
             {column.expectations.length === 0 ? (
               <p className="empty-column">
                 0 件
-                {column.status === "VIOLATED" ? (
+                {column.status === "Violated" ? (
                   <span className="hint">
                     ——違反が無いのか、検証が走っていないのか。
                     <code>lifting_delay</code> と期待の生成数を確認する
@@ -72,16 +73,24 @@ export function ExpectationBoard({
                     <li key={expectation.expectationId} className="card">
                       <p className="card-title">
                         {shortIri(expectation.actionType)} →{" "}
-                        {shortIri(expectation.subject)}
+                        {shortIri(expectation.target)}
                       </p>
-                      <p className="card-deadline">期限 {expectation.deadline}</p>
+                      <p className="card-deadline">
+                        {/* `Created` は効果をまだ持たないので期限が無い。空欄で誤魔化さない */}
+                        期限 {expectation.deadline ?? "（未設定——期待効果がまだ無い）"}
+                        {expectation.effectCount === 0 ? (
+                          <span className="hint">
+                            ——期待効果が 0 件（何も期待していない）
+                          </span>
+                        ) : null}
+                      </p>
                       <dl className="verdicts">
                         <dt>記号面</dt>
                         <dd>{renderVerdict(expectation.symbolicVerdict)}</dd>
                         <dt>rollout 面</dt>
                         <dd>{renderVerdict(expectation.rolloutVerdict)}</dd>
                       </dl>
-                      {column.status === "VIOLATED" || blame === "unknown" ? (
+                      {column.status === "Violated" || blame === "unknown" ? (
                         <p className={`blame blame-${blame}`}>
                           {BLAME_EXPLANATION[blame]}
                         </p>
