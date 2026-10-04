@@ -32,16 +32,31 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sbp.knowledge.assertions import AssertionRow
+    from sbp.knowledge.discrepancies import DiscrepancyRecord
 else:  # Protocol の注釈を実行時にも解決できるようにする
     Sequence = __import__("collections.abc", fromlist=["Sequence"]).Sequence
     AssertionRow = object
+    DiscrepancyRecord = object
 
-__all__ = ["BeliefReader", "BeliefSource", "BeliefType", "Query", "build_schema"]
+__all__ = [
+    "BeliefReader",
+    "BeliefSource",
+    "BeliefType",
+    "DiscrepancyType",
+    "Query",
+    "build_schema",
+]
 
 log = get_logger(__name__)
 
 _DEFAULT_MIN_CONFIDENCE = 0.0
 """確信度の下限の既定。0 は「全部返す」——ただし呼び出し側が閾値を意識できるよう引数で見せる。"""
+
+_DEFAULT_QUEUE_LIMIT = 50
+"""不一致キューの既定件数。人が 1 画面で見られる量に合わせる。"""
+
+_MAX_QUEUE_LIMIT = 500
+"""同上限。無制限にすると、未解決が溜まったときに 1 リクエストで全件が返る。"""
 
 
 # ``Modality`` は値を持つ StrEnum なので継承できない（Python の enum の制約）。GraphQL 用の
@@ -105,6 +120,63 @@ class BeliefType:
             confidence=row.confidence,
             provenance=row.provenance,
             ontologyVersion=row.ontology_version,
+        )
+
+
+@strawberry.type
+class DiscrepancyType:
+    """不一致 1 件（M8-12、ADR-0013）。
+
+    **証拠は IRI で返す。** アサーション ID から信念を引く経路が無いので（ADR-0013 の未決）、
+    証拠の並置は呼び出し側が ``beliefs`` と組み合わせて行う。埋め込んで返すと、1 件あたり
+    3 本のクエリが走り、キュー 50 件で 150 本になる。
+
+    Attributes:
+        discrepancyId: 識別子。
+        kind: 五類型（1〜5）。
+        status: ライフサイクル状態。
+        subjects: 対象の実体 IRI。
+        severity: 深刻度の総合スコア（並べ替えに使う）。
+        detectedAt: 検出時刻。
+        detector: 検出した規則の名前。
+        assertions: 根拠になった信念アサーションの IRI。
+        evidence: 根拠になった証拠（イベント・記録）の IRI。
+        assigneeRole: 配賦先ロールの IRI。
+        ontologyVersion: 検出時のオントロジー版。
+    """
+
+    discrepancyId: str  # noqa: N815 — GraphQL は camelCase
+    kind: int
+    status: str
+    subjects: list[str]
+    severity: float
+    detectedAt: datetime  # noqa: N815
+    detector: str
+    assertions: list[str]
+    evidence: list[str]
+    assigneeRole: str | None  # noqa: N815
+    ontologyVersion: str  # noqa: N815
+
+    @classmethod
+    def from_record(cls, record: DiscrepancyRecord) -> DiscrepancyType:
+        """作業項目レコードから作る。
+
+        Args:
+            record: 表の行。
+        """
+        payload = record.payload
+        return cls(
+            discrepancyId=str(record.discrepancy_id),
+            kind=record.kind,
+            status=record.status,
+            subjects=list(record.subjects),
+            severity=record.severity_score,
+            detectedAt=record.detected_at,
+            detector=str(payload.get("detector", "")),
+            assertions=[str(value) for value in payload.get("assertions", ())],
+            evidence=[str(value) for value in payload.get("evidence", ())],
+            assigneeRole=payload.get("assignee_role"),
+            ontologyVersion=str(payload.get("ontology_version", "")),
         )
 
 
@@ -280,6 +352,56 @@ class Query:
             filtered=len(rows) - len(permitted),
         )
         return [BeliefType.from_row(row) for row in permitted]
+
+    @strawberry.field(description="不一致キューを深刻度の高い順に返す")
+    def discrepancies(
+        self,
+        info: strawberry.Info,
+        kind: int | None = None,
+        includeTerminal: bool = False,  # noqa: N803 — GraphQL は camelCase
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[DiscrepancyType]:
+        """不一致キューを返す（設計書 §8.2、ADR-0013）。
+
+        **既定で終端状態を除く。** 解決済みを毎回返すと、キューの上位が履歴で埋まる。
+
+        **ABAC を通す。** 不一致は実体の状態についての判断であり、信念と同じ機密度を持つ
+        ——拠点の分離も人に関する遮蔽も、ここで外すと迂回路になる。要求者が無ければ拒否する。
+
+        Args:
+            info: strawberry の文脈（``discrepancies`` に読み出し関数を持つ）。
+            kind: 五類型で絞る。
+            includeTerminal: 終端状態（``Learned`` / ``Suppressed``）も含めるか。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: ``limit`` が範囲外、または ``kind`` が 1〜5 でない場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        if kind is not None and not 1 <= kind <= 5:
+            raise ValueError("kind は 1〜5（五類型）")
+        reader = info.context.get("discrepancies")
+        if reader is None:
+            raise ValueError(
+                "不一致の読み出しが設定されていない（create_app に discrepancy_reader を渡す）"
+            )
+        records = reader(kind=kind, include_terminal=includeTerminal, limit=limit)
+        log.info(
+            "api.discrepancies_queried",
+            principal=principal.subject,
+            kind=kind,
+            include_terminal=includeTerminal,
+            rows=len(records),
+        )
+        return [DiscrepancyType.from_record(record) for record in records]
 
     @strawberry.field(description="API とストアの疎通")
     def health(self, info: strawberry.Info) -> HealthType:

@@ -16,10 +16,10 @@
 **照合ワーカーに相乗りしない理由。** 照合は窓を回すホットパスで、書き戻しは外部システムへの
 同期呼び出しである。詰まった書き戻しが検出を止める（ADR-0012 の問い 2）。
 
-**不一致の本体を読む先が無い**（M8-12）。``convert_resolution`` は ``Discrepancy`` を要求する
-ので、キューの行から**最小の不一致を再構成して**渡している。これは本体を読めるようになったら
-差し替える——再構成した不一致は証拠 IRI を持たないので、**記録訂正の提案が出ない**（証拠から
-記録を引けない）。その制限はログに出す。
+**不一致の本体は表から読む**（M8-12、ADR-0013）。読めれば証拠 IRI を持った不一致で
+``convert_resolution`` を回せるので、記録訂正の提案が出る。読めない場合（表に無い古い判断、
+表を持たない実行）は**キューの行から最小の不一致を再構成して**代替し、代替したことを
+戻り値とログに出す——証拠を持たないので提案が出ないことを隠さない。
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ from sbp.reasoning.reconciliation import (
     ResolutionOutcome,
     Severity,
     convert_resolution,
+    from_record,
 )
 from services.runtime import ReadinessCheck, WorkerRuntime
 
@@ -50,9 +51,12 @@ if TYPE_CHECKING:
 
     from sbp.integration.writeback import WritebackCommand
     from sbp.knowledge.decisions import DecisionQueue, DecisionRow
+    from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.observations import ObservationRow
     from sbp.reasoning.reconciliation.learning import LearningArtifacts
 
+    DiscrepancyReader = Callable[[str], Awaitable["DiscrepancyRecord | None"]]
+    """``不一致 ID -> 作業項目レコード``（``DiscrepancyStore.get`` を包む）。"""
     ObservationSink = Callable[[Sequence["ObservationRow"]], Awaitable[int]]
     """観測要求を作業キューに積む（``ObservationQueue.enqueue``）。"""
     WritebackRunner = Callable[["WritebackCommand"], Awaitable[object]]
@@ -98,6 +102,7 @@ class LearningWorker:
         settings: Settings | None = None,
         *,
         decisions: DecisionQueue | None = None,
+        discrepancies: DiscrepancyReader | None = None,
         observations: ObservationSink | None = None,
         writeback: WritebackRunner | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
@@ -105,6 +110,8 @@ class LearningWorker:
         """Args:
         settings: 設定（既定は環境から読む）。
         decisions: 判断の作業キュー（``None`` なら何も適用しない）。
+        discrepancies: 不一致の本体の読み出し（``None`` なら最小の不一致で代替する）。
+            読めれば証拠 IRI を持つので記録訂正の提案が出る（ADR-0013）。
         observations: 観測要求の積み込み（``None`` なら積まない）。
         writeback: 書き戻しの実行（``None`` なら**提案として記録するだけ**。
             既定が ``None`` なのは意図的である——書き戻しは業務システムを変えるので、
@@ -118,6 +125,7 @@ class LearningWorker:
             checks=readiness_checks(self.settings),
         )
         self._decisions = decisions
+        self._discrepancies = discrepancies
         self._observations = observations
         self._writeback = writeback
         self.period = timedelta(seconds=period_s)
@@ -238,8 +246,9 @@ class LearningWorker:
             resolved_by=str(row.payload["resolved_by"]),
             resolved_at=row.received_at or at,
         )
+        discrepancy, source = await self._load_discrepancy(row, resolution=resolution, at=at)
         artifacts = convert_resolution(
-            reconstruct_discrepancy(row, resolution=resolution, at=at),
+            discrepancy,
             resolution=resolution,
             corrections=row.payload.get("corrections") or {},
             at=at,
@@ -248,6 +257,9 @@ class LearningWorker:
         written = await self._run_writebacks(artifacts)
         summary = {
             "outcome": resolution.outcome.value,
+            # 本体を読めたか。**読めなかったことを隠さない**——証拠を持たない不一致からは
+            # 記録訂正の提案が出ないので、「訂正が 0 件」の理由が分かる必要がある
+            "discrepancy_source": source,
             "observation_requests_enqueued": enqueued,
             "writebacks_run": written,
             # **記録するだけのもの。** 件数を残すことで「何が適用されずに残っているか」が
@@ -265,6 +277,36 @@ class LearningWorker:
             **summary,
         )
         return summary
+
+    async def _load_discrepancy(
+        self, row: DecisionRow, *, resolution: Resolution, at: datetime
+    ) -> tuple[Discrepancy, str]:
+        """不一致の本体を表から読む（無ければ最小の不一致で代替）。
+
+        **読めなかったことを戻り値に出す。** 代替した不一致は証拠 IRI を持たないので記録訂正の
+        提案が出ない——「訂正が 0 件」の理由が「訂正不要」なのか「証拠が無い」のか区別できる
+        必要がある。
+
+        Args:
+            row: 判断。
+            resolution: 解決の記録。
+            at: 処理時刻。
+
+        Returns:
+            ``(不一致, 由来)``。由来は ``"store"``（表から読めた）か
+            ``"reconstructed"``（代替した）。
+        """
+        if self._discrepancies is not None:
+            record = await self._discrepancies(row.subject)
+            if record is not None:
+                return from_record(record), "store"
+            log.warning(
+                "worker.discrepancy_not_found",
+                worker=WORKER_NAME,
+                correlation_id=row.subject,
+                detail="表に本体が無い。最小の不一致で代替する（記録訂正の提案は出ない）",
+            )
+        return reconstruct_discrepancy(row, resolution=resolution, at=at), "reconstructed"
 
     def _apply_curation(self, row: DecisionRow) -> dict[str, Any]:
         """概念提案の採否を記録する。
@@ -438,16 +480,22 @@ async def build_worker(
     """
     import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
 
-    from sbp.knowledge import DecisionQueue, ObservationQueue  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        DecisionQueue,
+        DiscrepancyStore,
+        ObservationQueue,
+    )
 
     resolved = settings or Settings()
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
     decisions = DecisionQueue(connection, site=site_id)
     observations = ObservationQueue(connection, site=site_id)
+    store = DiscrepancyStore(connection, site=site_id)
 
     worker = LearningWorker(
         resolved,
         decisions=decisions,
+        discrepancies=store.get,
         observations=observations.enqueue,
     )
     log.info("worker.wired", worker=WORKER_NAME, site_id=site_id)

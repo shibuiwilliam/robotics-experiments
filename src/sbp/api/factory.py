@@ -31,12 +31,13 @@ from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from collections.abc import AsyncGenerator, Coroutine
 
     from fastapi import FastAPI, Request
 
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.decisions import DecisionRow
+    from sbp.knowledge.discrepancies import DiscrepancyRecord
 
 __all__ = ["build_app", "dev_principal_resolver"]
 
@@ -101,6 +102,28 @@ def dev_principal_resolver(settings: Settings) -> Any:
     return resolve
 
 
+def _run_sync[T](coroutine: Coroutine[Any, Any, T]) -> T:
+    """非同期の読み出しを同期の文脈から呼ぶ（GraphQL のリゾルバ用）。
+
+    リゾルバの中から ``asyncio.run`` は呼べない（すでに実行中のループの中にいる）。別の
+    スレッドで新しいループを回して結果を待つ。**接続は 1 つを共有している**ので、同時に
+    複数のリゾルバが走ると psycopg の接続が競合しうる——GraphQL の 1 リクエストで
+    ``discrepancies`` が複数回呼ばれる形になったら、接続プールに変える必要がある
+    （未決。いまは 1 クエリ 1 呼び出し）。
+
+    Args:
+        coroutine: 実行するコルーチン。
+
+    Returns:
+        コルーチンの結果。
+    """
+    import asyncio  # noqa: PLC0415 — ここだけで使う
+    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coroutine).result()
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """実物の依存で API を組む。
 
@@ -124,6 +147,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
         DecisionQueue,
+        DiscrepancyStore,
         HttpGraphStore,
         MetricStore,
     )
@@ -154,6 +178,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         """
         return await DecisionQueue(_connection(), site=resolved.site_id).enqueue(row)
 
+    def read_discrepancies(
+        *, kind: int | None = None, include_terminal: bool = False, limit: int = 50
+    ) -> list[DiscrepancyRecord]:
+        """不一致キューを同期の形で返す（GraphQL のリゾルバは同期で呼ばれる）。
+
+        **専用のイベントループで回す。** リゾルバの中から ``asyncio.run`` は呼べない
+        （すでにループの中にいる）ので、別のスレッドで実行する。キューの読み出しは
+        1 クエリなので、スレッドを 1 つ使う代価で足りる。
+
+        Args:
+            kind: 五類型で絞る。
+            include_terminal: 終端状態も含めるか。
+            limit: 返す件数の上限。
+        """
+        store = DiscrepancyStore(_connection(), site=resolved.site_id)
+        return _run_sync(store.queue(kind=kind, include_terminal=include_terminal, limit=limit))
+
     async def read_metrics() -> list[MetricSample]:
         """系列ごとの最新値を返す。"""
         return await MetricStore(_connection(), site=resolved.site_id).latest()
@@ -183,6 +224,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         command_handler=build_command_handler(enqueue_decision),
         principal_resolver=(dev_principal_resolver(resolved) if resolved.env == "dev" else None),
         metric_reader=read_metrics,
+        discrepancy_reader=read_discrepancies,
     )
     app.router.lifespan_context = lifespan
     return app

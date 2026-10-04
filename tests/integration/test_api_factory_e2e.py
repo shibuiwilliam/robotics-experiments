@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import psycopg
@@ -23,8 +25,14 @@ from fastapi.testclient import TestClient
 from sbp.api.factory import build_app
 from sbp.core.config import Settings
 from sbp.core.metrics import MetricSample, metric
-from sbp.core.time import now
-from sbp.knowledge import MetricStore
+from sbp.core.time import Interval, now
+from sbp.knowledge import DiscrepancyStore, MetricStore
+from sbp.reasoning.reconciliation import (
+    Discrepancy,
+    DiscrepancyKind,
+    Severity,
+    to_record,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -159,3 +167,89 @@ class TestSparqlProxy:
         response = client.post("/sparql", json={"query": "INSERT DATA { <urn:a> <urn:b> <urn:c> }"})
 
         assert response.status_code == 403
+
+
+class TestDiscrepancyResource:
+    """不一致キューの GraphQL 資源（M8-12、ADR-0013）。
+
+    **UI が読む先がこれである。** M8-04 までは起票イベントしか無く、イベントに全体が入って
+    いない（所見 62）ので UI は中身を読めなかった。
+    """
+
+    @pytest.fixture
+    def seeded(self, settings: Settings) -> Iterator[str]:
+        """不一致を 1 件書いてから消す。"""
+        start = now().replace(microsecond=0) - timedelta(hours=1)
+        discrepancy = Discrepancy(
+            kind=DiscrepancyKind.STATE,
+            subjects=("https://sbp.example/site/siteA/asset/P-E2E",),
+            assertions=("urn:sbp:assertion:e2e",),
+            evidence=("urn:sbp:record:e2e",),
+            detected_at=start,
+            interval=Interval(start, start + timedelta(minutes=10)),
+            severity=Severity(
+                score=0.77, value_at_stake=1000.0, confidence=0.9, persistence_s=600.0
+            ),
+            detector="kind2",
+            ontology_version="0.5.0",
+        )
+
+        async def write() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                await DiscrepancyStore(connection, site=settings.site_id).upsert(
+                    to_record(discrepancy)
+                )
+                await connection.commit()
+
+        async def clean() -> None:
+            async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "DELETE FROM discrepancies WHERE discrepancy_id = %s",
+                        (str(discrepancy.discrepancy_id),),
+                    )
+                await connection.commit()
+
+        asyncio.run(write())
+        yield str(discrepancy.discrepancy_id)
+        asyncio.run(clean())
+
+    def test_the_queue_is_served_over_graphql(self, settings: Settings, seeded: str) -> None:
+        """不一致キューが GraphQL で読める（証拠は IRI で返る）。"""
+        dev_settings = settings.model_copy(update={"env": "dev"})
+        with TestClient(build_app(dev_settings)) as client:
+            response = client.post(
+                "/graphql",
+                json={
+                    "query": """{ discrepancies(limit: 50) {
+                        discrepancyId kind status subjects severity detector
+                        assertions evidence ontologyVersion
+                    } }"""
+                },
+                headers={"X-SBP-Principal": OPERATOR},
+            )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert not payload.get("errors"), payload.get("errors")
+        rows = payload["data"]["discrepancies"]
+        found = [row for row in rows if row["discrepancyId"] == seeded]
+        assert found, "書いた不一致がキューに出ていない"
+        assert found[0]["kind"] == 2
+        assert found[0]["status"] == "Open"
+        assert found[0]["evidence"] == ["urn:sbp:record:e2e"]
+        assert found[0]["ontologyVersion"] == "0.5.0"
+
+    def test_the_queue_requires_a_principal(self, settings: Settings, seeded: str) -> None:
+        """要求者を名乗らなければ不一致を返さない（既定は拒否）。
+
+        不一致は実体の状態についての判断であり、信念と同じ機密度を持つ。
+        """
+        del seeded
+        with TestClient(build_app(settings)) as client:
+            response = client.post(
+                "/graphql", json={"query": "{ discrepancies { discrepancyId } }"}
+            )
+
+        assert response.status_code == 200
+        assert response.json().get("errors"), "要求者なしで不一致が返っている"

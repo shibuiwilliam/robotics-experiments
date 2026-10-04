@@ -17,6 +17,7 @@ from sbp.knowledge.artifacts import (
 )
 from sbp.knowledge.assertions import AssertionRow, AssertionStore
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
+from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, site_prefix
 from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph, schema_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
@@ -55,6 +56,8 @@ __all__ = [
     "DecisionQueue",
     "DecisionRow",
     "DiffEntry",
+    "DiscrepancyRecord",
+    "DiscrepancyStore",
     "EmbeddedGraphStore",
     "GraphStore",
     "HttpGraphStore",

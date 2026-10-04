@@ -35,6 +35,7 @@ from sbp.reasoning.reconciliation.notify import (
     discrepancy_event,
     discrepancy_type_iri,
 )
+from sbp.reasoning.reconciliation.persistence import from_record, to_record
 from sbp.reasoning.reconciliation.rules import (
     NormViolation,
     RecordedPresence,
@@ -91,8 +92,10 @@ __all__ = [
     "discrepancy_event",
     "discrepancy_type_iri",
     "explain_as_systematic",
+    "from_record",
     "jensen_shannon_distance",
     "merge_duplicates",
     "reconcile",
     "sustained_runs",
+    "to_record",
 ]

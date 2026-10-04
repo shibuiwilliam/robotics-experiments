@@ -13,13 +13,28 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from uuid import UUID
+
 import psycopg
 import pytest
 from services.learning_worker import LearningWorker
 
 from sbp.core.config import Settings
-from sbp.core.time import now
-from sbp.knowledge import DecisionKind, DecisionQueue, DecisionRow, ObservationQueue
+from sbp.core.time import Interval, now
+from sbp.knowledge import (
+    DecisionKind,
+    DecisionQueue,
+    DecisionRow,
+    DiscrepancyStore,
+    ObservationQueue,
+)
+from sbp.reasoning.reconciliation import (
+    Discrepancy,
+    DiscrepancyKind,
+    Severity,
+    to_record,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.enable_socket]
 
@@ -218,4 +233,92 @@ class TestEndToEnd:
                 found = await cursor.fetchone()
             assert found is not None
             assert "bags_recorded" in found[0]
+            await _cleanup(connection)
+
+
+class TestDiscrepancyBodyIsUsed:
+    """不一致の本体を読んで学習信号を作る（M8-12 が M8-08 の回避を解消した）。
+
+    M8-08 の時点では本体を読む先が無く、判断の行から**最小の不一致を再構成**していた
+    （証拠を持たないので記録訂正の提案が出ない）。本体が読めれば証拠 IRI を持つので、
+    「物理が正しい」の解決が記録訂正の提案を出せる。
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_body_is_read_from_the_store(self, settings: Settings) -> None:
+        """表に本体があれば ``discrepancy_source`` が ``store`` になる。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = DiscrepancyStore(connection, site=SITE)
+            decisions = DecisionQueue(connection, site=SITE)
+            observations = ObservationQueue(connection, site=SITE)
+
+            start = now().replace(microsecond=0) - timedelta(hours=1)
+            discrepancy = Discrepancy(
+                discrepancy_id=UUID(DISCREPANCY_ID),
+                kind=DiscrepancyKind.STATE,
+                subjects=(PUMP,),
+                assertions=("urn:sbp:assertion:1",),
+                evidence=("urn:sbp:record:A",),
+                detected_at=start,
+                interval=Interval(start, start + timedelta(minutes=10)),
+                severity=Severity(
+                    score=0.6, value_at_stake=1000.0, confidence=0.88, persistence_s=600.0
+                ),
+                detector="kind2",
+                ontology_version="0.5.0",
+            )
+            await store.upsert(to_record(discrepancy))
+            await decisions.enqueue(_row(outcome="undetermined"))
+
+            worker = LearningWorker(
+                settings,
+                decisions=decisions,
+                discrepancies=store.get,
+                observations=observations.enqueue,
+                period_s=0.0,
+            )
+            assert await worker.step() == 1
+
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT artifacts FROM learning_decisions WHERE decision_id = %s", ("d-1",)
+                )
+                found = await cursor.fetchone()
+            assert found is not None
+            assert found[0]["discrepancy_source"] == "store", "本体が読まれていない"
+
+            # 観測要求が本体の確信度と区間を引き継ぐ（再構成では確信度 0 になる）
+            outstanding = await observations.outstanding()
+            assert outstanding
+            assert outstanding[0].utility > 0.0, "深刻度が本体から来ていない"
+
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "DELETE FROM discrepancies WHERE discrepancy_id = %s", (DISCREPANCY_ID,)
+                )
+            await _cleanup(connection)
+
+    @pytest.mark.asyncio
+    async def test_a_missing_body_falls_back_and_says_so(self, settings: Settings) -> None:
+        """本体が無ければ代替し、代替したことを要約に出す。
+
+        「訂正が 0 件」の理由が「訂正不要」なのか「証拠が無い」のか区別できる必要がある。
+        """
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = DiscrepancyStore(connection, site=SITE)
+            decisions = DecisionQueue(connection, site=SITE)
+            await decisions.enqueue(_row(outcome="undetermined"))
+
+            worker = LearningWorker(
+                settings, decisions=decisions, discrepancies=store.get, period_s=0.0
+            )
+            assert await worker.step() == 1
+
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT artifacts FROM learning_decisions WHERE decision_id = %s", ("d-1",)
+                )
+                found = await cursor.fetchone()
+            assert found is not None
+            assert found[0]["discrepancy_source"] == "reconstructed"
             await _cleanup(connection)

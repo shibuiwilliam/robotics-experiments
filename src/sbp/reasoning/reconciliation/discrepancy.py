@@ -82,6 +82,26 @@ class DiscrepancyStatus(StrEnum):
         """終端状態かどうか。"""
         return self in {DiscrepancyStatus.LEARNED, DiscrepancyStatus.SUPPRESSED}
 
+    @property
+    def rank(self) -> int:
+        """ライフサイクル上の位置（進むほど大きい）。
+
+        **永続化での後退検出に使う**（ADR-0013）。``transition()`` は遷移表で守るが、表に
+        書くときは複数の経路（照合ワーカーと learning-worker）が同じ行を触るので、片方が
+        古い状態で上書きする事故が起こりうる。順序を数値にしておけば SQL 側で弾ける。
+
+        ``Suppressed`` は ``Open`` からの分岐だが、終端なので最上位に置く——抑制した不一致が
+        非終端で上書きされないようにするためである。
+        """
+        return {
+            DiscrepancyStatus.OPEN: 0,
+            DiscrepancyStatus.TRIAGED: 1,
+            DiscrepancyStatus.ASSIGNED: 2,
+            DiscrepancyStatus.RESOLVED: 3,
+            DiscrepancyStatus.LEARNED: 4,
+            DiscrepancyStatus.SUPPRESSED: 4,
+        }[self]
+
 
 _ALLOWED: dict[DiscrepancyStatus, frozenset[DiscrepancyStatus]] = {
     DiscrepancyStatus.OPEN: frozenset({DiscrepancyStatus.TRIAGED, DiscrepancyStatus.SUPPRESSED}),

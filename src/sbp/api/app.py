@@ -40,9 +40,16 @@ if TYPE_CHECKING:
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
     from sbp.core.metrics import MetricSample
+    from sbp.knowledge.discrepancies import DiscrepancyRecord
 
     MetricReader = Callable[[], Awaitable[Sequence["MetricSample"]]]
     """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
+    DiscrepancyReader = Callable[..., Sequence["DiscrepancyRecord"]]
+    """不一致キューを返す（``DiscrepancyStore.queue`` を包む）。
+
+    **同期の関数である。** GraphQL のリゾルバは同期で呼ばれるので、呼び出し側が非同期の
+    読み出しを同期の形に包む（``api.factory`` を参照）。
+    """
 
 __all__ = ["create_app", "is_read_only_sparql"]
 
@@ -83,6 +90,7 @@ def create_app(
     command_handler: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
     principal_resolver: Callable[[Request], Principal | None] | None = None,
     metric_reader: MetricReader | None = None,
+    discrepancy_reader: DiscrepancyReader | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -99,6 +107,9 @@ def create_app(
         principal_resolver: リクエスト → 要求者（ABAC、M7-06）。``None`` だと信念クエリは
             **すべて拒否される**（既定は拒否）。認証の実装は運用環境に依るのでここでは受け取る
             だけにし、「未設定なら通す」経路を作らない。
+        discrepancy_reader: 不一致キューを返すもの（``DiscrepancyStore.queue`` を包む。
+            M8-12）。``None`` だと GraphQL の ``discrepancies`` が**エラーを返す**——空の列を
+            返すと「不一致が無い」と「配線していない」が区別できない（所見 32）。
         metric_reader: 系列ごとの最新値を返すもの（``MetricStore.latest`` を包む）。
             ``None`` なら ``/metrics`` は**空ではなく 503 を返す**——空の exposition を返すと
             Prometheus は「スクレイプ成功、系列 0 件」と読み、指標が止まっていることと
@@ -115,7 +126,12 @@ def create_app(
     async def context(request: Request) -> dict[str, Any]:
         """GraphQL の文脈。要求者を解決して載せる。"""
         principal = None if principal_resolver is None else principal_resolver(request)
-        return {"beliefs": beliefs, "settings": settings, "principal": principal}
+        return {
+            "beliefs": beliefs,
+            "settings": settings,
+            "principal": principal,
+            "discrepancies": discrepancy_reader,
+        }
 
     app = FastAPI(
         title="SBP 意味 API",
@@ -240,6 +256,7 @@ def create_app(
         stream=stream_reader is not None,
         commands=command_handler is not None,
         abac=principal_resolver is not None,
+        discrepancies=discrepancy_reader is not None,
     )
     if principal_resolver is None:
         log.warning(

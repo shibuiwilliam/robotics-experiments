@@ -30,27 +30,31 @@ from sbp.core.time import now
 from sbp.reasoning.ingest import fluent_of_event
 from sbp.reasoning.reconciliation import DetectionContext, reconcile
 from sbp.reasoning.reconciliation.notify import discrepancy_event
+from sbp.reasoning.reconciliation.persistence import to_record
 from sbp.reasoning.reconciliation.rules import detect_state
 from sbp.reasoning.windows import WindowStore
 from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
+    from collections.abc import Awaitable, Callable, Sequence
     from datetime import datetime
 
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.consumer import EventHandler, KafkaEventConsumer
     from sbp.eventlog.producer import KafkaEventProducer
     from sbp.integration.reliability import ReliabilityRegistry
+    from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.reasoning.reconciliation.discrepancy import Discrepancy
     from sbp.reasoning.reconciliation.engine import ReconciliationOutcome
     from sbp.reasoning.reconciliation.severity import BusinessValueRegistry
 
     EventDriver = Callable[[EventHandler, int], Awaitable[int]]
     """``(ハンドラ, 最大件数) -> 処理した件数``（``belief_worker`` と同じ形）。"""
-    DiscrepancySink = Callable[[Discrepancy], object]
+    DiscrepancyEventSink = Callable[[Discrepancy], object]
     """不一致 1 件を出す（イベント送信）。"""
+    DiscrepancySink = Callable[[DiscrepancyRecord], object]
+    """不一致 1 件を作業項目として書く（``DiscrepancyStore.upsert`` を包む）。"""
     CommitHook = Callable[[], Awaitable[None]]
     """終了時のオフセットコミット。"""
 
@@ -86,11 +90,12 @@ class ReconcileWorker:
         settings: Settings | None = None,
         *,
         driver: EventDriver | None = None,
-        sink: DiscrepancySink | None = None,
+        sink: DiscrepancyEventSink | None = None,
         values: BusinessValueRegistry | None = None,
         reliability: ReliabilityRegistry | None = None,
         entity_types: dict[str, str] | None = None,
         metrics: MetricRecorder | None = None,
+        store: DiscrepancySink | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -119,6 +124,7 @@ class ReconcileWorker:
         self._driver = driver
         self._sink = sink
         self._metrics = metrics
+        self._store = store
         # 空のレジストリを既定にする。**価値が登録されていない型は深刻度の価値項が
         # 中間値になる**（0 ではない——`BusinessValueRegistry` の設計）。登録忘れを
         # 「価値ゼロ＝起票しない」にしないための仕様である。
@@ -283,6 +289,10 @@ class ReconcileWorker:
         candidates = detect_state(comparable, context=context)
         outcome = reconcile(candidates, reliability=self._reliability, at=at)
 
+        # **永続化してから通知する**（ADR-0013）。順序を逆にすると、通知を見た購読側が
+        # 表を引いて「無い」と答えることになる——イベントは通知であって本体ではないので、
+        # 本体が先に存在していなければならない
+        self._persist(outcome.triaged + outcome.suppressed)
         for discrepancy in outcome.triaged:
             self._emit(discrepancy)
         self.raised_total += len(outcome.triaged)
@@ -297,6 +307,22 @@ class ReconcileWorker:
                 reasons=[d.suppression.reason for d in outcome.suppressed if d.suppression],
             )
         return len(outcome.triaged)
+
+    def _persist(self, discrepancies: Sequence[Discrepancy]) -> None:
+        """不一致を作業項目として書く（ADR-0013）。
+
+        **抑制したものも書く。** 抑制は「系統誤差で説明できる」という判断であり、その妥当性を
+        人が棚卸しする（OPS-03）。書かないと抑制が見えず、「不一致が無い」と区別できない。
+
+        ``store`` が無ければ書かない（単体テストと、表を持たない実行）。
+
+        Args:
+            discrepancies: 書く不一致。
+        """
+        if self._store is None or not discrepancies:
+            return
+        for discrepancy in discrepancies:
+            self._store(to_record(discrepancy))
 
     def _measure(self, outcome: ReconciliationOutcome, *, at: datetime) -> None:
         """照合 1 周ぶんの指標を記録する（M8-14）。
@@ -403,7 +429,7 @@ async def build_worker(
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
     from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
-    from sbp.knowledge import MetricStore  # noqa: PLC0415
+    from sbp.knowledge import DiscrepancyStore, MetricStore  # noqa: PLC0415
     from services.belief_worker import kafka_driver  # noqa: PLC0415
 
     resolved = settings or Settings()
@@ -423,10 +449,17 @@ async def build_worker(
             producer.send(topic, discrepancy_event(discrepancy, site_id=site_id))
         )
 
+    store = DiscrepancyStore(connection, site=site_id)
+
+    def persist(record: DiscrepancyRecord) -> object:
+        """作業項目として書く（ADR-0013。本体は表、通知はイベント）。"""
+        return asyncio.create_task(store.upsert(record))
+
     worker = ReconcileWorker(
         resolved,
         sink=sink,
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
+        store=persist,
     )
 
     consumer = KafkaEventConsumer(
