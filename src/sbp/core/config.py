@@ -204,6 +204,20 @@ class WorldModelSettings(BaseSettings):
     """PyTorch のデバイス。CUDA は使わない（CLAUDE.md）。"""
 
 
+class ActionsSettings(BaseSettings):
+    """アクション層の閾値（設計書 §9）。"""
+
+    model_config = SettingsConfigDict(env_prefix="SBP_ACTIONS_", extra="ignore")
+
+    record_effect_floor: float = Field(default=0.5, ge=0.0, le=1.0)
+    """業務効果（``record_created`` / ``record_updated``）の期待の下端。
+
+    契約が ``threshold`` を宣言していないときに使う。**記録の存在に対する信念は情報源の
+    信頼性で割り引かれる**ので、1.0 にすると信頼性モデルが働いた時点で必ず違反になる。
+    **実データで較正していない暫定値である**（合成データでは割引の実測値が出ない）。
+    """
+
+
 class Settings(BaseSettings):
     """SBP 全体の設定。``.env`` から読み、プレフィクスは ``SBP_``。"""
 
@@ -250,6 +264,7 @@ class Settings(BaseSettings):
     bridge: BridgeSettings = Field(default_factory=BridgeSettings)
     reasoning: ReasoningSettings = Field(default_factory=ReasoningSettings)
     worldmodel: WorldModelSettings = Field(default_factory=WorldModelSettings)
+    actions: ActionsSettings = Field(default_factory=ActionsSettings)
 
     @property
     def is_test(self) -> bool:

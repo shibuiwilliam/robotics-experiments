@@ -58,7 +58,7 @@ class ExpectationRecord:
         action_type: アクション型 IRI。
         target: 対象実体の IRI。
         created_at: 生成時刻。
-        deadline: 期限（``expected_effects`` の最小値。効果が無ければ ``None``）。
+        deadline: 期限（``expected_effects`` の最も遅い効果の期限。効果が無ければ ``None``）。
         payload: 本体（``Expectation.model_dump(mode="json")``）。
     """
 

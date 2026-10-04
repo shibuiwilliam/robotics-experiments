@@ -23,25 +23,28 @@ from __future__ import annotations
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import numpy as np
 import pytest
 
 from sbp.actions import (
+    ActionEvent,
     ActionRegistry,
     ActionRequest,
     ActionStage,
     Approval,
     RateLimitState,
     check_preconditions,
-    planned_expectation_deadlines,
+    expectation_for,
 )
 from sbp.bridge import LinearProbe, TemperatureScaler
 from sbp.core import vocab
 from sbp.core.assertion import Assertion
 from sbp.core.audit import AuditMask, no_audit
 from sbp.core.belief import BooleanBelief
-from sbp.core.config import ReasoningSettings
+from sbp.core.config import ReasoningSettings, Settings
+from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
 from sbp.core.records import Record
 from sbp.core.time import Interval, now
@@ -58,7 +61,6 @@ from sbp.reasoning import (
     DwellTime,
     Expectation,
     ExpectationStatus,
-    ExpectedEffect,
     Forecast,
     ForecastPoint,
     Resolution,
@@ -352,47 +354,31 @@ class TestG5Expectation:
     """設計書 §14 の後半（Expectation 生成 → 検証 → 学習信号）。"""
 
     @pytest.fixture
-    def expectation(self, contracts: ActionRegistry) -> Expectation:
-        """緊急点検の契約から Expectation を作る（契約の効果が期待になる）。"""
+    def expectation(self, contracts: ActionRegistry, settings: Settings) -> Expectation:
+        """緊急点検の契約から Expectation を作る（契約の効果が期待になる）。
+
+        **production の関数を呼ぶ。** 初版はここで `ExpectedEffect` を手で組み立てていて、
+        契約 → 期待の変換が**テストの中にしか無かった**（所見 89）。手で組むと、区間の
+        端（`lower` / `upper`）がテストの作者の見積りになり、契約が宣言した境界と無関係に
+        なる——`Violated` が何を意味するかが変わってしまう。
+        """
         contract = contracts.get(vocab.ent.CreateEmergencyInspection)
-        executed_at = now()
-        deadlines = {
-            origin: deadline
-            for _, deadline, origin in planned_expectation_deadlines(
-                contract, executed_at=executed_at
-            )
-        }
-        created = Expectation(
-            action_event=__import__("uuid").uuid4(),
+        event = ActionEvent(
+            event_id=new_event_id(),
             action_type=contract.action_type,
             target=PUMP,
-            created_at=executed_at,
-            ontology_version=VERSION,
+            command_id=uuid4(),
+            executed_at=now(),
+            executed_by=OPERATOR,
+            approval=None,
+            override=None,
+            precondition_note="三面すべて満たした",
         )
-        return created.activate(
-            (
-                ExpectedEffect(
-                    fluent=vocab.ent.WorkOrder,
-                    entity=PUMP,
-                    expected=1.0,
-                    lower=0.5,
-                    upper=1.0,
-                    deadline=deadlines["symbolic"],
-                    origin="symbolic",
-                    description="5 分以内に点検作業指示が起票される",
-                ),
-                ExpectedEffect(
-                    fluent=vocab.ent.Inspected,
-                    entity=PUMP,
-                    expected=0.9,
-                    lower=0.8,
-                    upper=1.0,
-                    deadline=deadlines["rollout"],
-                    origin="rollout",
-                    description="24 時間以内に点検済みになる",
-                ),
-            ),
-            at=executed_at,
+        return expectation_for(
+            contract,
+            event,
+            ontology_version=VERSION,
+            record_effect_floor=settings.actions.record_effect_floor,
         )
 
     def test_the_contract_effects_become_the_expectation(self, expectation: Expectation) -> None:

@@ -25,7 +25,7 @@ from sbp.actions import (
     Override,
     RateLimitState,
     check_preconditions,
-    planned_expectation_deadlines,
+    expected_effect_for,
     require_satisfied,
 )
 from sbp.core import vocab
@@ -331,9 +331,20 @@ class TestCompensation:
 
 
 class TestExpectationDeadlines:
+    """効果ごとの期限（期待の生成は `tests/unit/actions/test_expectation_generation.py`）。
+
+    **`planned_expectation_deadlines` を消した。** 期限の計算が `expected_effect_for` と
+    2 箇所になり、同じことを違う形で計算する状態になっていた（所見 91）。期限の起点と
+    加算は 1 箇所に置く。
+    """
+
     def test_each_effect_gets_its_deadline_and_origin(self, inspection: ActionContract) -> None:
         """記号側（T 由来）と潜在側（rollout 由来）を別々に検証するため（設計書 §8.5）。"""
-        deadlines = planned_expectation_deadlines(inspection, executed_at=T0)
-        by_origin = {origin: deadline for _, deadline, origin in deadlines}
+        by_origin = {
+            effect.origin: expected_effect_for(
+                effect, entity=PUMP, executed_at=T0, record_effect_floor=0.5
+            ).deadline
+            for effect in inspection.all_effects
+        }
         assert by_origin["symbolic"] == T0 + timedelta(minutes=5)
         assert by_origin["rollout"] == T0 + timedelta(hours=24)

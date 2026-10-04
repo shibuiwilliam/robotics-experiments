@@ -78,18 +78,25 @@ class TestRoundTrip:
         assert record.target == PUMP
         assert record.created_at == T0
 
-    def test_the_deadline_is_the_earliest_effect(self) -> None:
-        """期限は期待効果の最小値（ボードが期限の近い順で並べる）。"""
-        record = to_record(
-            _expectation(
-                expected_effects=(
-                    _effect(fluent=RUNNING, minutes=120),
-                    _effect(fluent=FAULTED, minutes=30),
-                )
+    def test_the_deadline_column_equals_the_model_property(self) -> None:
+        """期限の列が ``Expectation.deadline`` と一致する。
+
+        **投影の列が同名のプロパティと違う値を持ってはいけない。** 初版は列に最小値を入れ、
+        モデルのプロパティは最大値を返していた——`from_record(r).deadline != r.deadline` が
+        黙って成り立つ状態で、どちらを見ているかで答えが変わる（所見 90）。
+        """
+        original = _expectation(
+            expected_effects=(
+                _effect(fluent=RUNNING, minutes=120),
+                _effect(fluent=FAULTED, minutes=30),
             )
         )
 
-        assert record.deadline == T0 + timedelta(minutes=30)
+        record = to_record(original)
+
+        assert record.deadline == original.deadline
+        # 全体の期限は「最も遅い効果」——それより前に判定を確定できない
+        assert record.deadline == T0 + timedelta(minutes=120)
 
     def test_a_created_expectation_has_no_deadline(self) -> None:
         """``Created`` は期限を持たない（効果がまだ無い）。

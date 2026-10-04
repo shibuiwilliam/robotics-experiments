@@ -28,9 +28,9 @@ from sbp.actions.execute import (
     Approval,
     Override,
     RateLimitState,
-    planned_expectation_deadlines,
     require_satisfied,
 )
+from sbp.actions.expectations import expectation_for, expected_effect_for
 from sbp.actions.preconditions import (
     ConditionResult,
     PreconditionReport,
@@ -55,7 +55,8 @@ __all__ = [
     "RateLimitState",
     "RiskClass",
     "check_preconditions",
+    "expectation_for",
+    "expected_effect_for",
     "parse_duration",
-    "planned_expectation_deadlines",
     "require_satisfied",
 ]

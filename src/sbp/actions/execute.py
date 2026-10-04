@@ -39,7 +39,6 @@ __all__ = [
     "Approval",
     "Override",
     "RateLimitState",
-    "planned_expectation_deadlines",
     "require_satisfied",
 ]
 
@@ -408,22 +407,3 @@ def require_satisfied(report: PreconditionReport) -> None:
     """
     if not report.satisfied:
         raise PreconditionNotMetError(report.explain())
-
-
-def planned_expectation_deadlines(
-    contract: ActionContract, *, executed_at: datetime
-) -> tuple[tuple[str, datetime, str], ...]:
-    """効果ごとの期限を計算する（設計書 §9.2 の 4 の入力）。
-
-    Args:
-        contract: 実行した契約。
-        executed_at: 実行時刻。
-
-    Returns:
-        ``(効果の説明, 期限, 由来)`` の列。由来は ``symbolic`` / ``rollout``。
-    """
-    moment = ensure_utc(executed_at)
-    return tuple(
-        (effect.description, moment + effect.deadline, effect.origin)
-        for effect in contract.all_effects
-    )
