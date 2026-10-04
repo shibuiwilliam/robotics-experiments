@@ -309,13 +309,14 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-01** プローブ重みの直列化とロード — `sbp.bridge.serialization`（純粋な束ね形式。I/O を持たない）+ `sbp.knowledge.artifacts`（バイト列の置き場。ローカル FS と S3）。較正器を欠いた `active` は保存もロードも拒否する（不変条件 7）。版は明示必須（`latest` 禁止、レジストリと同じ理由） → 完了（束ね形式 1.0.0・契約テストで golden 固定、置き場は既定で上書き拒否、単体 44 件 + 契約 3 件）
 - [x] **M8-02** bridge-worker のプローブ供給配線 — M8-01 の束ねを置き場から読み、`active` だけを走らせる。接地する実体の一覧の供給元を決める（ADR）。`TODO(question)` を消す → 完了（ADR-0009。`sbp.bridge.runner.ProbeSet`、`sbp.knowledge.entities.entities_of_type`、`build_worker`。プローブ IRI の組み立て（不変条件 5 違反）も除去。単体 45 件）
 - [x] **M8-03** ウォーターマークの永続化 — 再起動で進んだところから再開する。投影テーブル（alembic）に逃がす。`TODO(question)` を消す → 完了（alembic 0003 `grounding_watermarks`、`sbp.knowledge.watermarks.WatermarkStore`。キーに WM 版と階層を含める。単体 5 件 + 統合 3 件）
-- [ ] **M8-04** 不一致イベントの送信先の決定と配線 — 中央集約か拠点別か（ADR）。`reconcile_worker.main()` の sink を埋め、`TODO(question)` を消す
+- [x] **M8-04** 不一致イベントの送信先の決定と配線 — 中央集約か拠点別か（ADR）。`reconcile_worker.main()` の sink を埋め、`TODO(question)` を消す → 完了（ADR-0010。既定は拠点トピック、`SBP_REASONING_DISCREPANCY_SCOPE=central` で切替。`sbp.reasoning.reconciliation.notify`。単体 14 件）
 - [ ] **M8-05** scheduler-worker の要求供給配線 — `ObservationRequest` の供給元（イベントログ / 投影テーブル）を決め（ADR）、観測手段の割り当てを実装する。`TODO(question)` を消す
 - [ ] **M8-06** Grafana ダッシュボード — `infra/prometheus/` と observability profile のダッシュボード JSON（6 領域 25 指標。指標名は列挙で固定済み）
 - [ ] **M8-07** `SituationLink` による実体間結合 — 同一 Situation に属する実体の結合（現在は部分−全体のみ）。Situation の所属を引くクエリを `sbp.knowledge.relations` に足す
 - [ ] **M8-08** 学習信号の適用ワーカー — UI/API に入った人の判断を受けて、書き戻し・プローブ再学習・概念採択を実行する。**人の承認が前提**（自動適用しない）
 - [ ] **M8-09** 発見ループの周期実行 — 概念発見（検出 → 提案 → curation）を周期ジョブにする。採用後のオントロジー MINOR 起票は人の手作業のまま（意図的）
 - [ ] **M8-10** LLM の live 経路 — 任意依存として SDK を 1 つ追加し、`live_factory` を実装する。fixture が無いときに黙って live に落ちないことをテストで固定
+- [ ] **M8-12** 不一致の永続化と API 露出 — イベントは通知であって不一致そのものではない（`EventEnvelope` に全体を入れる場所が無い）。UI には不一致キューの型とロジックがあるが、API に資源が無く、知識グラフにも投影表にも不一致が書かれていない。**通知だけでは UI が中身を読めない**（ADR-0010 の未決）
 - [ ] **M8-11** 統合テスト G8 — 4 ワーカーを実物のサービス上で回し、各 `step()` が非ゼロを返すことを確認する
 
 **ゲート G8**: G0〜G7 維持 + M8-11 緑 + `TODO(question)` が 0 件（解決した ADR へのリンク、または「意図的に残す理由」が PROGRESS.md に記録されている）。

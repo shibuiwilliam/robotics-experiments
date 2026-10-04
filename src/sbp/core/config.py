@@ -140,6 +140,15 @@ class ReasoningSettings(BaseSettings):
     変わり、同じ観測列でも事後が変わる（`sbp.reasoning.belief.TransitionPrior`）。
     """
 
+    discrepancy_scope: Literal["site", "central"] = "site"
+    """不一致の起票イベントを出すトピックの拠点部分（ADR-0010）。
+
+    既定は拠点（``<site>.reasoning.discrepancy``）。検出器は自拠点のことだけを知っていれば
+    よく、中央トピックは「拠点横断で**集約した**不一致」のための場所である。中央に直接出す
+    運用に切り替えるときだけ ``central`` にする。**両方に出す形は作らない**——同じ不一致が
+    2 つの ``event_id`` を持ち、冪等性（不変条件 4）が壊れる。
+    """
+
     reconcile_period_s: float = Field(default=120.0, gt=0.0)
     """照合（五類型の検出）を回す周期（秒）。
 

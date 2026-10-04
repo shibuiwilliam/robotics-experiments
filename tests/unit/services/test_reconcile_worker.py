@@ -14,11 +14,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from services.reconcile_worker import ReconcileWorker
+from pydantic import ValidationError
+from services.reconcile_worker import ReconcileWorker, discrepancy_topic
 
 from sbp.core import vocab
 from sbp.core.belief import BooleanBelief, NumericBelief
-from sbp.core.config import Settings
+from sbp.core.config import ReasoningSettings, Settings
 from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, RecordEvidence, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
@@ -267,3 +268,27 @@ class TestUnconfiguredPaths:
         settings = worker.settings.reasoning
         coverable = timedelta(seconds=settings.filter_step_s) * (settings.window_samples - 1)
         assert coverable >= timedelta(seconds=settings.persistence_s)
+
+
+class TestDiscrepancyTopic:
+    """起票先トピックの決め方（M8-04、ADR-0010）。"""
+
+    def test_the_default_is_the_site_topic(self) -> None:
+        """既定は拠点トピック。検出器は自拠点のことだけを知っていればよい。"""
+        assert discrepancy_topic(Settings(), site_id="siteA") == "siteA.reasoning.discrepancy"
+
+    def test_central_can_be_selected(self) -> None:
+        """設定で中央に切り替えられる（拠点別の運用もありうるという未決を設定で残した）。"""
+        settings = Settings()
+        settings.reasoning.discrepancy_scope = "central"
+
+        assert discrepancy_topic(settings, site_id="siteA") == "central.reasoning.discrepancy"
+
+    def test_the_scope_is_restricted_to_two_values(self) -> None:
+        """``site`` / ``central`` 以外は設定として受け付けない。
+
+        **両方に出す形を設定で作れないようにしている**——同じ不一致が 2 つの ``event_id`` を
+        持ち、冪等性（不変条件 4）が壊れる（ADR-0010）。
+        """
+        with pytest.raises(ValidationError):
+            ReasoningSettings(discrepancy_scope="both")  # type: ignore[arg-type]

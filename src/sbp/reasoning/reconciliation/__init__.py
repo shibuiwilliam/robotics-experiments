@@ -30,6 +30,11 @@ from sbp.reasoning.reconciliation.learning import (
     apply_resolution,
     convert_resolution,
 )
+from sbp.reasoning.reconciliation.notify import (
+    NOTIFY_VERSION,
+    discrepancy_event,
+    discrepancy_type_iri,
+)
 from sbp.reasoning.reconciliation.rules import (
     NormViolation,
     RecordedPresence,
@@ -53,6 +58,7 @@ from sbp.reasoning.reconciliation.severity import (
 )
 
 __all__ = [
+    "NOTIFY_VERSION",
     "BeliefSeries",
     "BusinessValue",
     "BusinessValueRegistry",
@@ -82,6 +88,8 @@ __all__ = [
     "detect_norm",
     "detect_state",
     "detect_time",
+    "discrepancy_event",
+    "discrepancy_type_iri",
     "explain_as_systematic",
     "jensen_shannon_distance",
     "merge_duplicates",

@@ -29,6 +29,7 @@ from sbp.core.modality import Modality
 from sbp.core.time import now
 from sbp.reasoning.ingest import fluent_of_event
 from sbp.reasoning.reconciliation import DetectionContext, reconcile
+from sbp.reasoning.reconciliation.notify import discrepancy_event
 from sbp.reasoning.reconciliation.rules import detect_state
 from sbp.reasoning.windows import WindowStore
 from services.runtime import ReadinessCheck, WorkerRuntime
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.consumer import EventHandler, KafkaEventConsumer
+    from sbp.eventlog.producer import KafkaEventProducer
     from sbp.integration.reliability import ReliabilityRegistry
     from sbp.reasoning.reconciliation.discrepancy import Discrepancy
     from sbp.reasoning.reconciliation.severity import BusinessValueRegistry
@@ -328,9 +330,29 @@ def _fluent_iri(local_name: str) -> str | None:
     return None if value is None else str(value)
 
 
+def discrepancy_topic(settings: Settings, *, site_id: str) -> str:
+    """不一致の起票先トピック（ADR-0010）。
+
+    既定は拠点（``<site>.reasoning.discrepancy``）。``SBP_REASONING_DISCREPANCY_SCOPE=central``
+    で中央に切り替わる。**両方には出さない**——同じ不一致が 2 つの ``event_id`` を持ち、
+    冪等性（不変条件 4）が壊れる。
+
+    Args:
+        settings: 設定。
+        site_id: 検出した拠点。
+
+    Returns:
+        トピック名。
+    """
+    from sbp.core.events import EventLayer, topic_name  # noqa: PLC0415
+
+    scope = site_id if settings.reasoning.discrepancy_scope == "site" else "central"
+    return topic_name(scope, EventLayer.REASONING, "discrepancy")
+
+
 async def build_worker(
     settings: Settings | None = None, *, site_id: str
-) -> tuple[ReconcileWorker, KafkaEventConsumer]:
+) -> tuple[ReconcileWorker, KafkaEventConsumer, KafkaEventProducer]:
     """実運用の配線を組む（物理 + 業務イベント → 不一致イベント）。
 
     **2 つのトピックを購読する。** 物理（接地層）と業務（統合層）の両方が要る——片方だけだと
@@ -341,18 +363,34 @@ async def build_worker(
         site_id: 拠点識別子。
 
     Returns:
-        ``(ワーカー, consumer)``。
+        ``(ワーカー, consumer, producer)``。呼び出し側が consumer と producer の停止を担う。
     """
     import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
 
     from sbp.core.events import EventLayer, topic_name  # noqa: PLC0415
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
+    from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
     from services.belief_worker import kafka_driver  # noqa: PLC0415
 
     resolved = settings or Settings()
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
-    worker = ReconcileWorker(resolved)
+
+    producer = KafkaEventProducer(resolved)
+    await producer.start()
+    topic = discrepancy_topic(resolved, site_id=site_id)
+
+    def sink(discrepancy: Discrepancy) -> object:
+        """起票を通知する（ADR-0010）。
+
+        **イベントは通知であって不一致そのものではない。** 不一致の本体を永続化する経路は
+        まだ無い（M8-12）。
+        """
+        return asyncio.create_task(
+            producer.send(topic, discrepancy_event(discrepancy, site_id=site_id))
+        )
+
+    worker = ReconcileWorker(resolved, sink=sink)
 
     consumer = KafkaEventConsumer(
         resolved,
@@ -366,23 +404,24 @@ async def build_worker(
     )
     await consumer.start()
     worker.attach_driver(kafka_driver(consumer))
-    log.info("worker.wired", worker=WORKER_NAME, site_id=site_id)
-    return worker, consumer
+    log.info("worker.wired", worker=WORKER_NAME, site_id=site_id, discrepancy_topic=topic)
+    return worker, consumer, producer
 
 
 def main() -> int:
     """エントリポイント。
 
-    **不一致の出力先を設定していない。** 起票イベントを出すには ``sink`` に producer を
-    渡す必要があり、トピック（``central.reasoning.discrepancy``）への送信は
-    ``TODO(question)``: 拠点ごとに出すか中央に集約するかが未決である
-    （`.claude/rules/knowledge.md` のトピック命名では中央だが、拠点別の運用もありうる）。
+    不一致の起票先は ``SBP_REASONING_DISCREPANCY_SCOPE``（既定 ``site``）で決まる
+    （ADR-0010）。拠点は ``Settings.site_id``。
     """
 
     async def _run() -> None:
         settings = Settings()
-        worker, consumer = await build_worker(settings, site_id=settings.site_id)
-        await worker.run(commit=consumer.stop)
+        worker, consumer, producer = await build_worker(settings, site_id=settings.site_id)
+        try:
+            await worker.run(commit=consumer.stop)
+        finally:
+            await producer.stop()
 
     asyncio.run(_run())
     return 0
