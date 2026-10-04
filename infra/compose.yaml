@@ -151,6 +151,75 @@ services:
       retries: 6
       start_period: 5s
 
+  # ---- 可観測性（observability profile、M8-06）--------------------------------
+  # **既定では起動しない。** 既定 4 サービスの 6 GB 制限（CLAUDE.md）はこの 2 つを含まない。
+  # 指標の取り込み先は API の /metrics で、ワーカーは metrics 表に書くだけである——
+  # ワーカーごとに HTTP エンドポイントを持たせると 1 ワーカー 1 プロセスでポートが増え続ける。
+  prometheus:
+    <<: *platform
+    image: prom/prometheus:v2.54.1
+    container_name: sbp-prometheus
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 保存期間を切る。開発機のディスクを埋めないため（長期保存は運用環境の仕事）
+      - --storage.tsdb.retention.time=15d
+      # external_labels の ${VAR} を展開する。**無いと設定が静かに文字列のまま残る**
+      # （Prometheus は健全に起動する。所見 66）
+      - --enable-feature=expand-external-labels
+    environment:
+      SBP_SITE_ID: ${SBP_SITE_ID:-siteA}
+    ports:
+      - "${SBP_PORT_PROMETHEUS:-9090}:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - sbp_prom:/prometheus
+    extra_hosts:
+      # ホストで `make dev` している API を取り込むため（Linux では自動で入らない）
+      - "host.docker.internal:host-gateway"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:9090/-/healthy >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # ダッシュボードは生成物（scripts/gen_dashboard.py）をプロビジョニングで入れる。
+  # UI で編集しても保存されない（allowUiUpdates を立てていない）——指標名の正典は
+  # sbp.core.metrics の列挙である。
+  grafana:
+    <<: *platform
+    image: grafana/grafana:11.2.0
+    container_name: sbp-grafana
+    profiles: ["observability"]
+    environment:
+      # **開発用の設定である。** 認証を切っているので、ローカル以外に出さない
+      # （UI の認証方式が未決なのと同じ理由。ADR-0008 の未決）
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: light
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "${SBP_PORT_GRAFANA:-3000}:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - sbp_grafana:/var/lib/grafana
+    mem_limit: 512m
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
 volumes:
   sbp_rp:
     name: sbp_rp
@@ -160,3 +229,8 @@ volumes:
     name: sbp_ox
   sbp_s3:
     name: sbp_s3
+  # observability profile のみ。`make nuke` で消える
+  sbp_prom:
+    name: sbp_prom
+  sbp_grafana:
+    name: sbp_grafana

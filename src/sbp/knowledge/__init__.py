@@ -21,6 +21,7 @@ from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
 from sbp.knowledge.hybrid import plan as plan_hybrid
 from sbp.knowledge.latent import LatentIndex, LatentNeighbour, LatentRegistration
+from sbp.knowledge.metrics_store import MetricStore
 from sbp.knowledge.observations import ObservationQueue, ObservationRow
 from sbp.knowledge.regrounding import (
     CompatibilityMatrix,
@@ -57,6 +58,7 @@ __all__ = [
     "LatentNeighbour",
     "LatentRegistration",
     "LocalArtifactStore",
+    "MetricStore",
     "ObservationQueue",
     "ObservationRow",
     "PartWholeEdge",

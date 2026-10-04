@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from sbp.api import Permission, Principal, build_schema, create_app, is_read_only_sparql
 from sbp.core import vocab
 from sbp.core.config import Settings
+from sbp.core.metrics import MetricSample, metric
 from sbp.core.modality import Modality
 from sbp.knowledge.assertions import AssertionRow
 
@@ -289,3 +290,70 @@ class TestStreamAndCommands:
         )
         assert client.get("/stream/t").status_code == 503
         assert client.post("/commands/x", json={}).status_code == 503
+
+
+class TestMetricsEndpoint:
+    """Prometheus の exposition（M8-06）。
+
+    重点:
+
+    1. **未配線は 503** — 空の exposition を返すと「スクレイプ成功、系列 0 件」と読まれ、
+       指標が止まっていることと配線していないことが区別できない（所見 32）。
+    2. **媒体型を付ける** — 付けないと取り込み側が推測する。
+    3. **HELP / TYPE が出る** — ダッシュボードを作る人が系列の意味を推測しない。
+    """
+
+    @staticmethod
+    def _client(samples: list[MetricSample] | None = None) -> TestClient:
+        async def read() -> list[MetricSample]:
+            return samples if samples is not None else []
+
+        app = create_app(
+            settings=Settings(),
+            assertion_store=_FakeStore(),  # type: ignore[arg-type]
+            principal_resolver=_site_a_reader,
+            metric_reader=read if samples is not None else None,
+        )
+        return TestClient(app)
+
+    def test_without_a_reader_it_returns_503(self) -> None:
+        """配線されていなければ 503（空を返さない）。"""
+        response = self._client().get("/metrics")
+
+        assert response.status_code == 503
+        assert "empty exposition" in response.json()["detail"]
+
+    def test_samples_are_exposed_in_prometheus_format(self) -> None:
+        """系列が exposition format で出る（HELP / TYPE 付き）。"""
+        sample = MetricSample(
+            name=metric("probe_auroc"),
+            value=0.93,
+            at=datetime(2026, 10, 4, 9, tzinfo=UTC),
+            labels={"probe": "Running"},
+        )
+
+        response = self._client([sample]).get("/metrics")
+
+        assert response.status_code == 200
+        body = response.text
+        assert "# HELP sbp_grounding_probe_auroc_ratio" in body
+        assert "# TYPE sbp_grounding_probe_auroc_ratio gauge" in body
+        assert 'sbp_grounding_probe_auroc_ratio{probe="Running"} 0.93' in body
+
+    def test_the_media_type_is_the_prometheus_text_format(self) -> None:
+        """媒体型が Prometheus の text format（取り込み側に推測させない）。"""
+        response = self._client([]).get("/metrics")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "version=0.0.4" in response.headers["content-type"]
+
+    def test_an_empty_reader_is_a_successful_empty_scrape(self) -> None:
+        """配線済みで系列 0 件なら 200（「まだ指標が無い」は正常）。
+
+        503 と区別できることが要点である——未配線は 503、配線済みで空は 200。
+        """
+        response = self._client([]).get("/metrics")
+
+        assert response.status_code == 200
+        assert response.text.strip() == ""

@@ -1,0 +1,13 @@
+# ダッシュボードのプロビジョニング（observability profile、M8-06）。
+# JSON はリポジトリが正典（UI で編集しても保存されない: allowUiUpdates を立てない）。
+apiVersion: 1
+
+providers:
+  - name: SBP
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

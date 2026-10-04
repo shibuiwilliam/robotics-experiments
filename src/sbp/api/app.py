@@ -27,17 +27,22 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from sbp.api.schema import BeliefSource, build_schema
 from sbp.core.logging import get_logger
+from sbp.core.metrics import prometheus_exposition
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable, Sequence
 
     from sbp.api.authorization import Principal
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
+    from sbp.core.metrics import MetricSample
+
+    MetricReader = Callable[[], Awaitable[Sequence["MetricSample"]]]
+    """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
 
 __all__ = ["create_app", "is_read_only_sparql"]
 
@@ -77,6 +82,7 @@ def create_app(
     stream_reader: Callable[[str, int], list[dict[str, Any]]] | None = None,
     command_handler: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
     principal_resolver: Callable[[Request], Principal | None] | None = None,
+    metric_reader: MetricReader | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -93,6 +99,10 @@ def create_app(
         principal_resolver: リクエスト → 要求者（ABAC、M7-06）。``None`` だと信念クエリは
             **すべて拒否される**（既定は拒否）。認証の実装は運用環境に依るのでここでは受け取る
             だけにし、「未設定なら通す」経路を作らない。
+        metric_reader: 系列ごとの最新値を返すもの（``MetricStore.latest`` を包む）。
+            ``None`` なら ``/metrics`` は**空ではなく 503 を返す**——空の exposition を返すと
+            Prometheus は「スクレイプ成功、系列 0 件」と読み、指標が止まっていることと
+            「配線していない」ことが区別できない（所見 32）。
 
     Returns:
         FastAPI アプリ。
@@ -124,6 +134,32 @@ def create_app(
             "ontology_version": ontology_version,
             "store_reachable": beliefs.reachable(),
         }
+
+    @app.get("/metrics", summary="Prometheus の exposition（observability profile が取り込む）")
+    async def metrics() -> PlainTextResponse:
+        """系列ごとの最新値を Prometheus 形式で返す（設計書 §12.3）。
+
+        **最新値だけを返す。** 履歴は Prometheus 側に溜まる。全履歴を出すとスクレイプごとに
+        同じ古い点を再投入することになり、Prometheus 側で時刻が付け替わって履歴が壊れる。
+
+        Raises:
+            HTTPException: ``metric_reader`` が未設定の場合（503）。空を返さないのは、
+                「指標が止まっている」と「配線していない」を区別するためである。
+        """
+        if metric_reader is None:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "metric reader is not configured; returning an empty exposition would "
+                    "look like a successful scrape with zero series"
+                ),
+            )
+        samples = await metric_reader()
+        return PlainTextResponse(
+            prometheus_exposition(samples),
+            # Prometheus の text format の媒体型。付けないと取り込み側が推測する
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.post("/sparql", summary="SPARQL プロキシ（読み取り専用）")
     async def sparql(request: Request) -> JSONResponse:

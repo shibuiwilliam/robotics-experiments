@@ -55,9 +55,10 @@ dev: ## API（:8000）とワーカーをホットリロードで起動
 
 # ---- 生成物 -----------------------------------------------------------------
 .PHONY: gen
-gen: ## ontology → src/sbp/core/vocab.py、EventType → schemas/*.json を再生成
+gen: ## ontology → vocab.py、EventType → schemas/*.json、METRICS → Grafana ダッシュボードを再生成
 	$(UV) python -m scripts.gen_vocab
 	$(UV) python -m scripts.gen_schemas
+	$(UV) python -m scripts.gen_dashboard
 
 .PHONY: ontology-check
 ontology-check: ## TTL 構文・SHACL 自己検証・事象計算対応・semver 互換・生成物差分
