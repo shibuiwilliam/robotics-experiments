@@ -23,10 +23,11 @@ UI（`apps/ui`、Node 20+）を触るときは `make ui-install` → `make check
 
 コマンド一覧と開発規約は `CLAUDE.md`、詳細は `docs/development-rules.md` を参照。
 
-> 現在地: **M0〜M7 完了**（ゲート G0〜G7 通過）/ **M8「配線」進行中（16 / 22）**。
+> 現在地: **M0〜M7 完了**（ゲート G0〜G7 通過）/ **M8「配線」進行中（16 / 30）**（2026-10-25 棚卸し）。
 > ゲート G8 の 3 条件のうち 2 つ（G0〜G7 維持、`TODO(question)` 0 件）は満たしている。
-> 残るのは M8 の 6 件、**人の判断を待つ 21 件**（`docs/HITL.md`）、「実データに当てるまで
-> 確かめられない」種類の制約である（`docs/STATUS.md`、`docs/PROGRESS.md` の既知の制約）。
+> 残るのは M8 の 14 件（うち 7 件は各データパスの先頭を運用で書く経路）、**人の判断を待つ 24 件**
+> （`docs/HITL.md`）、「実データに当てるまで確かめられない」種類の制約である（`docs/STATUS.md`、
+> `docs/PROGRESS.md` の既知の制約）。コマンドの記述の一部は実装とずれている（`docs/TASK.md` X-12 / X-13）。
 
 CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 不要）が落ちたら
 `integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。

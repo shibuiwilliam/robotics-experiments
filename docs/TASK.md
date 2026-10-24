@@ -1,6 +1,8 @@
 # TASK.md — SBP 開発計画・タスク管理
 
 - 日付: 2026-10-03（初版）
+- 最終更新: 2026-10-25（2 回目の棚卸し。M8-30・X-11〜X-13 を追加、M7-01 に注記、M8-10 を `[ ]` に戻した、G8 の現在地を統合テストの実行で再測定）
+- 前回: 2026-10-17（棚卸し。M8-23〜M8-29・X-09・X-10 を追加）
 - 対象: SBP の設計・実装・構築・運用に関わるすべての開発者・Claude Code セッション
 - 位置づけ: **計画とタスクの単一管理簿**。規約は `docs/development-rules.md`、設計の正典は `docs/design/sbp-design.md`、マイルストーンの現在地サマリは `docs/STATUS.md`、**人の判断を待つ事項は `docs/HITL.md`**。矛盾があれば 設計書 → CLAUDE.md → development-rules.md → 本書 の順に優先する。
 
@@ -267,6 +269,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 目的: 版更新と日常運用に耐える状態にする。
 
 - [x] **M7-01** 再接地ジョブ — `plan(scope)` → コスト見積り → `run(plan)`、旧文は `tx_to` 閉鎖のみ、差分レポート（runbook 形式）
+  - **2026-10-25 注記**: 実装されているのは `plan`（見積り）と `summarise`（差分レポート）だけで、**`run(plan)` は存在しない**。runbook の「実行」の段は `tests/integration/test_g7_regrounding.py` を走らせる指示になっており、実データは再接地されない（`docs/PROGRESS.md` 所見 110）。チェックは当時の判定として残す。実行の段を作るかどうか・どの里程で扱うかは `docs/HITL.md` H-24
 - [x] **M7-02** 版ライフサイクル統合 — オントロジー版 × WM 版 × プローブ版 × 写像版の互換性行列、昇格パイプライン（影響分析 → カナリア → 再接地 → 差分レビュー）
 - [x] **M7-03** 可観測性 — §12.3 の指標（WM / 接地 / 信念 / 照合 / 統合 / 運用）を metrics テーブル + Prometheus エクスポート（指標名は列挙で固定。Grafana ダッシュボードは observability profile の設定として未作成）
 - [x] **M7-04** UI — 不一致キュー（証拠並置・解決入力 = 学習信号）、信念ビュー（三源 + as-of スライダ）、期待ボード、概念 curation（`apps/ui`。ADR-0008 で Vite + React、GraphQL クライアントと UI ライブラリを入れない決定）
@@ -290,7 +293,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 | 指標が 6 領域 25 指標そろう | `METRICS` に 25 件、未定義の名前は構築時に拒否 | 通過 |
 | 潜在から個体を同定できない | 同型設備 24 台、状態のみの潜在で top-1 が当て推量 1/24 を超えない（陽性対照は top-1 > 0.8 で成功） | 通過 |
 | シークレットが混入していない | 追跡 262 ファイルで検出 0（陽性対照として偽の鍵 3 件を検出することを確認済み） | 通過 |
-| runbooks に従って第三者が再接地できる | **部分的** — runbook が参照する記号（`plan` / `run` / `RegroundingReport` 等）が `sbp.knowledge` に実在することをテストで検査した。**「別セッションの人間が読んで実行できるか」は自動では検査できない** | 条件つき通過 |
+| runbooks に従って第三者が再接地できる | **部分的** — runbook が参照する記号（`plan` / `run` / `RegroundingReport` 等）が `sbp.knowledge` に実在することをテストで検査した。**「別セッションの人間が読んで実行できるか」は自動では検査できない**。**2026-10-25 追記**: `run` は実在せず（検査は `plan_regrounding` / `summarise_regrounding` / `CompatibilityMatrix` だけを見ていた）、runbook の実行手順は統合テストの実行だった（所見 110） | 条件つき通過 |
 
 **この数値が証明していることの限界。** G7 の中心である「旧版の判断が as-of で返る」は実測で
 確かめたが、プローブの新旧の差は**学習量（30 エポック対 500 エポック）で付けた**。不変条件 7 が
@@ -318,7 +321,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-07** `SituationLink` による実体間結合 — 同一 Situation に属する実体の結合（現在は部分−全体のみ）。Situation の所属を引くクエリを `sbp.knowledge.relations` に足す → 完了（`situation_members()`。`graph_relations` が `(PartWhole, SituationLink)` の対を返すようにし、`propagate` の `situations` に繋いだ。参加者 1 件の Situation は落とす。単体 6 件）
 - [x] **M8-08** 学習信号の適用ワーカー — UI/API に入った人の判断を受けて、書き戻し・プローブ再学習・概念採択を実行する。**人の承認が前提**（自動適用しない） → 完了（ADR-0012。判断は作業キュー（alembic 0005 `learning_decisions`）で受け、**5 番目のワーカー** `learning-worker` が適用する。API の `command_handler` を配線（受け付けるだけ）。**自動適用は観測要求と既定 dry の書き戻しだけ**——信頼性更新・負例バッグ・概念候補は記録するだけ。単体 26 件 + 統合 8 件。**M8-05 のキューに書く側がこれで埋まった**）
 - [ ] **M8-09** 発見ループの周期実行 — 概念発見（検出 → 提案 → curation）を周期ジョブにする。**M8-19 で作った `concept_proposals` 表に書く側**がこれである。採用後のオントロジー MINOR 起票は人の手作業のまま（意図的）。**H-10（却下した提案の再提案を抑えるか）を先に決めると手戻りが減る**——周期実行を入れると実際に繰り返しが起こる
-- [~] **M8-10** LLM の live 経路（**H-04 の判断待ち**） — 任意依存として SDK を 1 つ追加し、`live_factory` を実装する。fixture が無いときに黙って live に落ちないことをテストで固定。**どの SDK を入れるかが決まっていない**（契約・コスト・データの所在は運用方針。`docs/HITL.md` H-04）。H-01（鍵のローテーション）とも連動する
+- [ ] **M8-10** LLM の live 経路（**H-04 の判断待ち**） — 任意依存として SDK を 1 つ追加し、`live_factory` を実装する。fixture が無いときに黙って live に落ちないことをテストで固定。**どの SDK を入れるかが決まっていない**（契約・コスト・データの所在は運用方針。`docs/HITL.md` H-04）。H-01（鍵のローテーション）とも連動する。**2026-10-25: `[~]` → `[ ]` に戻した**——`src/sbp/llm/` にプロバイダ実装は無く（`base.py` / `registry.py` / `replay.py` のみ）着手の痕跡が無いので、`[~]` のままだと P-00 の WIP 数え上げで「進行中 1 件」と誤読される。止まっている理由は「H-04 の判断待ち」で表す（§2）
 - [x] **M8-12** 不一致の永続化と API 露出 — イベントは通知であって不一致そのものではない（`EventEnvelope` に全体を入れる場所が無い）。UI には不一致キューの型とロジックがあるが、API に資源が無く、知識グラフにも投影表にも不一致が書かれていない。**通知だけでは UI が中身を読めない**（ADR-0010 の未決） → 完了（ADR-0013。alembic 0006 `discrepancies`（問い合わせ列 + `payload jsonb`）、`DiscrepancyStore`、GraphQL の `discrepancies(...)`。照合ワーカーが書き、**learning-worker が本体を読む**ので M8-08 の再構成回避を解消。`status_rank` でライフサイクルの後退を SQL で弾く（所見 80）。単体 7 件 + 統合 14 件。**UI の差し替えは M8-16**）
 - [x] **M8-13** `make dev` と API の実配線 — **`scripts/dev.py` が存在せず `make dev` が落ちる**（CLAUDE.md のコマンド表にあるのに）。`create_app` を実物の依存（`AssertionStore` / SPARQL / ストリーム / コマンド / ABAC の要求者 / `MetricStore`）で組む経路がどこにも無く、API はテストの中でしか起動したことがない。M8-06 の Prometheus 取り込み先もこれが無いと存在しない → 完了（`sbp.api.factory.build_app` + `scripts/dev.py`。**開発用の要求者は `SBP_ENV=dev` 限定**で、それ以外では解決器を渡さない＝全拒否。購読とコマンドは未決なので渡さない（503）。単体 15 件 + 統合 8 件。**実測**: metrics 表 → `/metrics` → Prometheus の 3 系列が取り込まれ、ラベル付きでクエリできることを確認）
 - [x] **M8-14** 指標の書き込み配線 — 表・エクスポート・ダッシュボードは通ったが、**`MetricStore.write` を呼ぶ運用コードが 1 つも無い**（PROGRESS.md 所見 71）。25 指標の値は各所で計算されているのに `metrics` 表に行かない。ワーカーと再接地ジョブに書き込みを足す → 完了（`services/metrics.MetricRecorder`（溜めて周期ごとに書く）を 3 ワーカーに配線。belief: `update_latency` / `contrib_observed|record|plan`（正規化）/ `belief_entropy` / `event_log_lag`、bridge: `lifting_delay`、reconcile: `discrepancies_raised`（類型別）/ `suppression_rate`。単体 20 件。**実測**: 実物の Postgres に 6 系列が入り読み戻せることを確認。**配線済みは 25 指標中 9**（`contrib_*` を 3 と数える。2026-10-04 に走査で再確認）、**残り 16 が未配線** → M8-15
@@ -330,30 +333,85 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-20** 契約 → `Expectation` の変換を production に出す — 契約 + `ActionEvent` → `Expectation` を作るコードが**テストの中にしかなかった**（`tests/integration/test_g5_closed_loop.py` がインラインで組んでいた。所見 89）。**実行経路の配線は M8-21 に分けた**（1 日粒度を超える。§2） → 完了（`sbp.actions.expectations.expectation_for` / `expected_effect_for`。**区間は契約の境界から作る**（`belief_at_least` → `[threshold, 1.0]`、期待値は境界そのもの＝契約が満たされる最弱の値）。業務効果の下端は `Settings.actions.record_effect_floor`（**関数に既定を埋めない**——二重定義になる）。重複した `planned_expectation_deadlines` を削除（所見 91）。G5 の fixture を production の関数に差し替えた。単体 11 件）
 - [x] **M8-21** アクション実行の配線（M8-20 から分割） — 実行自体が API コマンドとして未配線だった。前提検証 → 承認 → 実行 → `ActionEvent` → `Expectation` 永続化を運用経路に出す → 完了（ADR-0014。実行は**判断キューを通る**（alembic 0008 で `kind='action'` を追加）——承認は判断であり、実行はその適用である。`ExecutionCommand` は `sbp.actions.requests`（**`sbp.api` に置くとワーカーが API を import することになる**。import-linter が落ちた）。`sbp.knowledge.current_beliefs` で前提の物理面を引く（様相は `inferred` に絞る——`planned` を混ぜると安全ガードが計画の追認になる）。**冪等の鍵を `decision_id` から導く**（既定の `uuid4` では再試行で別の命令になる。所見 93）。単体 14 件 + 統合 3 件）
 - [ ] **M8-22** UI からアクションを承認する経路 — API に `/commands/execute_action` が立ったが、**UI に押す場所が無い**。不一致キューから「緊急点検を起票する」を承認する画面と、落ちた理由（前提未達・レート制限）を人に返す経路が要る。ADR-0014 の未決 3 つ（`docs/HITL.md` の **H-06** レート制限の永続化 / **H-07** `ActionEvent` の永続化 / **H-08** 補償の入口）も合わせて検討する
-- [ ] **M8-11** 統合テスト G8 — 4 ワーカーを実物のサービス上で回し、各 `step()` が非ゼロを返すことを確認する
+
+以下 M8-23〜M8-29 は 2026-10-17 の棚卸しで起票した。設計書 §2.5 の三つのデータパスを `services/` と
+`scripts/` から辿り直したところ、**各パスの先頭を運用で書くコードが無かった**（`docs/PROGRESS.md`
+所見 101〜104）。どれも M8 の目的「供給元と周期実行を埋める」の範囲だが、**M8-11 の前提にするかは
+H-22 の決定次第**である。
+
+- [ ] **M8-23** プローブ束を置き場に入れる経路 — 学習 → 評価 → `promote()`（AND ゲート）→ `bundle_probe` → `ArtifactStore.put` を運用の手順（`scripts/` のコマンド）にする。**いまは `put` を呼ぶ運用コードが無く、新規環境では bridge-worker が構築で落ちる**（空の束は拒否、ADR-0009）。学習の弱ラベルは記録由来（`TimeBag`）なので M8-25 に依存する。スクリプトから真値を読まない（不変条件 10。import-linter の対象に `scripts` が入っている）
+- [ ] **M8-24** 推定パスの先頭（**ADR 先行**） — 観測窓 → `WorldModel.encode` → `LatentIndex.write` を運用で回す。**いまは潜在索引に書くコードがテストにしか無い**（`test_bridge_worker_e2e` / `test_g4_worldmodel`）。エンコーダをどこで動かすか（6 番目のワーカー / bridge-worker の前段 / 本リポジトリ外のエッジ。設計書 §12.1 はエッジにエンコーダを置く）を ADR で決める。前提として WM 本体の重みの直列化（PROGRESS 既知の制約）と観測の入口の契約が要る。1 日を超えるなら分割する
+- [ ] **M8-25** 記録パス・計画・資産台帳の周期実行（**ADR 先行**） — `Connector.pull(since)` → 写像 → `IngestionPipeline` → `<site>.integration.business`、`PlanItem` → `planned`、資産台帳の同期（設計書 §7.1 の「マスタ 定期同期」）を運用で回す。**いまは `IngestionPipeline` を呼ぶのが G1 の統合テストだけで、`make seed` はオントロジーしか入れない**——新規環境では `entities_of_type` が 0 件を返し、reconcile-worker の記録側の入力は空のまま。置き場（ワーカーかジョブか）を ADR で決める。**2026-10-25 追記**: 閾値・ワーカー設定を `.env` で拠点別に与えるには X-11 が先に要る（所見 108）。記録が流れ始めたら M8-30 を続けて入れる（所見 109）
+- [ ] **M8-26** 信念更新を三源にする — belief-worker が `integration.business` と計画を読み、`BeliefFilter.step(records=…, plan=…)` に渡す。記録尤度に `AuditMask` を適用する（不変条件 6）。**いまは `bridge.physical` だけを購読し、全イベントをプローブ確率として渡す一源**で、`contrib_record` / `contrib_plan` は構造的に 0（所見 102）。docstring（「業務記録・計画を読み」）も実装に合わせる。M8-25 に依存。**2026-10-25 追記**: `BeliefIngest` には `reliability` も渡していない（`None`。所見 109）ので、記録尤度を入れるときに `reliability/*.yaml` を読んで渡す
+- [ ] **M8-27** 期待の周期検証 — `verify_expectation` を期限と証拠の到着で回し、`expectations` 表の状態を進める。`Violated` は不一致（類型 2 / 3）の起票、`Undetermined` は観測要求（設計書 §8.5）。**いまは learning-worker が `Active` で書くだけで、検証する運用コードが無い**（所見 103）。置き場は ADR-0012 / ADR-0014 の延長で決める
+- [ ] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク
+- [ ] **M8-29** 人の確認回答を `observed` で戻す経路 — 設計書 §14 の手順 4（人の回答が最上位の事実性を持ち、記録訂正と信頼性更新に変わる）。スケジューラが選んだ「人への質問」の回答を API コマンドで受け、`observed` のイベントにして観測要求を充足する。**いまは回答の入口が無い**（コマンドは `resolve_discrepancy` / `curate_concept` / `execute_action` の 3 つ）。**H-13**（充足の判定）と合わせて設計する
+以下 M8-30 は 2026-10-25 の棚卸しで起票した。10-17 の「この段の入力を誰が書くか」に対し、
+「production が組むとき何を渡していないか」を問うて見つかった（`docs/PROGRESS.md` 所見 109）。
+
+- [ ] **M8-30** 照合ワーカーに信頼性モデル・業務価値・記録を渡す — `services/reconcile_worker.build_worker` は `reliability` も `values` も渡さず、構築子の既定（空の `ReliabilityRegistry` / `BusinessValueRegistry`）で組まれる。`reliability/*.yaml` と `value/*.yaml` は運用のどこからも読まれない。さらに周期処理が `reconcile()` に `records` を渡さないので、**抑制の判定は一度も走らず（`suppression_rate` は構造的に 0）、深刻度の業務価値項は全件が中間値になる**。(a) 両レジストリを `from_directory` で読んで渡す（M8-25 を待たずにできる）、(b) 窓に溜めた記録を証拠 IRI → `Record` の写像にして `reconcile(records=…)` に渡す（M8-25 に依存）、(c) 渡さなかった場合は `driver` / `sink` と同じく警告ログを出す。統合テストで「系統誤差で説明できる不一致が運用の配線で抑制される」ことを固定する
+- [ ] **M8-11** 統合テスト G8 — 4 ワーカーを実物のサービス上で回し、各 `step()` が非ゼロを返すことを確認する。**入力（潜在・プローブ束・業務記録・実体の登録・判断）をテストが直接置いてよいかは H-22 の判断待ち**
 
 **ゲート G8**: G0〜G7 維持 + M8-11 緑 + `TODO(question)` が 0 件（解決した ADR へのリンク、または「意図的に残す理由」が PROGRESS.md に記録されている）。
 
-#### ゲート G8 の現在地（2026-10-04 実測）
+#### ゲート G8 の現在地（2026-10-25 再測定）
+
+2026-10-04 以降コードの変更は無い（HEAD は `f05e141`。2026-10-17 と本日の文書の更新は未コミット）。
+数値は再測定で同じ値を得た。**統合テストは本日実際に実行した**（2026-10-17 は件数の収集だけだった）。
 
 | 条件 | 実測 | 判定 |
 |---|---|---|
-| G0〜G7 を維持 | 統合 187 件緑。`make check` 緑（単体 1332 / 性質 21 / 契約 67 = 1420）。UI 77 件緑 | 満たしている |
-| `TODO(question)` が 0 件 | 走査で 0 件。M8-02〜M8-05 の 4 件は ADR-0009〜0012 に解決先が書かれている | 満たしている |
+| G0〜G7 を維持 | `make check` 緑（2026-10-25。単体 1332 / 性質 21 / 契約 67 = 1420、41.5 秒）。**統合 187 件緑（2026-10-25 に実行、12.8 秒）**。UI 77 件緑（tsc + vitest） | 満たしている |
+| `TODO(question)` が 0 件 | 再走査でコード（src / services / scripts / tests / ontology / infra / apps）に 0 件。文書中の出現は規約の説明と解決済みの記録だけ。M8-02〜M8-05 の 4 件は ADR-0009〜0012 に解決先が書かれている | 満たしている |
 | M8-11 緑 | 未着手 | **未達** |
 
-**M8 の残り 6 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
-M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認）/ M8-11（G8 の統合テスト）。
+**G8 の条件の字面には穴がある。** 「4 ワーカーが実物のサービス上で非ゼロ」は、潜在・プローブ束・
+業務記録・判断をテストが直接置けば、いまの実装のまま書ける。しかし運用のコードには各データパスの
+先頭が無く（所見 101）、そのまま通すと G5 の「完走させたのはテストコード」（所見 89）を繰り返す。
+**入力を誰が置いてよいかを `docs/HITL.md` H-22 で人に返した**。推奨は「外界（物理の観測・業務
+システム・人の操作）だけをテストが模擬し、基盤の内側の段は運用コードで通す」で、その場合
+M8-23 / M8-24 / M8-25 が M8-11 の前提になる。なお G8 が名指しするのは 4 ワーカーで、5 番目の
+learning-worker（ADR-0012）は条件に入っていない。
 
-**着手順の推奨**: M8-09 → M8-17 → M8-22 → M8-15 → M8-11。M8-10 は `docs/HITL.md` の H-04 が
-決まるまで着手できない（どの SDK を任意依存に入れるかが決まらない）。M8-09 の前に H-10（却下した
-提案の再提案を抑えるか）を決めると手戻りが減る——周期実行を入れると実際に繰り返しが起こる。
+**M8 の残り 14 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
+M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認）/ M8-23（プローブ束の投入）/
+M8-24（推定パスの先頭。ADR 先行）/ M8-25（記録パス・計画・資産台帳。ADR 先行）/ M8-26（三源の信念更新）/
+M8-27（期待の周期検証）/ M8-28（Situation の述語）/ M8-29（人の確認回答）/ M8-30（照合ワーカーの
+レジストリと記録）/ M8-11（G8 の統合テスト。**H-22 の判断待ち**）。
+
+**M8 の前に片付けるもの**（2026-10-25 追加。いずれも小さい）: 未コミットの棚卸しのコミット（所見 107）→
+X-10（ブランチを main に統合）→ X-11（入れ子の設定が `.env` を読まない）/ X-12（`make up` の
+`$(comma)`）。X-11 / X-12 はバグ修正なので再現テストを先に書く（§1.1、CLAUDE.md）。
+
+**着手順の推奨**（2026-10-25 改訂）: M8-28 → M8-25 → M8-30 → M8-26 → M8-23 → M8-27 → M8-29 → M8-09 →
+M8-17 → M8-22 → M8-15 → M8-24 → M8-11。
+
+- **M8-28 を先頭に置く**のは小さく、Situation の所属を書く側が現れる前に直さないと、書く側が誤った
+  述語に合わせてしまうため。
+- **M8-25 → M8-30 → M8-26 → M8-23** の順は依存の向き（記録が流れないと三源にできず、記録由来の弱ラベルが
+  無いとプローブを学習できない）。M8-25 は ADR を先に書く。M8-30 を M8-25 の直後に置くのは、記録が
+  流れ始めた日から抑制と業務価値が効いた不一致を起票するため（レジストリの読み込み部分は先にやってよい）。
+- 旧推奨（M8-09 → M8-17 → M8-22 → M8-15）より前に新タスクを置いたのは、**新タスクが無いと連鎖が
+  始まらず、M8-09・M8-17・M8-15 が読む入力も空のまま**だからである。
+- M8-24 は ADR でエンコーダの置き場を決めるまで形が決まらない（本リポジトリ外のエッジと決めれば、
+  入口の契約だけになる）。
+- M8-10 は H-04 が決まるまで着手できない（どの SDK を任意依存に入れるかが決まらない）。M8-09 の前に
+  H-10（却下した提案の再提案を抑えるか）を決めると手戻りが減る——周期実行を入れると実際に繰り返しが
+  起こる。
+
+**M8 の目的の外にある運用の穴（タスク未起票。扱う里程は `docs/HITL.md` H-24 の判断待ち）**: 再接地の
+実行（`run(plan)` が無い。所見 110）、予測・What-if・説明の入口（GraphQL / コマンド / 周期ジョブのいずれも
+無い）、LLM を使う機能の入口（概念提案・文書抽出・NL→クエリ・説明の文章化。運用コードは `sbp.llm` を
+import しない）、SHACL 検証・同一性束縛・空間束縛の運用経路（`quarantine` 表に書く者がいない）。どれも
+ライブラリと統合テストはあり G5〜G7 で「組めること」は確かめたが、運用で呼ぶ者がいない。H-24 が決まったら
+該当する里程にタスクとして起票する（スコープ変更なので ADR を伴う。§2）。
 
 ---
 
 ## 4. 横断・継続タスク（マイルストーンに属さない）
 
 - [x] **X-01** CI 整備 — `.github/workflows/ci.yml`。3 ジョブ（`check` / `integration` / `ui`）。`check` が落ちたら `integration` を走らせない（型が通らないのに Compose の起動を待っても情報が増えない）。`integration` は `.env.example` の既定ポートを使い、**healthy の期待件数を明示して待つ**——「healthy でないものが 0 件」を成功条件にすると、コンテナが 1 つも起きていないときも通る
+  - **2026-10-17 追記**: X-05 で `audit` ジョブが足されて **4 ジョブ**（check / integration / audit / ui）になっている。**`git remote` が空なので、このワークフローは一度も実行されていない**——`[x]` は「CI の定義を書いた」までの意味で、GitHub のランナー（amd64）上で緑になったことは観測されていない（所見 105）。実行場所は `docs/HITL.md` H-23
 - [x] **X-02** import 境界 lint — import-linter の契約 7 本（`make check` の `deps-check`）。層依存の向き、オラクル境界（不変条件 10）、LLM SDK、LLM のホットパス（不変条件 11）、worldmodel の記号非決定、bridge の非永続化、ワーカーの API 非経由。**`root_packages` に `services` / `scripts` を入れた**——`sbp` だけを見ていると、実運用で動くワーカーと投入スクリプトからオラクルを読む経路が検査されない。各契約が実際に落ちることを違反を仕込んで確認済み
 - [ ] **X-03** ADR の継続運用 — 設計逸脱・閾値変更・ライブラリ選定のたびに `docs/adr/NNNN-*.md`
 - [ ] **X-04** `docs/STATUS.md` 更新 — ゲート通過時のみ（§2 の更新手順）
@@ -368,6 +426,52 @@ M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認
   ドキュメントが落ちるのは本末転倒なので、「どこに書くか」を 1 箇所に絞るほうが先）
 - [ ] **X-08** `docs/HITL.md` の棚卸し — ゲート通過時と §7 を触るとき。決定済みの項目を §4 に移し、
   ADR 起票を確認してから消す。**ADR の「未決」は書き換えない**（決定の記録なので履歴として残す）
+- [ ] **X-09** 規約文書を ADR に追従させる — ADR-0003 / 0005 / 0006 / 0007 が「影響」に挙げた文書更新の
+  うち、次が未了（所見 106）: `docs/development-rules.md` §3・§6.2・§6.3・§6.5・§6.6（WM Protocol の
+  `probe` / `explain`、`minio`、RML、RDF-star）、`.claude/rules/bridge-worldmodel.md`（`probe` / `explain`、
+  `minio://models/...`）、`.claude/rules/knowledge.md`（`latent_index_v<N>` → 実装は `latent_index_d<次元>`
+  + 登録表）、`.claude/rules/infra-testing.md` と `docs/runbooks/local-setup.md`（ポート退避の置き場、所見 60）、
+  `docs/development-rules.md` §2.1 と `README.md`（ルートの `settings.json` へのシンボリックリンクは**存在しない**）、
+  `README.md` と `docs/HITL.md` §4 の「CI 3 ジョブ」（実際は 4）。**層別ルールは該当ファイルを開くと自動で
+  読み込まれるので、古いルールは次のセッションに古い指示として届く。** X-07 と合わせ、ADR の「影響」に
+  書いた追従を検査できる形を検討する
+  - **2026-10-25 再確認**: 上記はすべて未修正（HITL.md §4 の「4 ジョブ」だけは 10-17 の未コミットの変更で
+    直っている。TASK.md X-01 の本文は「3 ジョブ」のまま注記で補っている）。加えて **設計書 §4.3** が
+    `probe` / `explain` を持ち ADR-0007 への参照が無い（ADR-0007 の帰結が求めている。所見 106 の「設計書は
+    更新済み」は誤りだった、所見 112）。`infra/sql/versions/0001_initial_projections.py` のコメントも
+    `latent_index_v<N>` のまま
+- [ ] **X-11** 入れ子の設定が `.env` を読まない不具合を直す（**バグ修正。再現テストを先に書く**） —
+  `BridgeSettings` / `ReasoningSettings` / `WorldModelSettings` / `ActionsSettings` は `env_file` を持たず
+  `default_factory` で別に構築されるので、`SBP_BRIDGE_*` / `SBP_REASONING_*` / `SBP_WM_*` / `SBP_ACTIONS_*` は
+  環境変数からしか読まれない。`.env` に書いた閾値は警告無しに既定値になる（所見 108。一時ディレクトリの
+  `.env` で再現済み）。再現テストは「一時ディレクトリの `.env` に入れ子の項目を書くと `Settings()` に反映される」。
+  直し方（入れ子にも `env_file` を持たせる / 親から `env_nested_delimiter` で渡す / 親の構築時に `.env` を読んで
+  入れ子に渡す）は pydantic-settings の挙動を確かめて選ぶ。H-01 で鍵や設定の置き場を `.env` に寄せる前提になる
+- [ ] **X-12** `make up PROFILES=a,b` が基本 4 サービスだけを起こす不具合を直す（**バグ修正**） — Makefile が
+  `$(comma)` を定義していないので `--profile ui,observability` の 1 引数になり、compose はそれを未知の profile
+  として扱う（所見 111。`docker compose ... config --services` で確認）。`comma := ,` を定義し、`make -n up
+  PROFILES=ui,observability` が `--profile ui --profile observability` を出すことを確かめる
+- [ ] **X-13** 入口の文書のコマンドと設定の記述を実装に合わせる — 所見 111 / 112 の乖離のうち X-09（ADR 追従）に
+  入らないもの。**CLAUDE.md**（`make up --profile` → `PROFILES=`、`make dev` は API だけ、`make bootstrap` は
+  `brew bundle` を呼ばない、`make check` の中身、`make gen` はダッシュボードも生成、`make seed` の「MinIO
+  バケット」、「写像（RML）」、モデル族の `gnn`、Oxigraph の「RDF-star」、Compose 6 GB の範囲、
+  `ontology/imports/` の「固定版同梱」）、**README**（同じコマンドの記述、ルートの `settings.json`、CI のジョブ数）、
+  **層別ルール**（`vocab.prov_activities`、`run(plan)`、`tenacity` / `ruptures`、LLM のプロバイダ実装ファイル、
+  写像ごとの契約テストファイル、ポート 9001、`make lint` の Turtle 検査）、**runbook**（`backup-restore.md` の
+  `make ontology-check` の説明と「G0〜G6」、`version-promotion.md` の「G0〜G6」）、**PROMPT.md**（「TASK.md §7」の
+  参照、`test_mapping_workorder.py`、P-30 の日次点検 runbook）、**`.env.example`**（`Settings` の 15 項目と
+  compose の 4 変数が無い、`SBP_ENV` に `prod`）、**docstring**（`core/errors.py`、`integration/connectors.py`、
+  `integration/mock/business_system.py`、`services/scheduler_worker.main`、`services/belief_worker` 冒頭）、
+  **development-rules.md** §2.1（ルート直下 4 ファイル）。`ontology/imports/` は文書を直すか
+  `scripts/fetch_imports.sh` を実行して同梱するかを先に決める。CLAUDE.md の変更はそれ自体が規約の変更なので、
+  変更点を PR で人が確認する。**機械で検査できるもの**（Makefile ターゲットと文書のコマンド表、`Settings` と
+  `.env.example` のキー、層別ルールが名指しする記号の実在）は X-07 の契約テストに入れることを検討する
+- [ ] **X-10** M8 のブランチを main に統合する — M8-01〜M8-21 と棚卸しの 20 コミットが
+  `feat/bridge-probe-serialization`（M8-01 のブランチ名）に積まれ、main は M7 完了直後（`74974d8`）のまま
+  （所見 105）。§2 の「1 タスク = 1 ブランチ」から外れている。統合したうえで、以後のタスクは
+  `feat/<module>-<topic>` に戻す。リモートへの push は H-23 の決定後。**2026-10-25 時点も同じ**（main より
+  20 コミット先行、リモート無し）。統合の前に、未コミットの棚卸し（2026-10-17 / 10-25、所見 107）をこのブランチに
+  コミットしておく
 
 ---
 
@@ -407,12 +511,17 @@ M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認
 本書（タスク）と §7（未決）に分かれていると、「タスクが止まっている理由」と「誰の判断待ちか」が
 突き合わせられなかった。
 
-`docs/HITL.md` は 21 件を優先度順に持つ。本書のタスクをブロックしているのは次の 2 件である:
+`docs/HITL.md` は 24 件を優先度順に持つ（2026-10-17 に H-22 / H-23、2026-10-25 に H-24 を追加）。
+本書のタスクをブロックしているのは次の 6 件である:
 
 | HITL | 内容 | ブロックするタスク |
 |---|---|---|
+| **H-22** | G8 の統合テストで、ワーカーの入力をテストが直接置いてよいか | **M8-11**（と、M8-23〜M8-25 を M8-11 の前提にするか） |
+| **H-24** | M8 の目的の外にある運用の穴（再接地の実行・問い合わせの入口・LLM 機能の入口・SHACL / 同一性 / 空間）をどの里程で扱うか | 該当タスクの起票そのもの（§3 M8 の末尾） |
 | **H-04** | LLM の live 経路で使うプロバイダ | **M8-10** |
+| H-13 | 観測要求が「満たされた」ことの判定 | M8-29（決めなくても入口は作れるが、充足の判定が残る） |
 | H-10 | 却下した提案の再提案を抑えるか | M8-09（決めなくても着手できるが手戻りが出る） |
+| H-23 | リモートリポジトリと CI の実行場所 | X-01 の実質（CI が一度も走っていない）、X-10 の push |
 
 本節にあった 5 件の決着:
 
