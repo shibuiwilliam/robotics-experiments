@@ -17,6 +17,7 @@ from sbp.knowledge.artifacts import (
 )
 from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_beliefs
 from sbp.knowledge.concepts import ConceptProposalRecord, ConceptProposalStore
+from sbp.knowledge.cursors import IngestCursorStore
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
@@ -76,6 +77,7 @@ __all__ = [
     "GraphStore",
     "HttpGraphStore",
     "HybridPlan",
+    "IngestCursorStore",
     "LatentIndex",
     "LatentNeighbour",
     "LatentRegistration",

@@ -233,6 +233,23 @@ class ActionsSettings(_DotenvSettings):
     """
 
 
+class IntegrationSettings(_DotenvSettings):
+    """業務統合の取込ワーカーの設定（設計書 §7.1、ADR-0016）。"""
+
+    model_config = SettingsConfigDict(env_prefix="SBP_INTEGRATION_")
+
+    poll_period_s: float = Field(default=60.0, gt=0.0)
+    """業務システムを読みに行く周期（秒）。資産台帳もこの周期で全行を同期する。"""
+
+    mock_db_path: str = ""
+    """開発用の業務システムモック（SQLite のファイル）のパス。
+
+    **既定値を置かない。** 空なら取込ワーカーはコネクタ無しで起動し、``unwired`` で報告する——
+    適当なパスを既定にすると、空のモックを読んで「業務記録が 0 件」を正常に見せる。実システムの
+    コネクタは本リポジトリでは扱わない（ADR-0016 の未決）。
+    """
+
+
 class Settings(_DotenvSettings):
     """SBP 全体の設定。``.env`` から読み、プレフィクスは ``SBP_``。"""
 
@@ -275,6 +292,7 @@ class Settings(_DotenvSettings):
     reasoning: ReasoningSettings = Field(default_factory=ReasoningSettings)
     worldmodel: WorldModelSettings = Field(default_factory=WorldModelSettings)
     actions: ActionsSettings = Field(default_factory=ActionsSettings)
+    integration: IntegrationSettings = Field(default_factory=IntegrationSettings)
 
     @property
     def is_test(self) -> bool:

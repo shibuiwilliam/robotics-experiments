@@ -54,7 +54,7 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | 照合 | 類型 2 の検出 → `discrepancies` 表 + 拠点トピック（reconcile-worker） | 記録側の入力（記録パスが無いので空）/ 実体の型（資産台帳が無いので業務価値は全件中間値。配線は M8-30 で済み）/ **抑制は構造的に 0**（類型 2 の抑制規則が常に偽、所見 113）/ 類型 1・3・4・5 |
 | 人の判断 | API コマンド → 判断キュー → learning-worker（観測要求・curation・アクション実行） | 人の確認回答を `observed` で戻す（M8-29）/ UI からの承認（M8-22）/ 書き戻し（運用の組み立てでは意図的に配線していない。記録訂正は提案として記録するだけ） |
 | アクション | 前提検証 → 実行 → 期待の書き込み（learning-worker） | **期待の検証**（M8-27）/ `ActionEvent` / 補償（H-07 / H-08） |
-| その他 | 観測要求の選択（scheduler-worker。送信先は未設定）、指標 9 / 25、`/metrics` | **再接地の実行**（`run(plan)` が無い、所見 110）/ 予測・What-if・説明・LLM 機能の入口（周期ジョブも API 資源も無い）/ 概念発見（M8-09）——M8 の目的の外のものは H-24 |
+| その他 | 観測要求の選択（scheduler-worker。送信先は未設定）、指標 11 / 25、`/metrics` | **再接地の実行**（`run(plan)` が無い、所見 110）/ 予測・What-if・説明・LLM 機能の入口（周期ジョブも API 資源も無い）/ 概念発見（M8-09）——M8 の目的の外のものは H-24 |
 | 設定・起動 | `Settings` の直下も層別の閾値も `.env` から効く（**X-11 で直した**）。`make up PROFILES=a,b` で複数の profile を起こせる（**X-12 で直した**） | `make dev` は API だけを起こす（ワーカーは `--workers` で明示。文書の記述は X-13） |
 
 ## 規模（2026-10-25 実測）
@@ -65,9 +65,9 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | `make check` の内訳 | ruff・pyright strict（0 errors）・import-linter 契約 7 本 KEPT・ontology-check 7 項目・シークレット走査 350 件。警告 2 件（依存の非推奨警告 1・意図的なソケット遮断 1。`docs/PROGRESS.md` の到達状況を参照） |
 | オントロジー | 0.6.0（945 トリプル、注釈検査対象 108 語、FluentType 7 / EventType 9。0.6.0 は 2026-10-25 の `AssetRegisterEntry`） |
 | ADR | 16 件（テンプレートを除く。0016 は 2026-10-25、取込ワーカー・記録の主張・資産台帳の投影） |
-| ワーカー | 5（bridge / belief / reconcile / scheduler / learning）。指標を書くのは前 3 つ |
-| DB マイグレーション | 9（`0001_initial_projections` … `0009_concept_proposals`） |
-| 指標 | 6 領域 25 指標。**書き込み配線済みは 9**（残り 16 は M8-15）。`suppression_rate` は書かれているが運用では構造的に 0（類型 2 だけを回し、その抑制規則が常に偽のため。所見 113） |
+| ワーカー | 6（bridge / belief / reconcile / scheduler / learning / ingest）。指標を書くのは bridge / belief / reconcile / ingest。ingest は 2026-10-25（ADR-0016） |
+| DB マイグレーション | 10（`0001_initial_projections` … `0010_ingest_cursors`） |
+| 指標 | 6 領域 25 指標。**書き込み配線済みは 11**（2026-10-25 に ingest-worker が `cdc_lag` / `mapping_violations` を足した。残り 14 は M8-15）。`suppression_rate` は書かれているが運用では構造的に 0（類型 2 だけを回し、その抑制規則が常に偽のため。所見 113） |
 | Compose サービス | 4（+ 任意 profile: ui / console / observability）。イメージは seaweedfs 3.80 / oxigraph 0.5.11 ほか固定版 |
 | API | GraphQL の Query 5（beliefs / discrepancies / expectations / proposals / health）、Mutation 0、コマンド 3（resolve_discrepancy / curate_concept / execute_action）。`/stream/{topic}` は 503（H-03） |
 | リポジトリ | 2026-10-25 に M8 のブランチを main に統合し（X-10）、以後は 1 タスク 1 ブランチで main に fast-forward している。**リモート無し → CI は一度も実行されていない**（H-23） |
@@ -88,7 +88,7 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | M8-09 | 発見ループの周期実行 | **H-10**（却下の再提案抑制）を先に決めると手戻りが減る |
 | M8-17 | 証拠の三源並置 | M8-26（一源のうちは寄与が 1 列しか無い）。アサーション ID で引く API。**三源は様相では分かれない** |
 | M8-22 | UI からアクションを承認する経路 | ADR-0014 の未決 3 つ（H-06 / H-07 / H-08）と合わせて設計 |
-| M8-15 | 残り 16 指標の書き込み配線 | 計算場所が運用ループの外にある（M8-23〜M8-27 で一部が中に入る） |
+| M8-15 | 残り 14 指標の書き込み配線 | 計算場所が運用ループの外にある（M8-23〜M8-27 で一部が中に入る） |
 | M8-24 | 推定パスの先頭（観測 → `encode` → 潜在索引） | エンコーダの置き場の ADR（本リポジトリ外のエッジなら入口の契約だけ） |
 | M8-10 | LLM の live 経路 | **H-04（プロバイダ選定）の判断待ち**（2026-10-25 に `[~]` → `[ ]`。着手の痕跡が無い） |
 | M8-11 | 統合テスト G8 | **H-22**（入力をテストが置いてよいか）と他タスクの完了（最後に回す） |

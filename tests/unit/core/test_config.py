@@ -103,6 +103,7 @@ class TestEveryLayerSharesTheDotenv:
             "reasoning",
             "worldmodel",
             "actions",
+            "integration",
         }
 
     @pytest.mark.parametrize(("name", "layer"), _nested_settings())

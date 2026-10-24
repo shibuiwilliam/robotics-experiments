@@ -38,8 +38,8 @@ def test_an_unknown_worker_name_exits() -> None:
 
 
 def test_all_workers_are_selectable() -> None:
-    """5 ワーカーがすべて選べる（``learning`` は ADR-0012 で足した 5 番目）。"""
-    assert set(WORKERS) == {"bridge", "belief", "reconcile", "scheduler", "learning"}
+    """6 ワーカーがすべて選べる（``learning`` は ADR-0012、``ingest`` は ADR-0016 で足した）。"""
+    assert set(WORKERS) == {"bridge", "belief", "reconcile", "scheduler", "learning", "ingest"}
 
 
 def test_defaults_are_local_only() -> None:
