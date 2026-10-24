@@ -2,7 +2,11 @@
 ## 全ターゲットは uv 経由で Python を実行する（CLAUDE.md コーディング規約）。
 
 SHELL := /bin/bash
-COMPOSE := docker compose -f infra/compose.yaml
+# compose は既定で compose ファイルのディレクトリ（infra/）の .env しか読まないので、直下の .env を
+# 明示して渡す。渡さないと .env に書いたポート退避（SBP_PORT_*）やプラットフォームが黙って無視される
+# （所見 114）。環境変数は --env-file より優先されるので、CI の SBP_PLATFORM はそのまま効く。
+# .env が無いときに --env-file を付けると compose が起動前に落ちるので、あるときだけ付ける
+COMPOSE := docker compose $(if $(wildcard .env),--env-file .env )-f infra/compose.yaml
 UV := uv run
 # $(subst) の区切りにカンマを渡すための変数（関数の引数ではカンマを直接書けない）。
 # 未定義だと PROFILES=ui,observability が --profile ui,observability の 1 引数になり、

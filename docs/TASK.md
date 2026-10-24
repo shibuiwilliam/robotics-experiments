@@ -484,6 +484,16 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   → 完了（2026-10-25。棚卸しを `431ce14` でコミットし、main を `--ff-only` で統合。履歴は線形のまま。
   統合済みのブランチは削除した。以後のタスクは `fix/…` / `feat/…` で切り、`make check` 緑で main に fast-forward する。
   リモートが無いので PR は作れない——PR 記載事項はコミット本文に書く）
+- [x] **X-14** compose がリポジトリ直下の `.env` を読まない不具合を直す（**バグ修正**。2026-10-25 に X-09 の
+  着手中に発見） — `docker compose -f infra/compose.yaml` は compose ファイルのディレクトリ（`infra/`）の `.env`
+  しか読まないので、直下の `.env` に書いたポート退避（`SBP_PORT_*`）・プラットフォーム・`SBP_PG_*` は compose の
+  変数展開に効いていなかった。runbook と層別ルールの「ポートの衝突は `.env` で退避する」は、この Makefile では
+  成立していなかった（所見 114。開発機の退避が `.envrc` にあった理由、所見 60）
+  → 完了（2026-10-25。`COMPOSE` に `.env` があるときだけ `--env-file .env` を付けた。無いときに付けると compose が
+  起動前に落ちる。環境変数は `--env-file` より優先されるので、CI のワークフロー全体の `SBP_PLATFORM=linux/amd64`
+  はそのまま効く（一時ディレクトリで確認）。再現テスト 2 件（`tests/unit/test_makefile.py`。`.env` の有無で
+  `--env-file` を付け外しすることを、一時ディレクトリで `make -n -f <Makefile>` を走らせて検査）。修正後、開発機の
+  `.env` でも `docker compose ... config` が解決できることを確認）
 
 ---
 
