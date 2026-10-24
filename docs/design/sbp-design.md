@@ -411,6 +411,8 @@ interface WorldModel {
 
 `context` は記号条件付けベクトル（§4.4）。`action` はオントロジーの ActionType インスタンスを WM 入力へ写像したもの（介入エンコーダ）。
 
+- **実装上のインタフェース（ADR-0007）**：`WorldModel` は `encode / step / rollout / embed / health / attribute` とし、`probe` と `explain` を持たない。プローブ ID を引数に取ると WM が接地層の型を知ることになり、層の依存（`worldmodel ← bridge`）と「WM は記号を決めない」（§4.1）の両方に反するため。帰属は `attribute(state, weights) -> Attribution`（`weights` は線形汎関数の係数で、線形プローブの重みがそのまま入る）とし、プローブの適用は接地層、説明の組み立ては説明サービス（§8.8）が行う。利用者から見た説明の情報量は変わらない。`health()` の整合残差は呼び出し側から渡す（渡されなければ 0 で「評価していない」ことが見える）。
+
 ### 4.4 潜在状態の設計
 
 - **階層潜在**：L-fast（ms〜s：センサ挙動）、L-mid（分：設備状態）、L-slow（時間〜日：劣化・在庫水位）。各階層に別のプローブ群を持ち、部分−全体の集約制約で整合させる。

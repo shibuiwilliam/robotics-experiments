@@ -24,16 +24,20 @@
 
 ## 2. リポジトリ配置の規約
 
-### 2.1 ルート直下は 4 ファイルのみ
+### 2.1 ルート直下に置くファイル
 
-ルートディレクトリ（`./`）に置くファイルは **`CLAUDE.md` / `README.md` / `.env.example` / `settings.json` の 4 つだけ**。それ以外のドキュメントは `docs/`（人が読む文書）または `.claude/`（Claude Code 設定・層別ルール）に置く。
+ルートディレクトリ（`./`）に置くファイルは次の 7 つに限る。それ以外のドキュメントは `docs/`（人が読む文書）または `.claude/`（Claude Code 設定・層別ルール）に置く。
 
 | ルートのファイル | 役割 |
 |---|---|
 | `README.md` | 人間向けの入口（概要・クイックスタート・ドキュメントマップ） |
 | `CLAUDE.md` | 毎セッション読み込まれる基幹ルール |
 | `.env.example` | 全環境変数の一覧（`.env` はコミットしない） |
-| `settings.json` | **`.claude/settings.json` へのシンボリックリンク**。Claude Code が実際に読むのは `.claude/` 配下であり、実体を二重管理しないためリンクにしている |
+| `Makefile` | 全ターゲット `.PHONY` + 1 行説明（`make help`） |
+| `pyproject.toml` / `uv.lock` | 依存と各ツールの設定（uv 管理） |
+| `.gitignore` | `.env` / `.envrc` などの除外 |
+
+**2026-10-25 訂正**: 以前は「ルート直下は `CLAUDE.md` / `README.md` / `.env.example` / `settings.json` の 4 ファイルのみ」とし、`settings.json` を `.claude/settings.json` へのシンボリックリンクとしていたが、**そのリンクは存在しない**（作られた形跡も無い）。Claude Code が読むのは `.claude/settings.json` だけなので、リンクは作らない（`docs/PROGRESS.md` 所見 106）。
 
 配布キット `sbp-claude-code-kit/` は 2026-10-03 に上記構成へ展開済みで、重複解消のため削除した（内容は全ファイル diff 一致を確認のうえ `.claude/` と `docs/` に移設。キットの README.kit.md が担っていた展開手順は役目を終え、読み込み確認手順は `README.md` に引き継いだ）。
 
@@ -56,7 +60,6 @@
 sbp/
 ├── README.md               # 人間向けの入口（概要・クイックスタート・ドキュメントマップ）
 ├── CLAUDE.md               # 毎セッション読み込まれる基幹ルール（進捗は書かない）
-├── settings.json           # → .claude/settings.json へのシンボリックリンク
 ├── .claude/
 │   ├── settings.json       # 許可/拒否コマンド、生成物・.env の編集禁止、PostToolUse フック
 │   ├── rules/*.md          # 層別詳細ルール（frontmatter の paths に合致するファイルを開くと自動読込）
@@ -83,10 +86,10 @@ sbp/
 │   ├── eventlog/           #   Redpanda producer/consumer、スキーマ検証、event_id 冪等化。リトライ許可箇所その 1
 │   ├── knowledge/          #   Oxigraph クライアント、二時制アサーション API（assert_/retract/query のみ公開）、
 │   │                       #   名前付きグラフ、PROV バンドル、潜在索引（pgvector+HNSW）、ハイブリッドクエリ、再接地
-│   ├── integration/        #   コネクタ（1 コネクタ 1 ファイル）、RML 写像、BusinessEvent 化、情報源信頼性モデル、
+│   ├── integration/        #   コネクタ（1 コネクタ 1 ファイル）、写像 DSL（ADR-0006）、BusinessEvent 化、信頼性モデル、
 │   │                       #   計画・規範取込、書き戻し（既定 dry）
-│   ├── worldmodel/         #   WorldModel Protocol（encode/step/rollout/probe/explain/embed/health）、
-│   │                       #   families/（koopman, jepa_ts, gnn）、context.build（AuditMask 必須）、レジストリ、train/
+│   ├── worldmodel/         #   WorldModel Protocol（encode/step/rollout/embed/health/attribute。ADR-0007）、
+│   │                       #   families/（koopman, jepa_ts）、context.build（AuditMask 必須）、レジストリ、train/
 │   ├── bridge/             #   probes（線形優先・ProbeSpec・promote は AND 条件）、較正、lifting（BOCPD 事象昇格）、
 │   │                       #   identity（Track→IdentityClaim）、spatial（shapely ゾーン包含）、validate（pyshacl）
 │   ├── reasoning/          #   belief（三源ベイズ・半マルコフ・log 空間）/ reconciliation（五類型・状態機械）/
@@ -105,7 +108,7 @@ sbp/
 ├── services/               # ワーカー: bridge / belief / reconcile / scheduler / learning（ADR-0012）
 │                           # 1 ワーカー 1 プロセス、SIGTERM graceful shutdown、起動時に Settings と疎通検査
 ├── infra/
-│   ├── compose.yaml        # 4 サービス固定: redpanda / postgres(timescaledb-ha+pgvector) / oxigraph / minio。
+│   ├── compose.yaml        # 4 サービス固定: redpanda / postgres(timescaledb-ha+pgvector) / oxigraph / objectstore(SeaweedFS、ADR-0003)。
 │   │                       # 全サービスに platform・healthcheck・mem_limit、合計 6 GB 以内。追加は ADR
 │   ├── sql/versions/       # alembic マイグレーション（hypertable 化も含む。DDL 手流し禁止）
 │   └── prometheus/         # 任意 profile
@@ -189,16 +192,16 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 - トピック名 `<site>.<layer>.<class>`、キーは subject IRI。トピック追加は `scripts/topics.py` + `make seed`（手作業禁止）。
 - Producer は `EventEnvelope`（pydantic）のみ送信可、送信前に JSON Schema 検証。Consumer は at-least-once、`processed_events(event_id)` で冪等化。`causation_id`/`correlation_id` を必ず引き継ぐ。
 - 二時制 API の公開関数は `assert_` / `retract` / `query` のみ。物理削除 API を作らない。名前付きグラフは `urn:sbp:g:<modality>:<site>:<ontology_version>`、hypothetical は `urn:sbp:scenario:<id>`。
-- 文メタデータは RDF-star（pyoxigraph の Quad/Triple term）。rdflib は TTL 読み書き専用。`query` は必ず `ontology_version` を返す。
+- 文メタデータは RDF 1.2 の triple term + `rdf:reifies`（`<assertion/{id}> rdf:reifies <<( s p o )>> ; sbp:txFrom ...`。旧 RDF-star の「引用三つ組を主語に置く」記法は pyoxigraph 0.5 で使えない。ADR-0005）。rdflib は TTL 読み書き専用。`query` は必ず `ontology_version` を返す。
 - 予測は `horizon_origin` 違いで共存（既定クエリ=最新起点、精度追跡=全起点）。
-- 潜在索引: `latent_index(entity, ts, level, wm_version, vec)` + HNSW(cosine)。`level`/`wm_version` で絞ってから近傍検索。次元変更は新テーブル + 再接地ジョブで移行。
+- 潜在索引: 次元ごとの表 `latent_index_d<次元>(entity, ts, level, wm_version, vec)` + HNSW(cosine) と、版 → 表の登録表 `latent_index_registry`。`level`/`wm_version` で絞ってから近傍検索。次元が変わる WM 更新は新しい次元の表（マイグレーション）+ 再接地ジョブで移行（`docs/PROGRESS.md` 所見 19 / 53）。
 - PROV 活動種別は列挙のみ（probe-run, rule-run, belief-update, reconciliation, llm-extraction, human-review, regrounding）。来歴はバンドル単位、証拠は参照。
 - SQL は alembic のみ（DDL 手流し禁止）。時刻は `timestamptz`、区間は `tstzrange`。
 
 ### 6.3 ワールドモデル・接地層
 
-- 全モデル族が Protocol（encode/step/rollout/probe/explain/embed/health）を実装。`context` は `sbp.worldmodel.context.build(entity, mask: AuditMask)` のみで作る（マスクなし呼び出しを作らない）。
-- モデル族は初期 `koopman` と `jepa_ts`。**数百万パラメータ以下、MPS で学習できるサイズ**。重みは `minio://models/...`、ロードは version 指定必須（`latest` 禁止）。
+- 全モデル族が Protocol（encode/step/rollout/embed/health/attribute）を実装。`probe` / `explain` は WM に置かない——プローブの適用は接地層、説明の組み立ては説明サービスが行い、WM は線形汎関数の係数を受け取る `attribute(state, weights)` だけを持つ（ADR-0007）。`context` は `sbp.worldmodel.context.build(entity, mask: AuditMask)` のみで作る（マスクなし呼び出しを作らない）。
+- モデル族は初期 `koopman` と `jepa_ts`。**数百万パラメータ以下、MPS で学習できるサイズ**。重みは `s3://models/<model_id>/<version>/`（objectstore。実体は SeaweedFS、ADR-0003）、ロードは version 指定必須（`latest` 禁止）。
 - 損失は `L_pred + λ_phys + λ_probe + λ_logic + λ_align` の合成、各項を個別ログ。`λ_align` は後期有効化が既定。
 - プローブはまず線形。非線形が必要なら「潜在が線形分離できない」ことをログに残し WM 改善候補へ。`promote()` は **AUROC ≥ 0.85 ∧ ECE ≤ 0.05 ∧ 整合残差 ≤ 既存 active 中央値** の AND、満たさなければ例外。
 - 弱ラベルは `TimeBag(concept, entity, interval, weight)`（重みは信頼性モデル由来）、MIL 損失で学習。出力は必ず `Calibrator.apply` を通し、認識的/偶然的不確実性を分けて返す。
@@ -218,7 +221,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 ### 6.5 業務統合・LLM
 
 - 1 コネクタ 1 ファイル、`Connector` Protocol（`pull(since)`, `stream()`）。開発は `mock/`（SQLite+台本）、実接続は設定でのみ有効化。`is_about` 未解決は `UnresolvedRef` として残す（捨てない）。
-- 写像は RML/R2RML、写像ごとに契約テスト。業務スキーマ変更はスキーマ指紋比較で検知し `MappingDriftDetected` イベントとして出す（例外にしない）。
+- 写像は最小の写像 DSL（`mappings/*.yaml`、ADR-0006。Python 製 RML プロセッサは pyoxigraph 0.5 と依存衝突する）。キー・必須制約・多重度の 3 つの保存性を宣言に持たせ、契約テストで検査する。業務スキーマ変更はスキーマ指紋比較で検知し `MappingDriftDetected` イベントとして出す（例外にしない）。
 - 信頼性モデルは `DataSource × 記録型` ごと（時刻ずれ分布・誤記率・欠落率・系統誤差）。初期値 `reliability/*.yaml`、更新は `update_from_resolution()`。尤度は `log p`。
 - 観測手段（フルーエント → `kind` / `reliability` / `cost`）は `observation/*.yaml`。**オントロジーに置かない**——コストと信頼度は拠点が持つ計測器の性質で、拠点ごとに違う（ADR-0011）。宣言したフルーエントがオントロジーに実在することを読み込み時に検査する。
 - 書き戻しは冪等 `command_id`、既定 `SBP_WRITEBACK_MODE=dry`。
@@ -227,7 +230,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 
 ### 6.6 インフラ・テスト・ワーカー
 
-- Compose は 4 サービス固定（redpanda / postgres / oxigraph / minio）+ 任意 profile（ui / observability / console）。全サービスに `platform: ${SBP_PLATFORM:-linux/arm64}`・healthcheck・mem_limit、合計 6 GB 以内。ボリューム削除は `make nuke` のみ。
+- Compose は 4 サービス固定（redpanda / postgres / oxigraph / objectstore（SeaweedFS、ADR-0003））+ 任意 profile（ui / observability / console）。全サービスに `platform: ${SBP_PLATFORM:-linux/arm64}`・healthcheck・mem_limit、合計 6 GB 以内。ボリューム削除は `make nuke` のみ。
 - 環境変数を追加したら `.env.example` を**同じコミットで**更新。
 - pytest マーカー: `unit`（既定）/ `integration` / `slow` / `llm_live`。`make test` は `-m "not integration and not llm_live"`。時刻は freezegun、乱数は seed 固定、ネットワークは pytest-socket で遮断。`llm_live` は CI で走らせない。
 - ワーカーは 1 プロセス 1 ワーカー、SIGTERM で graceful shutdown（オフセットコミット後に終了）、起動時に Settings と疎通を検査。
@@ -243,7 +246,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 | コマンド | 用途 |
 |---|---|
 | `make up` / `make down` | Compose 起動/停止 |
-| `make seed` | オントロジー投入・トピック作成・alembic・MinIO バケット |
+| `make seed` | オントロジー投入・トピック作成・alembic・objectstore のバケット |
 | `make dev` | API（:8000）とワーカーをホットリロードで起動 |
 | `make test` / `make test-int` | 単体（ネットワーク不要・5 分以内）/ 統合（Compose 必須） |
 | `make lint` / `make typecheck` | ruff / pyright strict |

@@ -25,8 +25,8 @@ paths:
 - `query` は必ず `ontology_version` を返す。呼び出し側が版を無視して比較しないようにする。
 
 ## 潜在索引（pgvector）
-- テーブル `latent_index(entity, ts, level, wm_version, vec vector(D))`、HNSW（cosine）。`level` と `wm_version` で絞ってから近傍検索する。
-- 次元 D は `wm_version` ごとに固定。次元が変わる WM 更新は新テーブル `latent_index_v<N>` を作り、移行は再接地ジョブで行う。
+- テーブル `latent_index_d<次元>(entity, ts, level, wm_version, vec vector(D))`、HNSW（cosine）。`level` と `wm_version` で絞ってから近傍検索する。
+- 次元 D は `wm_version` ごとに固定。表は次元ごとに `latent_index_d<次元>` とし、版 → 表の対応は登録表 `latent_index_registry(wm_version, table_name, dim)` が持つ（アプリは登録表を引いてから書く。`docs/PROGRESS.md` 所見 19）。次元が変わる WM 更新は新しい次元の表をマイグレーションで作り、移行は再接地ジョブで行う。アプリは実行時に表を作らない（所見 53）。
 - ハイブリッドクエリ（グラフ述語 + 近傍）は `sbp.knowledge.hybrid.plan()` を通す。選択率で押し下げ順を決める。
 
 ## PROV

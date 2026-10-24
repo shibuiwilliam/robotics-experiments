@@ -424,7 +424,7 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   ドキュメントが落ちるのは本末転倒なので、「どこに書くか」を 1 箇所に絞るほうが先）
 - [ ] **X-08** `docs/HITL.md` の棚卸し — ゲート通過時と §7 を触るとき。決定済みの項目を §4 に移し、
   ADR 起票を確認してから消す。**ADR の「未決」は書き換えない**（決定の記録なので履歴として残す）
-- [ ] **X-09** 規約文書を ADR に追従させる — ADR-0003 / 0005 / 0006 / 0007 が「影響」に挙げた文書更新の
+- [x] **X-09** 規約文書を ADR に追従させる — ADR-0003 / 0005 / 0006 / 0007 が「影響」に挙げた文書更新の
   うち、次が未了（所見 106）: `docs/development-rules.md` §3・§6.2・§6.3・§6.5・§6.6（WM Protocol の
   `probe` / `explain`、`minio`、RML、RDF-star）、`.claude/rules/bridge-worldmodel.md`（`probe` / `explain`、
   `minio://models/...`）、`.claude/rules/knowledge.md`（`latent_index_v<N>` → 実装は `latent_index_d<次元>`
@@ -438,6 +438,15 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
     `probe` / `explain` を持ち ADR-0007 への参照が無い（ADR-0007 の帰結が求めている。所見 106 の「設計書は
     更新済み」は誤りだった、所見 112）。`infra/sql/versions/0001_initial_projections.py` のコメントも
     `latent_index_v<N>` のまま
+  → 完了（2026-10-25。`docs/development-rules.md` §2.1（ルート直下のファイルを実態の 7 つに直し、存在しない
+  `settings.json` のリンクの記述を訂正として残した）・§3 の構成図・§6.2（RDF 1.2 + `rdf:reifies`、潜在索引の
+  `latent_index_d<次元>` + 登録表）・§6.3（Protocol と `s3://models/...`）・§6.5（写像 DSL）・§6.6 / §7（objectstore）、
+  `.claude/rules/bridge-worldmodel.md`（Protocol と「`probe` / `explain` を WM に足さない」、`s3://`）、
+  `.claude/rules/knowledge.md`（潜在索引の表と登録表）、**設計書 §4.3 に ADR-0007 の注記**、README（CI 4 ジョブと
+  未実行であること、`settings.json` のリンク）、`0001` マイグレーションのコメント、`docs/runbooks/local-setup.md`
+  （Oxigraph の記法）。**ポート退避の項目は文書ではなく実装を直した**——「`.env` で退避する」が設計の意図で、
+  compose が直下の `.env` を読んでいなかった（X-14、所見 114）。runbook には経緯を 1 段落足した。
+  CLAUDE.md に残る ADR 由来の記述（MinIO・RML・RDF-star）は規約そのものの変更なので X-13 で扱う）
 - [x] **X-11** 入れ子の設定が `.env` を読まない不具合を直す（**バグ修正。再現テストを先に書く**） —
   `BridgeSettings` / `ReasoningSettings` / `WorldModelSettings` / `ActionsSettings` は `env_file` を持たず
   `default_factory` で別に構築されるので、`SBP_BRIDGE_*` / `SBP_REASONING_*` / `SBP_WM_*` / `SBP_ACTIONS_*` は

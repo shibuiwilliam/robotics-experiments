@@ -22,8 +22,9 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-# 潜在ベクトルの次元。WM 版ごとに固定し、次元が変わる更新は新テーブル
-# （latent_index_v<N>）を作って再接地ジョブで移行する（knowledge ルール）。
+# 潜在ベクトルの次元。WM 版ごとに固定し、次元が変わる更新は新テーブルを作って再接地ジョブで
+# 移行する（knowledge ルール）。表の命名と版 → 表の対応は 0002（latent_index_d<次元> と
+# latent_index_registry）で決め直した。
 LATENT_DIM = 64
 
 

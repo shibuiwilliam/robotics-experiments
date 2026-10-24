@@ -29,8 +29,9 @@ UI（`apps/ui`、Node 20+）を触るときは `make ui-install` → `make check
 > （`docs/HITL.md`）、「実データに当てるまで確かめられない」種類の制約である（`docs/STATUS.md`、
 > `docs/PROGRESS.md` の既知の制約）。コマンドの記述の一部は実装とずれている（`docs/TASK.md` X-12 / X-13）。
 
-CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 不要）が落ちたら
-`integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。
+CI は `.github/workflows/ci.yml`。4 ジョブ（`check` / `integration` / `audit` / `ui`）に分かれ、`check`（Compose 不要）が
+落ちたら `integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。
+**リモートが無いので一度も実行されていない**（`docs/HITL.md` H-23）。
 
 ## ドキュメントマップ
 
@@ -46,7 +47,7 @@ CI は `.github/workflows/ci.yml`。3 ジョブに分かれ、`check`（Compose 
 | `docs/HITL.md` | **人の判断を待つ事項の管理簿**（優先度順。決まったら ADR を起票して本書から消す） |
 | `docs/STATUS.md` | マイルストーン進捗（M0〜M8）と規模の実測。里程の粒度はここだけに書く |
 | `.claude/rules/*.md` | 層別の詳細ルール（paths 連動で該当ファイルを開くと自動読込） |
-| `.claude/settings.json` | Claude Code のガードレール（ルートの `settings.json` はここへのシンボリックリンク） |
+| `.claude/settings.json` | Claude Code のガードレール |
 | `docs/runbooks/` | 運用手順（再接地 / 版昇格 / 障害対応 / バックアップ・リストア / ローカル環境） |
 | `apps/ui/` | UI（不一致キュー・信念ビュー・期待ボード・概念 curation。ADR-0008） |
 | `.env.example` | 全環境変数の一覧（`.env` はコミットしない） |

@@ -18,7 +18,7 @@ make test-int    # 統合テスト
 |---|---|---|---|
 | redpanda | `redpandadata/redpanda:v24.2.7` | 9092 / 9644 | イベントログ（Kafka API） |
 | postgres | `timescale/timescaledb-ha:pg16.15-ts2.30.2` | 5432 | 時系列・潜在索引・投影 |
-| oxigraph | `oxigraph/oxigraph:0.5.11` | 7878 | 知識グラフ（SPARQL 1.1 + RDF-star） |
+| oxigraph | `oxigraph/oxigraph:0.5.11` | 7878 | 知識グラフ（SPARQL 1.1 + RDF 1.2 の triple term。ADR-0005） |
 | objectstore | `chrislusf/seaweedfs:3.80` | 9000 | raw 層・モデル重み（S3 互換） |
 
 メモリ上限の合計は 6 GB（2+2+1+1）。Docker Desktop / OrbStack の上限もこれに合わせる。
@@ -51,6 +51,11 @@ SBP_S3_ENDPOINT=http://localhost:19000
 ```
 
 どのプロセスが握っているかは `lsof -nP -iTCP:9000 -sTCP:LISTEN` で確認できる。
+
+`make up` は直下の `.env` を `--env-file` で compose に渡す。**2026-10-25（X-14）より前は渡しておらず、
+`.env` のポート退避は compose に効いていなかった**（compose は compose ファイルのディレクトリ `infra/` の
+`.env` しか読まない）。古い手順で `.envrc` に退避を書いている開発機は、`.env` に移してよい。
+`make` を経ずに `docker compose` を直接叩くときは `--env-file .env` を付ける。
 
 ### イメージが取得できない
 

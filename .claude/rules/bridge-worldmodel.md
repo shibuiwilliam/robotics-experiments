@@ -6,11 +6,12 @@ paths:
 # ワールドモデル層 / 接地層のルール
 
 ## WorldModel Protocol（`sbp.worldmodel.base`）
-- 全モデル族が `encode / step / rollout / probe / explain / embed / health` を実装する。戻り値は `LatentState(z, cov | ensemble, level, ts, wm_version)`。
+- 全モデル族が `encode / step / rollout / embed / health / attribute` を実装する。戻り値は `LatentState(z, cov | ensemble, level, ts, wm_version)`。
+- **`probe` / `explain` を WM に足さない**（ADR-0007）。プローブ ID を受け取ると WM が接地層の型を知ることになり、層の依存（import-linter の契約「worldmodel は記号を決めない」）に反する。帰属は `attribute(state, weights)`（線形汎関数の係数）で、プローブの適用は `bridge`、説明の組み立ては `reasoning.explain` が行う。`health()` の整合残差は呼び出し側から渡す。
 - `context`（記号条件付けベクトル）は `sbp.worldmodel.context.build(entity, mask: AuditMask)` でのみ作る。マスクなしの呼び出しを作らない（不変条件 6）。
 - モデル族は `src/sbp/worldmodel/families/<name>.py`。初期は `koopman`（線形潜在）と `jepa_ts`（時系列潜在予測）。パラメータ数は数百万以下、MPS で学習できるサイズに収める。
 - 学習は `src/sbp/worldmodel/train/`。損失は `L_pred + λ_phys + λ_probe + λ_logic + λ_align` の合成で、各項を個別にログする。`λ_align` は後期に有効化するスケジュールを既定にする。
-- レジストリ: `WorldModelVersion` をオントロジーに登録し、重みは `minio://models/<id>/<version>/` に置く。ロードは version 指定必須（`latest` 禁止）。
+- レジストリ: `WorldModelVersion` をオントロジーに登録し、重みは `s3://models/<id>/<version>/` に置く（objectstore。実体は SeaweedFS、ADR-0003）。ロードは version 指定必須（`latest` 禁止）。
 - `health()` は潜在シフト（MMD / PSI）、予測誤差、整合残差を返す。閾値は Settings。
 
 ## プローブ（`sbp.bridge.probes`）
