@@ -341,7 +341,7 @@ H-22 の決定次第**である。
 
 - [ ] **M8-23** プローブ束を置き場に入れる経路 — 学習 → 評価 → `promote()`（AND ゲート）→ `bundle_probe` → `ArtifactStore.put` を運用の手順（`scripts/` のコマンド）にする。**いまは `put` を呼ぶ運用コードが無く、新規環境では bridge-worker が構築で落ちる**（空の束は拒否、ADR-0009）。学習の弱ラベルは記録由来（`TimeBag`）なので M8-25 に依存する。スクリプトから真値を読まない（不変条件 10。import-linter の対象に `scripts` が入っている）
 - [ ] **M8-24** 推定パスの先頭（**ADR 先行**） — 観測窓 → `WorldModel.encode` → `LatentIndex.write` を運用で回す。**いまは潜在索引に書くコードがテストにしか無い**（`test_bridge_worker_e2e` / `test_g4_worldmodel`）。エンコーダをどこで動かすか（6 番目のワーカー / bridge-worker の前段 / 本リポジトリ外のエッジ。設計書 §12.1 はエッジにエンコーダを置く）を ADR で決める。前提として WM 本体の重みの直列化（PROGRESS 既知の制約）と観測の入口の契約が要る。1 日を超えるなら分割する
-- [ ] **M8-25** 記録パス・計画・資産台帳の周期実行（**ADR 先行**） — `Connector.pull(since)` → 写像 → `IngestionPipeline` → `<site>.integration.business`、`PlanItem` → `planned`、資産台帳の同期（設計書 §7.1 の「マスタ 定期同期」）を運用で回す。**いまは `IngestionPipeline` を呼ぶのが G1 の統合テストだけで、`make seed` はオントロジーしか入れない**——新規環境では `entities_of_type` が 0 件を返し、reconcile-worker の記録側の入力は空のまま。置き場（ワーカーかジョブか）を ADR で決める。**2026-10-25 追記**: 閾値・ワーカー設定を `.env` で拠点別に与えるには X-11 が先に要る（所見 108）。記録が流れ始めたら M8-30 を続けて入れる（所見 109）
+- [ ] **M8-25** 記録パス・計画・資産台帳の周期実行（**ADR 先行**） — `Connector.pull(since)` → 写像 → `IngestionPipeline` → `<site>.integration.business`、`PlanItem` → `planned`、資産台帳の同期（設計書 §7.1 の「マスタ 定期同期」）を運用で回す。**いまは `IngestionPipeline` を呼ぶのが G1 の統合テストだけで、`make seed` はオントロジーしか入れない**——新規環境では `entities_of_type` が 0 件を返し、reconcile-worker の記録側の入力は空のまま。置き場（ワーカーかジョブか）を ADR で決める。**2026-10-25 追記**: 閾値・ワーカー設定を `.env` で拠点別に与えるには X-11 が先に要る（所見 108。2026-10-25 に解消）。資産台帳を同期すると、照合ワーカーが実体の型を引けるようになり業務価値が効き始める（M8-30 で配線済み、所見 113）
 - [ ] **M8-26** 信念更新を三源にする — belief-worker が `integration.business` と計画を読み、`BeliefFilter.step(records=…, plan=…)` に渡す。記録尤度に `AuditMask` を適用する（不変条件 6）。**いまは `bridge.physical` だけを購読し、全イベントをプローブ確率として渡す一源**で、`contrib_record` / `contrib_plan` は構造的に 0（所見 102）。docstring（「業務記録・計画を読み」）も実装に合わせる。M8-25 に依存。**2026-10-25 追記**: `BeliefIngest` には `reliability` も渡していない（`None`。所見 109）ので、記録尤度を入れるときに `reliability/*.yaml` を読んで渡す
 - [ ] **M8-27** 期待の周期検証 — `verify_expectation` を期限と証拠の到着で回し、`expectations` 表の状態を進める。`Violated` は不一致（類型 2 / 3）の起票、`Undetermined` は観測要求（設計書 §8.5）。**いまは learning-worker が `Active` で書くだけで、検証する運用コードが無い**（所見 103）。置き場は ADR-0012 / ADR-0014 の延長で決める
 - [x] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク → 完了（2026-10-25。`situation_members` を `<Situation> sbp:hasParticipant <実体>` で読むように直し、`SituationLink` の docstring も揃えた。単体テストの fixture を正しい向きにし、**文の所属（reifier の `inSituation`）を参加者として返さない**回帰テストを足した（修正前は reifier が参加者として返り赤）。単体 1 件追加。運用に参加関係を書く者はまだいないので、結合の入力が空であることは変わらない）
@@ -349,7 +349,7 @@ H-22 の決定次第**である。
 以下 M8-30 は 2026-10-25 の棚卸しで起票した。10-17 の「この段の入力を誰が書くか」に対し、
 「production が組むとき何を渡していないか」を問うて見つかった（`docs/PROGRESS.md` 所見 109）。
 
-- [ ] **M8-30** 照合ワーカーに信頼性モデル・業務価値・記録を渡す — `services/reconcile_worker.build_worker` は `reliability` も `values` も渡さず、構築子の既定（空の `ReliabilityRegistry` / `BusinessValueRegistry`）で組まれる。`reliability/*.yaml` と `value/*.yaml` は運用のどこからも読まれない。さらに周期処理が `reconcile()` に `records` を渡さないので、**抑制の判定は一度も走らず（`suppression_rate` は構造的に 0）、深刻度の業務価値項は全件が中間値になる**。(a) 両レジストリを `from_directory` で読んで渡す（M8-25 を待たずにできる）、(b) 窓に溜めた記録を証拠 IRI → `Record` の写像にして `reconcile(records=…)` に渡す（M8-25 に依存）、(c) 渡さなかった場合は `driver` / `sink` と同じく警告ログを出す。統合テストで「系統誤差で説明できる不一致が運用の配線で抑制される」ことを固定する
+- [x] **M8-30** 照合ワーカーに信頼性モデル・業務価値・記録を渡す — `services/reconcile_worker.build_worker` は `reliability` も `values` も渡さず、構築子の既定（空の `ReliabilityRegistry` / `BusinessValueRegistry`）で組まれる。`reliability/*.yaml` と `value/*.yaml` は運用のどこからも読まれない。さらに周期処理が `reconcile()` に `records` を渡さないので、**抑制の判定は一度も走らず（`suppression_rate` は構造的に 0）、深刻度の業務価値項は全件が中間値になる**。(a) 両レジストリを `from_directory` で読んで渡す（M8-25 を待たずにできる）、(b) 窓に溜めた記録を証拠 IRI → `Record` の写像にして `reconcile(records=…)` に渡す（M8-25 に依存）、(c) 渡さなかった場合は `driver` / `sink` と同じく警告ログを出す。統合テストで「系統誤差で説明できる不一致が運用の配線で抑制される」ことを固定する → 完了（2026-10-25。**(b) と抑制の統合テストは外した**——照合ワーカーが回す類型 2 を抑制できる系統誤差は `template_copy` だけで、`SystematicBias.explains` はそれに対して常に偽を返すので、記録を渡しても抑制は起こらない（所見 113）。記録を抑制判定に渡す配線は、類型 1・3 を照合ワーカーで回すとき（窓が `Record` を持つように設計し直すとき）に扱う。**代わりに見つかった欠落を埋めた**: `build_worker` は実体の型（`entity_types`）も渡しておらず、レジストリを読むだけでは全件が基準額の半分のままだった。(a) `load_registries` が `value/` と `reliability/` を読み（基準額は `SBP_REASONING_SEVERITY_VALUE_SCALE`）、`entity_types_provider` が実体の型を知識グラフから毎周期引く（`sbp.knowledge.most_specific_types`——個体が当たる登録型のうち最も具体的なもの。`Pump` と上位の `RotatingEquipment` の両方が登録されているため）。照合する列が無い周期はグラフを読まない。(c) 渡されなかった依存は `ReconcileWorker.unwired` に数えて `worker.registries_not_wired` で警告する。readiness に oxigraph を足した。単体 6 件（entities）+ 11 件（照合ワーカー。実際の `ontology/` と `value/` の組で `Pump` に解決されることを含む））
 - [ ] **M8-11** 統合テスト G8 — 4 ワーカーを実物のサービス上で回し、各 `step()` が非ゼロを返すことを確認する。**入力（潜在・プローブ束・業務記録・実体の登録・判断）をテストが直接置いてよいかは H-22 の判断待ち**
 
 **ゲート G8**: G0〜G7 維持 + M8-11 緑 + `TODO(question)` が 0 件（解決した ADR へのリンク、または「意図的に残す理由」が PROGRESS.md に記録されている）。
@@ -373,24 +373,22 @@ H-22 の決定次第**である。
 M8-23 / M8-24 / M8-25 が M8-11 の前提になる。なお G8 が名指しするのは 4 ワーカーで、5 番目の
 learning-worker（ADR-0012）は条件に入っていない。
 
-**M8 の残り 13 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
+**M8 の残り 12 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
 M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認）/ M8-23（プローブ束の投入）/
 M8-24（推定パスの先頭。ADR 先行）/ M8-25（記録パス・計画・資産台帳。ADR 先行）/ M8-26（三源の信念更新）/
-M8-27（期待の周期検証）/ M8-29（人の確認回答）/ M8-30（照合ワーカーの
-レジストリと記録）/ M8-11（G8 の統合テスト。**H-22 の判断待ち**）。
+M8-27（期待の周期検証）/ M8-29（人の確認回答）/ M8-11（G8 の統合テスト。**H-22 の判断待ち**）。
 
 **M8 の前に片付けるもの**（2026-10-25 追加。いずれも小さい）: 未コミットの棚卸しのコミット（所見 107）→
 X-10（ブランチを main に統合）→ X-11（入れ子の設定が `.env` を読まない）/ X-12（`make up` の
 `$(comma)`）。X-11 / X-12 はバグ修正なので再現テストを先に書く（§1.1、CLAUDE.md）。
 
-**着手順の推奨**（2026-10-25 改訂。M8-28 は同日完了）: M8-25 → M8-30 → M8-26 → M8-23 → M8-27 → M8-29 → M8-09 →
+**着手順の推奨**（2026-10-25 改訂。M8-28 / M8-30 は同日完了）: M8-25 → M8-26 → M8-23 → M8-27 → M8-29 → M8-09 →
 M8-17 → M8-22 → M8-15 → M8-24 → M8-11。
 
 - **M8-28 を先頭に置いた**（2026-10-25 完了）のは小さく、Situation の所属を書く側が現れる前に直さないと、書く側が誤った
   述語に合わせてしまうため。
-- **M8-25 → M8-30 → M8-26 → M8-23** の順は依存の向き（記録が流れないと三源にできず、記録由来の弱ラベルが
-  無いとプローブを学習できない）。M8-25 は ADR を先に書く。M8-30 を M8-25 の直後に置くのは、記録が
-  流れ始めた日から抑制と業務価値が効いた不一致を起票するため（レジストリの読み込み部分は先にやってよい）。
+- **M8-25 → M8-26 → M8-23** の順は依存の向き（記録が流れないと三源にできず、記録由来の弱ラベルが
+  無いとプローブを学習できない）。M8-25 は ADR を先に書く。
 - 旧推奨（M8-09 → M8-17 → M8-22 → M8-15）より前に新タスクを置いたのは、**新タスクが無いと連鎖が
   始まらず、M8-09・M8-17・M8-15 が読む入力も空のまま**だからである。
 - M8-24 は ADR でエンコーダの置き場を決めるまで形が決まらない（本リポジトリ外のエッジと決めれば、

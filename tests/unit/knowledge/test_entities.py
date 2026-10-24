@@ -17,7 +17,7 @@ from __future__ import annotations
 import pytest
 
 from sbp.core import vocab
-from sbp.knowledge.entities import entities_of_type, site_prefix
+from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
 from sbp.knowledge.store import EmbeddedGraphStore
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -120,3 +120,75 @@ def test_limit_truncates_without_raising() -> None:
 def test_site_prefix_shape() -> None:
     """拠点の接頭辞は IRI の規約どおり。"""
     assert site_prefix("siteA") == "/site/siteA/"
+
+
+class TestMostSpecificTypes:
+    """実体ごとに「指定した型のうち最も具体的なもの」を返す（M8-30）。
+
+    照合の深刻度は実体の ObjectType で業務価値を引く（``value/*.yaml``）。登録は
+    ``Pump`` と上位の ``RotatingEquipment`` の両方にあり、ポンプには ``Pump`` の値を、
+    登録の無い回転機械には ``RotatingEquipment`` の値を当てたい。
+
+    重点:
+
+    1. **部分クラスを展開する** — 登録の無い型の個体も、登録のある上位型に落ちる。
+    2. **最も具体的な型を選ぶ** — ポンプが ``RotatingEquipment`` の値で評価されない。
+    3. **登録のある型の下に無い個体は返さない** — 呼び出し側の既定値（基準額の半分）に任せる。
+    """
+
+    COMPRESSOR_CLASS = "urn:sbp:test:class:Compressor"
+    COMPRESSOR = "https://sbp.example/site/siteA/asset/C-1"
+    LINE = "https://sbp.example/site/siteA/line/L-3"
+    TYPES = (vocab.ent.Pump, vocab.ent.RotatingEquipment, vocab.ent.ProductionLine)
+
+    def _store(self) -> EmbeddedGraphStore:
+        store = EmbeddedGraphStore()
+        store.load_turtle(
+            f"""
+            <{vocab.ent.RotatingEquipment}> <{RDFS_SUBCLASS_OF}> <{vocab.core.Asset}> .
+            <{vocab.ent.Pump}> <{RDFS_SUBCLASS_OF}> <{vocab.ent.RotatingEquipment}> .
+            <{self.COMPRESSOR_CLASS}> <{RDFS_SUBCLASS_OF}> <{vocab.ent.RotatingEquipment}> .
+            """,
+            graph="urn:sbp:test:schema",
+        )
+        store.load_turtle(
+            f"""
+            <{PUMP_A}> <{RDF_TYPE}> <{vocab.ent.Pump}> .
+            <{self.COMPRESSOR}> <{RDF_TYPE}> <{self.COMPRESSOR_CLASS}> .
+            <{self.LINE}> <{RDF_TYPE}> <{vocab.ent.ProductionLine}> .
+            <{PUMP_OTHER_SITE}> <{RDF_TYPE}> <{vocab.ent.Pump}> .
+            <{CARRIER}> <{RDF_TYPE}> <{vocab.core.UnidentifiedPhysicalObject}> .
+            """,
+            graph=GRAPH,
+        )
+        return store
+
+    def test_the_most_specific_registered_type_wins(self) -> None:
+        """ポンプは ``Pump``（上位の ``RotatingEquipment`` にも当たるが、具体的なほう）。"""
+        found = most_specific_types(self._store(), types=self.TYPES, site="siteA")
+        assert found[PUMP_A] == vocab.ent.Pump
+
+    def test_an_unregistered_subclass_falls_back_to_its_registered_ancestor(self) -> None:
+        found = most_specific_types(self._store(), types=self.TYPES, site="siteA")
+        assert found[self.COMPRESSOR] == vocab.ent.RotatingEquipment
+
+    def test_entities_outside_the_types_are_absent(self) -> None:
+        """呼び出し側の既定値に任せる（ここで既定を作らない）。"""
+        found = most_specific_types(self._store(), types=self.TYPES, site="siteA")
+        assert CARRIER not in found
+        assert found[self.LINE] == vocab.ent.ProductionLine
+
+    def test_other_sites_are_excluded(self) -> None:
+        found = most_specific_types(self._store(), types=self.TYPES, site="siteA")
+        assert PUMP_OTHER_SITE not in found
+
+    def test_the_order_of_the_types_does_not_matter(self) -> None:
+        """上位型を先に渡しても結果は同じ（列の順で決めていない）。"""
+        store = self._store()
+        forward = most_specific_types(store, types=self.TYPES, site="siteA")
+        backward = most_specific_types(store, types=tuple(reversed(self.TYPES)), site="siteA")
+        assert forward == backward
+
+    def test_empty_types_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="at least one type"):
+            most_specific_types(self._store(), types=())

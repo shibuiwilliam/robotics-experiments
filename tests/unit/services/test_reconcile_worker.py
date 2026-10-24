@@ -12,12 +12,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import ValidationError
 from services.metrics import MetricRecorder
-from services.reconcile_worker import ReconcileWorker, discrepancy_topic
+from services.reconcile_worker import ReconcileWorker, discrepancy_topic, load_registries
 
 from sbp.core import vocab
 from sbp.core.belief import BooleanBelief, NumericBelief
@@ -27,7 +28,9 @@ from sbp.core.ids import new_event_id
 from sbp.core.metrics import MetricSample
 from sbp.core.modality import Modality
 from sbp.eventlog.consumer import EventHandler
+from sbp.integration.reliability import ReliabilityRegistry
 from sbp.reasoning.reconciliation.discrepancy import Discrepancy
+from sbp.reasoning.reconciliation.severity import BusinessValue, BusinessValueRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,6 +39,7 @@ T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
 STEP = timedelta(seconds=10)
 MES = "https://sbp.example/source/mes"
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _physical(*, at: datetime, p: float, fluent: str = "Running") -> EventEnvelope:
@@ -275,6 +279,24 @@ class TestUnconfiguredPaths:
         coverable = timedelta(seconds=settings.filter_step_s) * (settings.window_samples - 1)
         assert coverable >= timedelta(seconds=settings.persistence_s)
 
+    def test_unwired_registries_are_reported(self) -> None:
+        """業務価値・信頼性・実体の型を渡し忘れると、名前を挙げて報告する（M8-30）。
+
+        構築子の既定（空のレジストリ）でも動いてしまうので、**落ちない代わりに数える**。
+        運用の ``build_worker`` が渡し忘れていた（所見 109）。
+        """
+        worker = ReconcileWorker(Settings())
+        assert worker.unwired == ("values", "reliability", "entity_types")
+
+    def test_a_fully_wired_worker_reports_nothing(self) -> None:
+        worker = ReconcileWorker(
+            Settings(),
+            values=_values(),
+            reliability=ReliabilityRegistry({}),
+            entity_types_provider=dict,
+        )
+        assert worker.unwired == ()
+
 
 class TestDiscrepancyTopic:
     """起票先トピックの決め方（M8-04、ADR-0010）。"""
@@ -360,3 +382,140 @@ class TestMetrics:
         assert raised, "起票数の指標が出ていない"
         assert rates, "抑制率の指標が出ていない"
         assert all(0.0 <= sample.value <= 1.0 for sample in rates)
+
+
+PUMP_VALUE = BusinessValue(
+    object_type=str(vocab.ent.Pump), asset_value=2_500_000.0, safety_class=0.3, sla_penalty=4e6
+)
+
+
+def _values() -> BusinessValueRegistry:
+    """``Pump`` だけを登録したレジストリ（基準額は既定の 100 万）。"""
+    return BusinessValueRegistry(
+        {str(vocab.ent.Pump): PUMP_VALUE},
+        default_scale=Settings().reasoning.severity_value_scale,
+    )
+
+
+class _TypeProvider:
+    """実体 → 型の provider。呼ばれた回数を数える。"""
+
+    def __init__(self, types: dict[str, str]) -> None:
+        self.types = types
+        self.calls = 0
+
+    def __call__(self) -> dict[str, str]:
+        self.calls += 1
+        return dict(self.types)
+
+
+def _valued_worker(
+    provider: _TypeProvider | None, *, entity_types: dict[str, str] | None = None
+) -> tuple[ReconcileWorker, _Sink]:
+    sink = _Sink()
+    settings = Settings(reasoning=ReasoningSettings(reconcile_period_s=1e-6))
+    worker = ReconcileWorker(
+        settings,
+        sink=sink,
+        values=_values(),
+        reliability=ReliabilityRegistry({}),
+        entity_types=entity_types,
+        entity_types_provider=provider,
+    )
+    worker.attach_driver(_Driver([[], [], []]))
+    return worker, sink
+
+
+class TestBusinessValue:
+    """深刻度の業務価値が運用の配線で効くこと（M8-30、所見 109）。
+
+    重点:
+
+    1. **実体の型で登録値を引く** — 型が分からなければ全件が基準額の半分（中間値）になり、
+       深刻度の順位が平らになる。
+    2. **型は毎周期読み直す** — 資産台帳の同期（M8-25）で実体が増えたとき、古い対応のまま
+       評価し続けない。
+    3. **照合する列が無い周期はグラフを読まない** — 記録が届かない間に毎周期問い合わせない。
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_registered_value_of_the_entity_type_is_used(self) -> None:
+        worker, sink = _valued_worker(_TypeProvider({PUMP: str(vocab.ent.Pump)}))
+        _diverging_window(worker)
+        assert await worker.step() >= 1
+        assert sink.raised[0].severity.value_at_stake == pytest.approx(PUMP_VALUE.value_at_stake())
+
+    @pytest.mark.asyncio
+    async def test_without_a_type_the_default_value_is_used(self) -> None:
+        """対照: 型が分からなければ基準額の半分（``BusinessValueRegistry.get`` の既定）。"""
+        worker, sink = _valued_worker(_TypeProvider({}))
+        _diverging_window(worker)
+        assert await worker.step() >= 1
+        scale = worker.settings.reasoning.severity_value_scale
+        assert sink.raised[0].severity.value_at_stake == pytest.approx(scale / 2.0)
+
+    @pytest.mark.asyncio
+    async def test_the_types_are_read_every_detection_cycle(self) -> None:
+        provider = _TypeProvider({PUMP: str(vocab.ent.Pump)})
+        worker, _sink = _valued_worker(provider)
+        _diverging_window(worker)
+        await worker.step()
+        await worker.step()
+        assert provider.calls == 2
+
+    @pytest.mark.asyncio
+    async def test_explicit_types_override_the_provider(self) -> None:
+        """明示した対応が勝つ（カナリアや検証で 1 実体だけ差し替えるため）。"""
+        provider = _TypeProvider({PUMP: "urn:sbp:test:class:Unregistered"})
+        worker, sink = _valued_worker(provider, entity_types={PUMP: str(vocab.ent.Pump)})
+        _diverging_window(worker)
+        await worker.step()
+        assert sink.raised[0].severity.value_at_stake == pytest.approx(PUMP_VALUE.value_at_stake())
+
+    @pytest.mark.asyncio
+    async def test_no_comparable_series_means_no_graph_read(self) -> None:
+        provider = _TypeProvider({PUMP: str(vocab.ent.Pump)})
+        worker, _sink = _valued_worker(provider)
+        for index in range(40):
+            worker.windows.observe(
+                entity=PUMP, fluent=str(vocab.ent.Running), at=T0 + STEP * index, probability=0.98
+            )
+        assert await worker.step() == 0
+        assert provider.calls == 0
+
+
+class TestRegistries:
+    """リポジトリのレジストリが運用の配線で読めること（M8-30）。"""
+
+    def test_the_repository_registries_load(self) -> None:
+        values, reliability = load_registries(Settings(), root=ROOT)
+        assert str(vocab.ent.Pump) in values.object_types
+        # 未登録なら IntegrationError（既定値で代替しない設計）
+        mes = reliability.get(str(vocab.ent.MesSource), str(vocab.ent.OperationLog))
+        assert mes.systematic_biases
+
+    def test_registered_types_resolve_against_the_ontology(self) -> None:
+        """実際のオントロジーと ``value/*.yaml`` の組で、ポンプが ``Pump`` の値に解決される。
+
+        ``value/`` は ``Pump`` と上位の ``RotatingEquipment`` の両方を登録している。型の階層は
+        ``ontology/domain/`` にあり、手書きのスキーマでは確かめたことにならない。
+        """
+        from sbp.knowledge import EmbeddedGraphStore, most_specific_types  # noqa: PLC0415
+
+        values, _reliability = load_registries(Settings(), root=ROOT)
+        store = EmbeddedGraphStore()
+        for ttl in sorted((ROOT / "ontology").glob("*/*.ttl")):
+            if ttl.parent.name in {"core", "domain"}:
+                store.load_turtle(ttl.read_text(encoding="utf-8"), graph="urn:sbp:test:ontology")
+        rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+        store.load_turtle(f"<{PUMP}> <{rdf_type}> <{vocab.ent.Pump}> .", graph="urn:sbp:test:a")
+
+        found = most_specific_types(store, types=values.object_types, site="siteA")
+
+        assert found == {PUMP: str(vocab.ent.Pump)}
+
+    def test_the_value_scale_comes_from_the_settings(self) -> None:
+        """正規化の基準額を二重定義しない（``SBP_REASONING_SEVERITY_VALUE_SCALE``）。"""
+        settings = Settings(reasoning=ReasoningSettings(severity_value_scale=123.0))
+        values, _reliability = load_registries(settings, root=ROOT)
+        assert values.scale == pytest.approx(123.0)

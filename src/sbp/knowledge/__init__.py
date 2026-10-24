@@ -19,7 +19,7 @@ from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_belie
 from sbp.knowledge.concepts import ConceptProposalRecord, ConceptProposalStore
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
-from sbp.knowledge.entities import entities_of_type, site_prefix
+from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
 from sbp.knowledge.expectations import ExpectationRecord, ExpectationStore
 from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph, schema_graph
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
@@ -91,6 +91,7 @@ __all__ = [
     "entities_of_type",
     "group_by_whole",
     "is_scenario_graph",
+    "most_specific_types",
     "parse_s3_uri",
     "part_whole_edges",
     "plan_hybrid",

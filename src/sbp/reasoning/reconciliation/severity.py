@@ -138,6 +138,14 @@ class BusinessValueRegistry:
         """正規化の基準額。"""
         return self._default_scale
 
+    @property
+    def object_types(self) -> tuple[str, ...]:
+        """業務価値が登録されている型 IRI（辞書順）。
+
+        実体の型を知識グラフから引くとき、問い合わせをこの型に絞る（M8-30）。
+        """
+        return tuple(sorted(self._values))
+
     def keys(self) -> tuple[str, ...]:
         """登録済みの型 IRI。"""
         return tuple(sorted(self._values))

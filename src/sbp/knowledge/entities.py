@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from sbp.knowledge.store import GraphStore
 
-__all__ = ["entities_of_type", "site_prefix"]
+__all__ = ["entities_of_type", "most_specific_types", "site_prefix"]
 
 log = get_logger(__name__)
 
@@ -122,3 +122,115 @@ def entities_of_type(
         truncated=truncated,
     )
     return found
+
+
+def most_specific_types(
+    store: GraphStore,
+    *,
+    types: Sequence[str],
+    site: str | None = None,
+    limit: int = 10_000,
+) -> dict[str, str]:
+    """個体ごとに、指定した型のうち最も具体的なものを返す（M8-30）。
+
+    照合の深刻度は実体の ObjectType で業務価値（``value/*.yaml``）を引く。登録は ``Pump`` と
+    上位の ``RotatingEquipment`` のように階層の複数の段にありうるので、**個体が当たる登録型の
+    うち、他の登録型の上位でないもの**を選ぶ。部分クラスは :func:`entities_of_type` と同じく
+    展開するので、登録の無い型の個体は登録のある最も近い上位型に落ちる。
+
+    どの登録型の下にも無い個体は返さない——既定値（基準額の半分）を当てるのは呼び出し側の
+    レジストリの役目で、ここで既定を作ると二重定義になる。
+
+    Args:
+        store: グラフストア。
+        types: 候補の型 IRI の列（業務価値が登録されている型）。
+        site: 拠点（``None`` なら全拠点）。
+        limit: 読む ``(個体, 型)`` の組の上限。超えたら警告を出す。
+
+    Returns:
+        個体 IRI → 型 IRI。比較できない型（互いに上位でない）に同時に当たる個体は、
+        辞書順で最初の型を採る（周期ごとに結果が揺れないため）。
+
+    Raises:
+        ValueError: ``types`` が空の場合。
+    """
+    if not types:
+        raise ValueError("most_specific_types requires at least one type")
+    candidates = _registered_types_by_entity(store, types=types, site=site, limit=limit)
+    broader = _broader_pairs(store, types=types)
+    resolved: dict[str, str] = {}
+    for entity, matched in candidates.items():
+        # 他の候補の上位型に当たるものを落とす（Pump があれば RotatingEquipment を捨てる）
+        narrowest = sorted(
+            candidate
+            for candidate in matched
+            if not any((other, candidate) in broader for other in matched if other != candidate)
+        )
+        resolved[entity] = narrowest[0]
+    log.info("knowledge.most_specific_types_read", site=site, entities=len(resolved))
+    return resolved
+
+
+def _registered_types_by_entity(
+    store: GraphStore, *, types: Sequence[str], site: str | None, limit: int
+) -> dict[str, set[str]]:
+    """個体 → 当たる候補型の集合（部分クラスを展開する）。"""
+    type_values = " ".join(f"<{iri}>" for iri in types)
+    site_filter = (
+        "" if site is None else f'\n      FILTER(CONTAINS(STR(?entity), "{site_prefix(site)}"))'
+    )
+    # 型の宣言と部分クラスの階層を別の段で書く理由は `entities_of_type` と同じ（所見 57）
+    sparql = f"""
+    SELECT DISTINCT ?entity ?type WHERE {{
+      VALUES ?type {{ {type_values} }}
+      {{
+        {{ ?entity <{_RDF_TYPE}> ?class }}
+        UNION
+        {{ GRAPH ?instance_graph {{ ?entity <{_RDF_TYPE}> ?class }} }}
+      }}
+      {{
+        {{ ?class <{_RDFS_SUBCLASS_OF}>* ?type }}
+        UNION
+        {{ GRAPH ?schema_graph {{ ?class <{_RDFS_SUBCLASS_OF}>* ?type }} }}
+      }}
+      FILTER(isIRI(?entity)){site_filter}
+    }}
+    ORDER BY ?entity ?type
+    LIMIT {limit + 1}
+    """
+    rows = store.query(sparql)
+    if len(rows) > limit:
+        log.warning(
+            "knowledge.entity_types_truncated",
+            limit=limit,
+            detail="(個体, 型) の組が上限を超えた。業務価値の引き当てが欠けている",
+        )
+    found: dict[str, set[str]] = {}
+    for row in rows[:limit]:
+        entity, matched = row.get("entity"), row.get("type")
+        if entity is not None and matched is not None:
+            found.setdefault(entity, set()).add(matched)
+    return found
+
+
+def _broader_pairs(store: GraphStore, *, types: Sequence[str]) -> set[tuple[str, str]]:
+    """候補型どうしの ``(部分型, 上位型)`` の組（``rdfs:subClassOf+``）。"""
+    type_values = " ".join(f"<{iri}>" for iri in types)
+    sparql = f"""
+    SELECT DISTINCT ?narrow ?broad WHERE {{
+      VALUES ?narrow {{ {type_values} }}
+      VALUES ?broad {{ {type_values} }}
+      {{
+        {{ ?narrow <{_RDFS_SUBCLASS_OF}>+ ?broad }}
+        UNION
+        {{ GRAPH ?schema_graph {{ ?narrow <{_RDFS_SUBCLASS_OF}>+ ?broad }} }}
+      }}
+      FILTER(?narrow != ?broad)
+    }}
+    """
+    pairs: set[tuple[str, str]] = set()
+    for row in store.query(sparql):
+        narrow, broad = row.get("narrow"), row.get("broad")
+        if narrow is not None and broad is not None:
+            pairs.add((narrow, broad))
+    return pairs

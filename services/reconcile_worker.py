@@ -11,14 +11,22 @@
 すると、照合を速くするために信念更新を遅くするか、その逆をすることになる。
 
 **起票は「イベントを出す」ところまで。** 不一致を知識グラフへ書かない（``bridge`` は永続化
-しないのと同じ理由ではなく、**不一致はイベントであって信念ではない**から）。人の解決を経て
-学習信号になる経路は UI（M7-04）と ``/commands/*`` を通る。
+しないのと同じ理由ではなく、**不一致はイベントであって信念ではない**から）。本体は作業項目表
+（``discrepancies``、ADR-0013）に書く。人の解決を経て学習信号になる経路は UI（M7-04）と
+``/commands/*`` を通る。
+
+**深刻度の業務価値は運用の配線で渡す**（M8-30）。``value/*.yaml``（ObjectType ごとの v(x)）と
+``reliability/*.yaml``（情報源の信頼性）を読み、実体の型は毎周期知識グラフから引く。構築子の
+既定（空のレジストリ）でも動いてしまうので、渡されなかったものは ``unwired`` に数えて警告する
+——渡し忘れると全件の価値項が中間値になり、深刻度の順位が平らになる（``docs/PROGRESS.md``
+所見 109）。
 """
 
 from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sbp.core import vocab
@@ -37,7 +45,7 @@ from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import Awaitable, Callable, Mapping, Sequence
     from datetime import datetime
 
     from sbp.core.events import EventEnvelope
@@ -57,23 +65,39 @@ if TYPE_CHECKING:
     """不一致 1 件を作業項目として書く（``DiscrepancyStore.upsert`` を包む）。"""
     CommitHook = Callable[[], Awaitable[None]]
     """終了時のオフセットコミット。"""
+    EntityTypesProvider = Callable[[], Mapping[str, str]]
+    """実体 IRI → ObjectType IRI を返す（業務価値の引き当て。毎周期呼ぶ）。"""
 
 log = get_logger(__name__)
 
 WORKER_NAME = "reconcile-worker"
 
+VALUE_DIR = Path("value")
+"""業務価値（v(x)）の定義の置き場（リポジトリの根から）。"""
+
+RELIABILITY_DIR = Path("reliability")
+"""情報源信頼性モデルの初期値の置き場（リポジトリの根から）。"""
+
 
 def readiness_checks(settings: Settings) -> tuple[ReadinessCheck, ...]:
-    """このワーカーの依存。
+    """このワーカーの依存（イベントログと知識グラフ）。
 
-    グラフストアは**要らない**（不一致を永続化しないため）。イベントログだけに依存する。
+    知識グラフは実体の型（業務価値の引き当て）を読むために要る（M8-30）。不一致の本体は
+    Postgres の作業項目表に書くが、その接続は ``build_worker`` が構築時に張るので、ここでは
+    検査しない（繋がらなければ構築で落ちる）。
 
     Args:
         settings: 設定。
     """
-    from services.belief_worker import tcp_reachable  # noqa: PLC0415 — 疎通検査を共有する
+    from services.belief_worker import (  # noqa: PLC0415 — 疎通検査を共有する
+        http_reachable,
+        tcp_reachable,
+    )
 
-    return (ReadinessCheck(name="redpanda", probe=lambda: tcp_reachable(settings.kafka_bootstrap)),)
+    return (
+        ReadinessCheck(name="redpanda", probe=lambda: tcp_reachable(settings.kafka_bootstrap)),
+        ReadinessCheck(name="oxigraph", probe=lambda: http_reachable(settings.sparql_query_url)),
+    )
 
 
 class ReconcileWorker:
@@ -83,6 +107,8 @@ class ReconcileWorker:
         settings: 設定。
         runtime: 実行ループ。
         windows: 時間窓。
+        unwired: 渡されなかった依存の名前（``values`` / ``reliability`` / ``entity_types``）。
+            空のレジストリで動いてしまうので落とさず、ここに数えて警告する（M8-30）。
     """
 
     def __init__(
@@ -94,6 +120,7 @@ class ReconcileWorker:
         values: BusinessValueRegistry | None = None,
         reliability: ReliabilityRegistry | None = None,
         entity_types: dict[str, str] | None = None,
+        entity_types_provider: EntityTypesProvider | None = None,
         metrics: MetricRecorder | None = None,
         store: DiscrepancySink | None = None,
     ) -> None:
@@ -103,7 +130,12 @@ class ReconcileWorker:
         sink: 不一致の出力（``None`` なら出さない。検出だけ行う）。
         values: 業務価値のレジストリ（深刻度の v(x)）。
         reliability: 情報源信頼性のレジストリ（抑制判定に使う）。
-        entity_types: 実体 IRI → ObjectType IRI（業務価値の引き当て）。
+        entity_types: 実体 IRI → ObjectType IRI（業務価値の引き当て）。固定の対応で、
+            ``entity_types_provider`` の結果より優先する（検証やカナリアで差し替えるため）。
+        entity_types_provider: 実体の型を毎周期引く（運用では知識グラフ。M8-30）。
+            資産台帳の同期で実体が増えたときに古い対応のまま評価しないよう、キャッシュしない。
+        metrics: 指標の記録先（M8-14）。
+        store: 不一致の作業項目の書き込み先（ADR-0013）。
         """
         from sbp.integration.reliability import ReliabilityRegistry  # noqa: PLC0415
         from sbp.reasoning.reconciliation.severity import (  # noqa: PLC0415
@@ -137,6 +169,23 @@ class ReconcileWorker:
         )
         self._reliability = reliability if reliability is not None else ReliabilityRegistry({})
         self._entity_types = entity_types or {}
+        self._entity_types_provider = entity_types_provider
+        self.unwired = tuple(
+            name
+            for name, given in (
+                ("values", values),
+                ("reliability", reliability),
+                ("entity_types", entity_types or entity_types_provider),
+            )
+            if given is None
+        )
+        if self.unwired:
+            log.warning(
+                "worker.registries_not_wired",
+                worker=WORKER_NAME,
+                missing=list(self.unwired),
+                detail="空の既定で動く。深刻度の業務価値項が全件中間値になる（所見 109）",
+            )
         self._last_detection: datetime | None = None
         self.raised_total = 0
         self.suppressed_total = 0
@@ -258,6 +307,12 @@ class ReconcileWorker:
         取り込みを必要とするので、イベント 2 本から組める類型に限っている。
         ここを広げるときは、窓に何を溜めるかから設計し直すことになる。
 
+        **抑制の判定に記録（``records``）を渡していない。** 類型 2 を抑制できる系統誤差は
+        ``template_copy`` だけで、その判定（``SystematicBias.explains``）は時刻のずれでは
+        説明できないので常に偽を返す——記録を渡しても類型 2 は抑制されない（M8-30 で確認）。
+        窓は記録の確率しか持たず ``Record`` を持たないので、渡すには窓の設計から変える必要が
+        ある。類型 1・3 を回すときに一緒に扱う。
+
         Args:
             at: 検出時刻。
 
@@ -284,7 +339,7 @@ class ReconcileWorker:
             ontology_version=vocab.ONTOLOGY_VERSION,
             values=self._values,
             reliability=self._reliability,
-            entity_types=self._entity_types,
+            entity_types=self._current_entity_types(),
         )
         candidates = detect_state(comparable, context=context)
         outcome = reconcile(candidates, reliability=self._reliability, at=at)
@@ -307,6 +362,17 @@ class ReconcileWorker:
                 reasons=[d.suppression.reason for d in outcome.suppressed if d.suppression],
             )
         return len(outcome.triaged)
+
+    def _current_entity_types(self) -> dict[str, str]:
+        """この周期の「実体 → ObjectType」。provider の結果に固定の対応を上書きする。
+
+        照合する列がある周期だけ呼ぶ（記録が届かない間に毎周期グラフを読まない）。
+        """
+        found: dict[str, str] = (
+            {} if self._entity_types_provider is None else dict(self._entity_types_provider())
+        )
+        found.update(self._entity_types)
+        return found
 
     def _persist(self, discrepancies: Sequence[Discrepancy]) -> None:
         """不一致を作業項目として書く（ADR-0013）。
@@ -408,6 +474,32 @@ def discrepancy_topic(settings: Settings, *, site_id: str) -> str:
     return topic_name(scope, EventLayer.REASONING, "discrepancy")
 
 
+def load_registries(
+    settings: Settings, *, root: Path = Path()
+) -> tuple[BusinessValueRegistry, ReliabilityRegistry]:
+    """業務価値と情報源信頼性のレジストリを読む（M8-30）。
+
+    **正規化の基準額は設定から渡す**（``SBP_REASONING_SEVERITY_VALUE_SCALE``）。レジストリ側に
+    既定を持たせると二重定義になる。どちらも定義が 1 件も無ければ例外になる——空のレジストリで
+    動き続けると、深刻度の価値項が全件中間値になったことに誰も気付かない（所見 109）。
+
+    Args:
+        settings: 設定。
+        root: リポジトリの根（``value/`` と ``reliability/`` の親）。
+
+    Returns:
+        ``(業務価値, 信頼性)``。
+    """
+    from sbp.integration.reliability import ReliabilityRegistry  # noqa: PLC0415
+    from sbp.reasoning.reconciliation.severity import BusinessValueRegistry  # noqa: PLC0415
+
+    values = BusinessValueRegistry.from_directory(
+        root / VALUE_DIR, default_scale=settings.reasoning.severity_value_scale
+    )
+    reliability = ReliabilityRegistry.from_directory(root / RELIABILITY_DIR)
+    return values, reliability
+
+
 async def build_worker(
     settings: Settings | None = None, *, site_id: str
 ) -> tuple[ReconcileWorker, KafkaEventConsumer, KafkaEventProducer]:
@@ -415,6 +507,10 @@ async def build_worker(
 
     **2 つのトピックを購読する。** 物理（接地層）と業務（統合層）の両方が要る——片方だけだと
     照合の片側しか埋まらず、``has_records`` が偽のまま 1 件も検出されない。
+
+    **業務価値・信頼性・実体の型を渡す**（M8-30）。実体の型は知識グラフから、業務価値が
+    登録されている型に絞って毎周期引く（``most_specific_types``）。渡さないと構築子の既定
+    （空のレジストリ）で動き、深刻度の価値項が全件中間値になる（所見 109）。
 
     Args:
         settings: 設定（既定は環境から読む）。
@@ -429,10 +525,22 @@ async def build_worker(
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
     from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
-    from sbp.knowledge import DiscrepancyStore, MetricStore  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        DiscrepancyStore,
+        HttpGraphStore,
+        MetricStore,
+        most_specific_types,
+    )
     from services.belief_worker import kafka_driver  # noqa: PLC0415
 
     resolved = settings or Settings()
+    values, reliability = load_registries(resolved)
+    graph = HttpGraphStore(resolved)
+
+    def entity_types() -> Mapping[str, str]:
+        """業務価値が登録されている型に絞って、実体の最も具体的な型を引く。"""
+        return most_specific_types(graph, types=values.object_types, site=site_id)
+
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
 
     producer = KafkaEventProducer(resolved)
@@ -442,8 +550,8 @@ async def build_worker(
     def sink(discrepancy: Discrepancy) -> object:
         """起票を通知する（ADR-0010）。
 
-        **イベントは通知であって不一致そのものではない。** 不一致の本体を永続化する経路は
-        まだ無い（M8-12）。
+        **イベントは通知であって不一致そのものではない。** 本体は ``persist`` が作業項目表に
+        書く（M8-12、ADR-0013）。
         """
         return asyncio.create_task(
             producer.send(topic, discrepancy_event(discrepancy, site_id=site_id))
@@ -458,6 +566,9 @@ async def build_worker(
     worker = ReconcileWorker(
         resolved,
         sink=sink,
+        values=values,
+        reliability=reliability,
+        entity_types_provider=entity_types,
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
         store=persist,
     )
