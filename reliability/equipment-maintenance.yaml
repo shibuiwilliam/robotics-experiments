@@ -54,6 +54,17 @@ models:
       max_plausible_s: 7776000.0
     observations: 0
 
+  # ---- CMMS の設備台帳（ADR-0016）----
+  # マスタは日々の取引より遅れて直される（新設・撤去の登録が現場作業の後になる）。型の誤記は稀だが
+  # 無いとは言えないので混同行列は持たず、時刻ずれだけを置く（台帳の主張は信念更新の尤度に入れない）。
+  - source: ent:CmmsSource
+    record_type: ent:AssetRegisterEntry
+    time_offset:
+      mean_s: 86400.0        # 平均 1 日遅れで登録
+      stddev_s: 172800.0
+      max_plausible_s: 2592000.0   # 30 日を超える遅れはあり得ないとみなす
+    observations: 0
+
   # ---- ERP の予備品在庫 ----
   # 数量の記録。丸めと月末一括計上の系統誤差を持つ。
   - source: ent:ErpSource

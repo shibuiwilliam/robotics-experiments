@@ -1,0 +1,29 @@
+# CMMS の設備台帳 → ent:AssetRegisterEntry（ADR-0016）
+#
+# 設計書 §7.1 のマスタ（定期同期）。台帳の 1 行は「この資産タグの設備はこの型で、この上位設備の
+# 一部である」という主張で、取込ワーカーが rdf:type / sbp:partOf の observed アサーションと、
+# その投影（urn:sbp:g:master:<site>）に変える。ライン（ProductionLine）も同じ台帳に載る——部分−全体の
+# 全体側として IRI が要るため。
+mapping: asset_register
+version: 1.0.0
+source: ent:CmmsSource
+table: asset_register
+record_type: ent:AssetRegisterEntry
+
+key:
+  columns: [asset_tag]
+  external_id: "{asset_tag}"
+
+subject_ref:
+  column: asset_tag
+  kind: asset
+
+required: [asset_tag, asset_type, recorded_at]
+cardinality: one_to_one
+
+time:
+  recorded_at: recorded_at
+
+fields:
+  asset_type: asset_type
+  part_of: part_of

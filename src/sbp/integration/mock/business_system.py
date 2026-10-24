@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS maintenance_plan (
     recorded_at  TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS asset_register (
+    asset_tag    TEXT PRIMARY KEY,
+    asset_type   TEXT NOT NULL,
+    part_of      TEXT,
+    recorded_at  TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+);
 """
 
 _TABLE_TO_SOURCE: dict[str, str] = {
@@ -74,6 +81,8 @@ _TABLE_TO_SOURCE: dict[str, str] = {
     "operation_log": "https://sbp.example/ent#MesSource",
     "spare_part_stock": "https://sbp.example/ent#ErpSource",
     "maintenance_plan": "https://sbp.example/ent#CmmsSource",
+    # 設備台帳は CMMS が持つ（設計書 §7.1 のマスタ。ADR-0016）
+    "asset_register": "https://sbp.example/ent#CmmsSource",
 }
 
 _PRIMARY_KEY: dict[str, tuple[str, ...]] = {
@@ -81,6 +90,7 @@ _PRIMARY_KEY: dict[str, tuple[str, ...]] = {
     "operation_log": ("log_id",),
     "spare_part_stock": ("sku", "location"),
     "maintenance_plan": ("plan_id",),
+    "asset_register": ("asset_tag",),
 }
 
 
@@ -135,14 +145,46 @@ def build_default_scenario(t0: datetime) -> Scenario:
     2. CMMS に軸受交換の作業指示があり、完了は実作業の翌日に記録されている（→ 時間不一致 類型 3）。
     3. ERP は予備品 SKU-77 を 3 個あると言っている（実際は 0 個 → 存在不一致 類型 1、幽霊在庫）。
     4. 保全計画は 09:00〜17:00 の稼働を予定している（遵守率の事前分布を伴う）。
+    5. 設備台帳はライン 3 にポンプ P-101 と P-102 があると言っている（ADR-0016。接地対象と業務価値の
+       引き当てはここから始まる）。
 
     Args:
         t0: 台本の基準時刻（設計書 §14 の 2026-09-12 09:00 相当）。
     """
     day = _iso(t0)
+    registered = _iso(t0 - timedelta(days=30))
     return Scenario(
         name="design-§14-equipment-maintenance",
         steps=(
+            ScenarioStep(
+                table="asset_register",
+                values={
+                    "asset_tag": "LINE-3",
+                    "asset_type": "ProductionLine",
+                    "recorded_at": registered,
+                },
+                note="ライン 3（部分−全体の全体側）",
+            ),
+            ScenarioStep(
+                table="asset_register",
+                values={
+                    "asset_tag": "P-101",
+                    "asset_type": "Pump",
+                    "part_of": "LINE-3",
+                    "recorded_at": registered,
+                },
+                note="設計書 §14 のポンプ",
+            ),
+            ScenarioStep(
+                table="asset_register",
+                values={
+                    "asset_tag": "P-102",
+                    "asset_type": "Pump",
+                    "part_of": "LINE-3",
+                    "recorded_at": registered,
+                },
+                note="同じラインのもう 1 台（部分−全体の結合が 2 部分になる）",
+            ),
             ScenarioStep(
                 table="operation_log",
                 values={

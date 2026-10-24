@@ -8,7 +8,7 @@ paths:
 # オントロジー作業ルール
 
 - 名前空間: `sbp-core:` = `https://sbp.example/core#`、`ent:` = `https://sbp.example/ent#`、`site-<id>:` = `https://sbp.example/site/<id>/`。新しい名前空間の追加は ADR。
-- 上位オントロジー（BFO 2020 / IAO / SOSA-SSN / PROV-O / OWL-Time / GeoSPARQL / QUDT）は `ontology/imports/` に固定版で同梱する。取得は `scripts/fetch_imports.sh`、改変禁止。ネットワーク経由の `owl:imports` 解決に頼らない。
+- 上位オントロジー（BFO 2020 / IAO / SOSA-SSN / PROV-O / OWL-Time / GeoSPARQL / QUDT）は `ontology/imports/` に固定版で置く方針で、取得は `scripts/fetch_imports.sh`、改変禁止。ネットワーク経由の `owl:imports` 解決に頼らない。**2026-10-25 時点では未取得**（README だけ。OWL RL 推論を使う処理がまだ無い）。
 - クラス・プロパティの必須注釈: `rdfs:label`（ja / en）、`skos:definition`、`sbp-core:layer`（L1..L4）、`sbp-core:owner`。欠けていると `make ontology-check` が落ちる。
 - ICE（情報内容実体）の下位クラスは `iao:is_about` の定義域制約を持つ。`PhysicalEntity` の下位は `hasLocation` を SHACL で必須にする。
 - `FluentType` / `EventType` は `ontology/process/*.lp`（clingo）の `initiates` / `terminates` と対応が取れていること。`make ontology-check` が未参照・未定義の型を検出する。

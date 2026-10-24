@@ -57,9 +57,10 @@ def _sample_row(mapping: Mapping, **overrides: Any) -> RawRecord:
 
 
 class TestAllMappingsLoad:
-    def test_four_mappings_are_declared(self, registry: MappingRegistry) -> None:
-        """設計書 §14 の 4 つの業務情報源に対応する写像がある。"""
+    def test_the_expected_mappings_are_declared(self, registry: MappingRegistry) -> None:
+        """設計書 §14 の 4 つの業務情報源と、設備台帳（ADR-0016）に対応する写像がある。"""
         assert registry.names() == (
+            "asset_register",
             "maintenance_plan",
             "operation_log",
             "spare_part_stock",
