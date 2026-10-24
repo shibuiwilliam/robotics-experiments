@@ -21,10 +21,17 @@ from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
 from sbp.knowledge.expectations import ExpectationRecord, ExpectationStore
-from sbp.knowledge.graphs import belief_graph, is_scenario_graph, scenario_graph, schema_graph
+from sbp.knowledge.graphs import (
+    belief_graph,
+    is_scenario_graph,
+    master_graph,
+    scenario_graph,
+    schema_graph,
+)
 from sbp.knowledge.hybrid import HybridPlan, PlanStrategy, Selectivity
 from sbp.knowledge.hybrid import plan as plan_hybrid
 from sbp.knowledge.latent import LatentIndex, LatentNeighbour, LatentRegistration
+from sbp.knowledge.master import RDF_TYPE, rebuild_master_projection
 from sbp.knowledge.metrics_store import MetricStore
 from sbp.knowledge.observations import ObservationQueue, ObservationRow
 from sbp.knowledge.regrounding import (
@@ -49,6 +56,7 @@ from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 from sbp.knowledge.watermarks import Watermark, WatermarkStore
 
 __all__ = [
+    "RDF_TYPE",
     "AggregationByFluent",
     "ArtifactStore",
     "AssertionRow",
@@ -91,11 +99,13 @@ __all__ = [
     "entities_of_type",
     "group_by_whole",
     "is_scenario_graph",
+    "master_graph",
     "most_specific_types",
     "parse_s3_uri",
     "part_whole_edges",
     "plan_hybrid",
     "plan_regrounding",
+    "rebuild_master_projection",
     "scenario_graph",
     "schema_graph",
     "site_prefix",

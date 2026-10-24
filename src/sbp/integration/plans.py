@@ -6,16 +6,19 @@
   出典（文書・節）を必ず持つ（規範違反は人の判断に影響するため、根拠まで遡れなければ
   監査に使えない）。
 
-この層はアサーションを**作る**が永続化はしない（層の依存の向き: integration は knowledge の
-下位にある）。永続化は ``reasoning`` が ``knowledge`` の公開 API 経由で行う。
+計画の同期（:class:`PlanSync`）は ``knowledge`` の公開 API（``AssertionStore``）で planned の文を
+追記・閉鎖する（ADR-0016）。層の依存の向きは integration → knowledge（import-linter の契約）で、
+2026-10-25 まで本 docstring は逆向き（integration が knowledge の下位）と書いていた。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Final
+from typing import TYPE_CHECKING, Final, Literal
+from uuid import NAMESPACE_URL, uuid5
 
+from sbp.core import vocab
 from sbp.core.assertion import Assertion
 from sbp.core.belief import BooleanBelief
 from sbp.core.ids import site_iri
@@ -24,7 +27,19 @@ from sbp.core.modality import Modality
 from sbp.core.records import Norm, NormSeverity, PlanItem, Record
 from sbp.core.time import ensure_utc
 
-__all__ = ["ADHERENCE_PRIORS", "NormRule", "plan_item_from_record", "to_planned_assertion"]
+if TYPE_CHECKING:
+    from sbp.knowledge import AssertionRow, AssertionStore
+
+__all__ = [
+    "ADHERENCE_PRIORS",
+    "INTENDED_FLUENTS",
+    "NormRule",
+    "PlanSync",
+    "intended_fluent_for",
+    "plan_item_from_record",
+    "plan_provenance",
+    "to_planned_assertion",
+]
 
 log = get_logger(__name__)
 
@@ -43,6 +58,41 @@ ADHERENCE_PRIORS: Final[dict[str, float]] = {
 
 _DEFAULT_ADHERENCE: Final = 0.7
 """未知の計画種の遵守率。既知より低くする（知らない計画は信用しない）。"""
+
+# 計画種ごとに、計画が成立させようとするフルーエント（ADR-0016）。遵守率の表の隣に置くのは、
+# 計画種を足すときに両方を同じ場所で決めるため。**未知の計画種は推測しない**——「何を成立させる
+# 計画か」を取り違えると、planned の文が別のフルーエントの事前として信念更新に効く。
+INTENDED_FLUENTS: Final[dict[str, str]] = {
+    "PlannedOperation": vocab.ent.Running,
+    "PreventiveMaintenance": vocab.ent.UnderMaintenance,
+    "Inspection": vocab.ent.Inspected,
+}
+
+
+def intended_fluent_for(record: Record) -> str | None:
+    """計画の記録が成立させようとするフルーエント型 IRI。未知の計画種なら ``None``。
+
+    Args:
+        record: ``maintenance_plan`` 写像を通った記録。
+    """
+    plan_type = str(record.payload.get("plan_type") or "")
+    fluent = INTENDED_FLUENTS.get(plan_type)
+    if fluent is None:
+        log.info("plans.no_intended_fluent", plan_type=plan_type, external_id=record.external_id)
+    return fluent
+
+
+def plan_provenance(site_id: str, external_id: str) -> str:
+    """計画の文の来歴 IRI。業務側の計画 ID から導くので、同じ計画は同じ来歴になる。
+
+    計画が変わったとき、旧い planned の文をこの来歴で見つけて閉じる（:class:`PlanSync`）。
+    計画 ID は IRI に使えない文字を含みうるので、そのまま埋めずに uuid5 にする。
+
+    Args:
+        site_id: 拠点識別子。
+        external_id: 業務システム側の計画 ID。
+    """
+    return site_iri(site_id, "prov", f"plan-{uuid5(NAMESPACE_URL, external_id).hex}")
 
 
 def plan_item_from_record(record: Record, *, intended_fluent: str) -> PlanItem:
@@ -111,8 +161,75 @@ def to_planned_assertion(plan: PlanItem, *, site_id: str, tx_from: datetime) -> 
         tx_from=tx_from,
         modality=Modality.PLANNED,
         belief=BooleanBelief(p=plan.adherence_prior),
-        provenance=site_iri(site_id, "prov", f"plan-{plan.plan_item_id}"),
+        provenance=plan_provenance(site_id, plan.external_id),
         ontology_version=plan.ontology_version,
+    )
+
+
+type PlanSyncOutcome = Literal["asserted", "replaced", "unchanged"]
+"""計画 1 件の同期の結果。"""
+
+
+class PlanSync:
+    """計画を planned の文として同期する（ADR-0016）。
+
+    取込は周期で回り、同じ計画を何度も読む。**同じ計画は何も増やさず**、計画が変わったら旧文の
+    ``tx_to`` を閉じて新文を足す（上書きしない。不変条件 2）。旧文は計画の来歴
+    （:func:`plan_provenance`）で見分ける。
+    """
+
+    def __init__(self, store: AssertionStore, *, site_id: str) -> None:
+        """Args:
+        store: 二時制アサーション API。
+        site_id: 拠点識別子。
+        """
+        self._store = store
+        self._site_id = site_id
+
+    def sync(self, plan: PlanItem, *, at: datetime) -> PlanSyncOutcome:
+        """計画 1 件を同期する。
+
+        Args:
+            plan: 計画項目（対象の実体が解決済みであること。未解決の計画は呼び出し側が飛ばす）。
+            at: 同期時刻（新しい文の ``tx_from`` と、閉じる文の ``tx_to``）。
+
+        Returns:
+            ``asserted``（初めて）/ ``replaced``（変わった）/ ``unchanged``（同じ）。
+        """
+        wanted = to_planned_assertion(plan, site_id=self._site_id, tx_from=at)
+        provenance = plan_provenance(self._site_id, plan.external_id)
+        current = [
+            row
+            for row in self._store.query(subject=plan.target, modality=Modality.PLANNED)
+            if row.provenance == provenance
+        ]
+        same = [row for row in current if _same_plan(row, wanted)]
+        if same and len(current) == len(same):
+            return "unchanged"
+        for row in current:
+            if not _same_plan(row, wanted):
+                self._store.retract(row.assertion_id, at)
+        if not same:
+            self._store.assert_(wanted)
+        outcome: PlanSyncOutcome = "replaced" if current else "asserted"
+        log.info(
+            "plans.synced",
+            external_id=plan.external_id,
+            entity=plan.target,
+            outcome=outcome,
+        )
+        return outcome
+
+
+def _same_plan(row: AssertionRow, wanted: Assertion) -> bool:
+    """同じ計画の文か（フルーエント・計画区間・遵守率が一致）。"""
+    confidence = wanted.belief.p if isinstance(wanted.belief, BooleanBelief) else None
+    return (
+        row.predicate == wanted.predicate
+        and row.valid_from == wanted.valid_from
+        and row.valid_to == wanted.valid_to
+        and confidence is not None
+        and abs(row.confidence - confidence) < 1e-9
     )
 
 

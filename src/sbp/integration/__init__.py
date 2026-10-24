@@ -17,8 +17,16 @@ from sbp.integration.extraction import (
     verify_spans,
 )
 from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected
-from sbp.integration.mappings import Mapping, MappingRegistry, MappingResult
-from sbp.integration.plans import NormRule, plan_item_from_record, to_planned_assertion
+from sbp.integration.mappings import Claim, Mapping, MappingRegistry, MappingResult
+from sbp.integration.master import MasterDataSync, MasterSyncReport
+from sbp.integration.plans import (
+    NormRule,
+    PlanSync,
+    intended_fluent_for,
+    plan_item_from_record,
+    plan_provenance,
+    to_planned_assertion,
+)
 from sbp.integration.reliability import (
     ConfusionMatrix,
     ReliabilityModel,
@@ -41,6 +49,7 @@ from sbp.integration.writeback import (
 )
 
 __all__ = [
+    "Claim",
     "ConfusionMatrix",
     "Connector",
     "EntityResolver",
@@ -54,8 +63,11 @@ __all__ = [
     "MappingRegistry",
     "MappingResult",
     "MasterDataResolver",
+    "MasterDataSync",
+    "MasterSyncReport",
     "NormExtraction",
     "NormRule",
+    "PlanSync",
     "RawRecord",
     "ReliabilityModel",
     "ReliabilityRegistry",
@@ -68,7 +80,9 @@ __all__ = [
     "WritebackOutcome",
     "WritebackResult",
     "WritebackTarget",
+    "intended_fluent_for",
     "plan_item_from_record",
+    "plan_provenance",
     "resolve_subject",
     "to_planned_assertion",
     "verify_spans",
