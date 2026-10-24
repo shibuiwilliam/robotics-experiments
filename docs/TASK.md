@@ -344,7 +344,7 @@ H-22 の決定次第**である。
 - [ ] **M8-25** 記録パス・計画・資産台帳の周期実行（**ADR 先行**） — `Connector.pull(since)` → 写像 → `IngestionPipeline` → `<site>.integration.business`、`PlanItem` → `planned`、資産台帳の同期（設計書 §7.1 の「マスタ 定期同期」）を運用で回す。**いまは `IngestionPipeline` を呼ぶのが G1 の統合テストだけで、`make seed` はオントロジーしか入れない**——新規環境では `entities_of_type` が 0 件を返し、reconcile-worker の記録側の入力は空のまま。置き場（ワーカーかジョブか）を ADR で決める。**2026-10-25 追記**: 閾値・ワーカー設定を `.env` で拠点別に与えるには X-11 が先に要る（所見 108）。記録が流れ始めたら M8-30 を続けて入れる（所見 109）
 - [ ] **M8-26** 信念更新を三源にする — belief-worker が `integration.business` と計画を読み、`BeliefFilter.step(records=…, plan=…)` に渡す。記録尤度に `AuditMask` を適用する（不変条件 6）。**いまは `bridge.physical` だけを購読し、全イベントをプローブ確率として渡す一源**で、`contrib_record` / `contrib_plan` は構造的に 0（所見 102）。docstring（「業務記録・計画を読み」）も実装に合わせる。M8-25 に依存。**2026-10-25 追記**: `BeliefIngest` には `reliability` も渡していない（`None`。所見 109）ので、記録尤度を入れるときに `reliability/*.yaml` を読んで渡す
 - [ ] **M8-27** 期待の周期検証 — `verify_expectation` を期限と証拠の到着で回し、`expectations` 表の状態を進める。`Violated` は不一致（類型 2 / 3）の起票、`Undetermined` は観測要求（設計書 §8.5）。**いまは learning-worker が `Active` で書くだけで、検証する運用コードが無い**（所見 103）。置き場は ADR-0012 / ADR-0014 の延長で決める
-- [ ] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク
+- [x] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク → 完了（2026-10-25。`situation_members` を `<Situation> sbp:hasParticipant <実体>` で読むように直し、`SituationLink` の docstring も揃えた。単体テストの fixture を正しい向きにし、**文の所属（reifier の `inSituation`）を参加者として返さない**回帰テストを足した（修正前は reifier が参加者として返り赤）。単体 1 件追加。運用に参加関係を書く者はまだいないので、結合の入力が空であることは変わらない）
 - [ ] **M8-29** 人の確認回答を `observed` で戻す経路 — 設計書 §14 の手順 4（人の回答が最上位の事実性を持ち、記録訂正と信頼性更新に変わる）。スケジューラが選んだ「人への質問」の回答を API コマンドで受け、`observed` のイベントにして観測要求を充足する。**いまは回答の入口が無い**（コマンドは `resolve_discrepancy` / `curate_concept` / `execute_action` の 3 つ）。**H-13**（充足の判定）と合わせて設計する
 以下 M8-30 は 2026-10-25 の棚卸しで起票した。10-17 の「この段の入力を誰が書くか」に対し、
 「production が組むとき何を渡していないか」を問うて見つかった（`docs/PROGRESS.md` 所見 109）。
@@ -373,20 +373,20 @@ H-22 の決定次第**である。
 M8-23 / M8-24 / M8-25 が M8-11 の前提になる。なお G8 が名指しするのは 4 ワーカーで、5 番目の
 learning-worker（ADR-0012）は条件に入っていない。
 
-**M8 の残り 14 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
+**M8 の残り 13 件**: M8-09（発見ループの周期実行）/ M8-10（LLM の live 経路。**H-04 の判断待ち**）/
 M8-15（残り 16 指標）/ M8-17（三源並置）/ M8-22（UI からの承認）/ M8-23（プローブ束の投入）/
 M8-24（推定パスの先頭。ADR 先行）/ M8-25（記録パス・計画・資産台帳。ADR 先行）/ M8-26（三源の信念更新）/
-M8-27（期待の周期検証）/ M8-28（Situation の述語）/ M8-29（人の確認回答）/ M8-30（照合ワーカーの
+M8-27（期待の周期検証）/ M8-29（人の確認回答）/ M8-30（照合ワーカーの
 レジストリと記録）/ M8-11（G8 の統合テスト。**H-22 の判断待ち**）。
 
 **M8 の前に片付けるもの**（2026-10-25 追加。いずれも小さい）: 未コミットの棚卸しのコミット（所見 107）→
 X-10（ブランチを main に統合）→ X-11（入れ子の設定が `.env` を読まない）/ X-12（`make up` の
 `$(comma)`）。X-11 / X-12 はバグ修正なので再現テストを先に書く（§1.1、CLAUDE.md）。
 
-**着手順の推奨**（2026-10-25 改訂）: M8-28 → M8-25 → M8-30 → M8-26 → M8-23 → M8-27 → M8-29 → M8-09 →
+**着手順の推奨**（2026-10-25 改訂。M8-28 は同日完了）: M8-25 → M8-30 → M8-26 → M8-23 → M8-27 → M8-29 → M8-09 →
 M8-17 → M8-22 → M8-15 → M8-24 → M8-11。
 
-- **M8-28 を先頭に置く**のは小さく、Situation の所属を書く側が現れる前に直さないと、書く側が誤った
+- **M8-28 を先頭に置いた**（2026-10-25 完了）のは小さく、Situation の所属を書く側が現れる前に直さないと、書く側が誤った
   述語に合わせてしまうため。
 - **M8-25 → M8-30 → M8-26 → M8-23** の順は依存の向き（記録が流れないと三源にできず、記録由来の弱ラベルが
   無いとプローブを学習できない）。M8-25 は ADR を先に書く。M8-30 を M8-25 の直後に置くのは、記録が

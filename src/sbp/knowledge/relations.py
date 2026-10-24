@@ -19,10 +19,16 @@
 推移閉包を展開して結合に入れると、同じ証拠が祖先へ複数の経路で伝わって二重に数えられる
 （孫 → 子 → 親 と 孫 → 親 の両方が因子になる）。多段の伝播は BP の反復が担う仕事である。
 
-同一 Situation の参加実体（``sbp:inSituation``）も読む（M8-07）。部分−全体と違って**向きが
-無い**ので対称な引き寄せになり、`sbp.reasoning.coupling.SituationLink` が受ける。
-**集約規則を要求しない**——「同じ出来事に参加しているから状態が揃いやすい」という弱い制約で、
-all / any のような向きを持たないためである。
+同一 Situation の参加実体（``<Situation> sbp:hasParticipant <実体>``）も読む（M8-07 / M8-28）。
+部分−全体と違って**向きが無い**ので対称な引き寄せになり、`sbp.reasoning.coupling.SituationLink` が
+受ける。**集約規則を要求しない**——「同じ出来事に参加しているから状態が揃いやすい」という弱い
+制約で、all / any のような向きを持たないためである。
+
+**``sbp:inSituation`` は参加ではない。** 定義域は ``Assertion`` で「この文が属する Situation」
+（設計書 §3.5 の ``situation`` 欄）を表し、``AssertionStore`` は文の reifier に書く。参加を
+表すのは ``hasParticipant``（設計書 §3.4、Situation → PhysicalEntity）である。M8-07 の初版は
+``inSituation`` を実体が主語の参加関係として読んでおり、所属つきの文が書かれると文の IRI が
+参加者として返る形になっていた（``docs/PROGRESS.md`` 所見 104）。
 """
 
 from __future__ import annotations
@@ -155,15 +161,16 @@ def group_by_whole(
 
 
 def situation_members(store: GraphStore, *, limit: int = 10_000) -> dict[str, list[str]]:
-    """同一 Situation に参加する実体を Situation ごとにまとめて読む（M8-07）。
+    """同一 Situation に参加する実体を Situation ごとにまとめて読む（M8-07 / M8-28）。
 
-    ``<実体> sbp:inSituation <Situation>`` を読み、Situation ごとに参加実体を集める。
+    ``<Situation> sbp:hasParticipant <実体>`` を読み、Situation ごとに参加実体を集める。
+    ``inSituation``（文の所属）は読まない——モジュールの docstring を参照。
 
     **参加者が 1 つだけの Situation を返さない。** 結合は 2 つ以上の実体の間にしか無く、
     1 人の Situation を返すと呼び出し側が ``SituationLink`` の構築で例外になる
     （``members`` が 2 件未満だと ``ReasoningError``）。
 
-    **Situation の階層は辿らない。** ``inSituation`` に推移性は宣言されておらず、
+    **Situation の階層は辿らない。** ``hasParticipant`` に推移性は宣言されておらず、
     「同じ Situation に居る」は 1 段で定義される。親 Situation まで辿ると、同じ日の全設備が
     1 つの結合になりうる——強い関係に限定する（設計書 §8.1）という前提が崩れる。
 
@@ -178,9 +185,9 @@ def situation_members(store: GraphStore, *, limit: int = 10_000) -> dict[str, li
     # 名前付きグラフと既定グラフの両方を見る（`part_whole_edges` と同じ理由。所見 45）。
     sparql = f"""
     SELECT DISTINCT ?member ?situation WHERE {{
-      {{ ?member <{vocab.core.inSituation}> ?situation }}
+      {{ ?situation <{vocab.core.hasParticipant}> ?member }}
       UNION
-      {{ GRAPH ?g {{ ?member <{vocab.core.inSituation}> ?situation }} }}
+      {{ GRAPH ?g {{ ?situation <{vocab.core.hasParticipant}> ?member }} }}
       FILTER(isIRI(?member) && isIRI(?situation))
     }}
     ORDER BY ?situation ?member

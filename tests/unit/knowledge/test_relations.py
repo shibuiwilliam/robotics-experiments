@@ -144,6 +144,9 @@ class TestSituationMembers:
        1 件だと ``SituationLink`` の構築が例外になる。
     2. **Situation の階層を辿らない** — 親まで辿ると同じ日の全設備が 1 つの結合になりうる。
     3. **名前付きグラフも見る** — 既定グラフだけでは何も返らない（所見 45）。
+    4. **参加は ``hasParticipant``（Situation → 実体）で読む** — ``inSituation`` は定義域が
+       ``Assertion`` で「文が属する Situation」を表す。文の所属を参加と読むと、文の reifier が
+       参加者として返る（所見 104、M8-28）。
     """
 
     @staticmethod
@@ -152,9 +155,9 @@ class TestSituationMembers:
         store = EmbeddedGraphStore()
         store.load_turtle(
             f"""
-            <{PUMP_A}> <{vocab.core.inSituation}> <urn:sbp:sit:stop-1> .
-            <{PUMP_B}> <{vocab.core.inSituation}> <urn:sbp:sit:stop-1> .
-            <{BEARING}> <{vocab.core.inSituation}> <urn:sbp:sit:alone> .
+            <urn:sbp:sit:stop-1> <{vocab.core.hasParticipant}> <{PUMP_A}> .
+            <urn:sbp:sit:stop-1> <{vocab.core.hasParticipant}> <{PUMP_B}> .
+            <urn:sbp:sit:alone> <{vocab.core.hasParticipant}> <{BEARING}> .
             """,
             graph="urn:sbp:test:situations",
         )
@@ -163,6 +166,27 @@ class TestSituationMembers:
     def test_members_are_grouped_by_situation(self) -> None:
         """Situation ごとに参加実体がまとまる。"""
         found = situation_members(self._store())
+
+        assert found == {"urn:sbp:sit:stop-1": [PUMP_A, PUMP_B]}
+
+    def test_statement_membership_is_not_participation(self) -> None:
+        """文の所属（reifier ``inSituation`` Situation）を参加者として返さない。
+
+        ``AssertionStore`` は ``Assertion.situation`` を ``<assertion/{id}> sbp:inSituation <sit>``
+        として書く。これを参加と読むと、所属つきの文が書かれた日に文の IRI が「参加者」として
+        結合に入る。
+        """
+        store = self._store()
+        store.load_turtle(
+            f"""
+            <https://sbp.example/assertion/a-1> <{vocab.core.inSituation}> <urn:sbp:sit:stop-1> .
+            <https://sbp.example/assertion/a-2> <{vocab.core.inSituation}> <urn:sbp:sit:stop-2> .
+            <https://sbp.example/assertion/a-3> <{vocab.core.inSituation}> <urn:sbp:sit:stop-2> .
+            """,
+            graph="urn:sbp:test:statements",
+        )
+
+        found = situation_members(store)
 
         assert found == {"urn:sbp:sit:stop-1": [PUMP_A, PUMP_B]}
 

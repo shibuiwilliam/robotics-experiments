@@ -107,7 +107,7 @@ class PartWhole:
 
 @dataclass(frozen=True, slots=True)
 class SituationLink:
-    """同一 Situation に参加する実体どうしの結合（``sbp:inSituation``）。
+    """同一 Situation に参加する実体どうしの結合（``sbp:hasParticipant``）。
 
     同じ出来事に参加している実体は状態が揃いやすい（同じラインの設備が一斉に止まる、同じ
     作業で複数の設備が保全に入る）。部分−全体と違って**向きが無い**ので、対称な引き寄せに
