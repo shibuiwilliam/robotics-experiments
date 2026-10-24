@@ -6,14 +6,14 @@
 - ``vocab.core.<LocalName>`` — L1 中核（``https://sbp.example/core#``）
 - ``vocab.ent.<LocalName>`` — ドメイン・企業層（``https://sbp.example/ent#``）
 
-生成元オントロジー版: 0.5.0
+生成元オントロジー版: 0.6.0
 """
 
 from __future__ import annotations
 
 from typing import Final
 
-ONTOLOGY_VERSION: Final = "0.5.0"
+ONTOLOGY_VERSION: Final = "0.6.0"
 """この語彙を生成したオントロジーの版（アサーションの ``ontology_version`` に入れる）。"""
 
 CORE_NAMESPACE: Final = "https://sbp.example/core#"
@@ -481,6 +481,12 @@ class _Ent:
     振動異常の発現。VibrationAnomaly を開始する。
     """
 
+    AssetRegisterEntry: Final = "https://sbp.example/ent#AssetRegisterEntry"
+    """資産台帳の行（class, L3）
+
+    資産台帳（設計書 §7.1 のマスタ）の 1 行。設備の型と部分−全体の関係を主張する記録で、知識グラフでは observed のアサーションと、その投影（素の三つ組）になる（ADR-0016）。
+    """
+
     BearingTemperature: Final = "https://sbp.example/ent#BearingTemperature"
     """軸受温度（observable_property, L2）
 
@@ -757,6 +763,7 @@ ALL_IRIS: Final[frozenset[str]] = frozenset(
         "https://sbp.example/ent#Accessible",
         "https://sbp.example/ent#AnomalyCleared",
         "https://sbp.example/ent#AnomalyOnset",
+        "https://sbp.example/ent#AssetRegisterEntry",
         "https://sbp.example/ent#BearingTemperature",
         "https://sbp.example/ent#CancelWorkOrder",
         "https://sbp.example/ent#CmmsSource",
