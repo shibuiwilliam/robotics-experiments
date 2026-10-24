@@ -1,6 +1,8 @@
 """SBP の設定。閾値・上限などの定数はすべてここに集約する（CLAUDE.md コーディング規約）。
 
 環境変数は ``SBP_`` プレフィクス。環境変数を追加したら ``.env.example`` を同じコミットで更新する。
+層別の閾値（``SBP_BRIDGE_*`` など）も直下の項目と同じく ``.env`` から読む
+（:class:`_DotenvSettings`）。
 """
 
 from __future__ import annotations
@@ -28,10 +30,23 @@ class WritebackMode(StrEnum):
     LIVE = "live"
 
 
-class BridgeSettings(BaseSettings):
+class _DotenvSettings(BaseSettings):
+    """``.env`` を読む設定の共通基底。``Settings`` と層別の閾値のすべてが継承する。
+
+    **入れ子の ``BaseSettings`` は親の ``env_file`` を引き継がない。** 層別の閾値は
+    ``default_factory`` で別々に構築されるので、基底で ``env_file`` を持たせないと
+    ``SBP_BRIDGE_*`` などは環境変数からしか読まれず、``.env`` に書いた値が**警告無しに既定値に
+    なる**（``docs/PROGRESS.md`` 所見 108）。優先順位は直下の項目と同じで、環境変数が
+    ``.env`` に勝つ。
+    """
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+class BridgeSettings(_DotenvSettings):
     """接地層の閾値（設計書 §5.2, §5.3, §5.7）。"""
 
-    model_config = SettingsConfigDict(env_prefix="SBP_BRIDGE_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SBP_BRIDGE_")
 
     promote_min_auroc: float = Field(default=0.85, ge=0.0, le=1.0)
     """プローブ昇格の AUROC 下限（AND 条件の 1 つ）。"""
@@ -98,10 +113,10 @@ class BridgeSettings(BaseSettings):
         return self
 
 
-class ReasoningSettings(BaseSettings):
+class ReasoningSettings(_DotenvSettings):
     """推論層の閾値（設計書 §8.1, §8.2）。"""
 
-    model_config = SettingsConfigDict(env_prefix="SBP_REASONING_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SBP_REASONING_")
 
     theta_existence: float = Field(default=0.8, ge=0.0, le=1.0)
     """類型 1（存在不一致）の確率閾値 θ_1。"""
@@ -183,10 +198,10 @@ class ReasoningSettings(BaseSettings):
     """
 
 
-class WorldModelSettings(BaseSettings):
+class WorldModelSettings(_DotenvSettings):
     """WM 層の閾値（設計書 §4.8）。"""
 
-    model_config = SettingsConfigDict(env_prefix="SBP_WM_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SBP_WM_")
 
     latent_shift_warn: float = Field(default=0.1, ge=0.0)
     """潜在分布シフト（MMD / PSI）の警告閾値。"""
@@ -204,10 +219,10 @@ class WorldModelSettings(BaseSettings):
     """PyTorch のデバイス。CUDA は使わない（CLAUDE.md）。"""
 
 
-class ActionsSettings(BaseSettings):
+class ActionsSettings(_DotenvSettings):
     """アクション層の閾値（設計書 §9）。"""
 
-    model_config = SettingsConfigDict(env_prefix="SBP_ACTIONS_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="SBP_ACTIONS_")
 
     record_effect_floor: float = Field(default=0.5, ge=0.0, le=1.0)
     """業務効果（``record_created`` / ``record_updated``）の期待の下端。
@@ -218,15 +233,10 @@ class ActionsSettings(BaseSettings):
     """
 
 
-class Settings(BaseSettings):
+class Settings(_DotenvSettings):
     """SBP 全体の設定。``.env`` から読み、プレフィクスは ``SBP_``。"""
 
-    model_config = SettingsConfigDict(
-        env_prefix="SBP_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(env_prefix="SBP_")
 
     # ---- ランタイム ----
     env: Literal["dev", "test", "prod"] = "dev"

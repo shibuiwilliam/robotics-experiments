@@ -440,13 +440,21 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
     `probe` / `explain` を持ち ADR-0007 への参照が無い（ADR-0007 の帰結が求めている。所見 106 の「設計書は
     更新済み」は誤りだった、所見 112）。`infra/sql/versions/0001_initial_projections.py` のコメントも
     `latent_index_v<N>` のまま
-- [ ] **X-11** 入れ子の設定が `.env` を読まない不具合を直す（**バグ修正。再現テストを先に書く**） —
+- [x] **X-11** 入れ子の設定が `.env` を読まない不具合を直す（**バグ修正。再現テストを先に書く**） —
   `BridgeSettings` / `ReasoningSettings` / `WorldModelSettings` / `ActionsSettings` は `env_file` を持たず
   `default_factory` で別に構築されるので、`SBP_BRIDGE_*` / `SBP_REASONING_*` / `SBP_WM_*` / `SBP_ACTIONS_*` は
   環境変数からしか読まれない。`.env` に書いた閾値は警告無しに既定値になる（所見 108。一時ディレクトリの
   `.env` で再現済み）。再現テストは「一時ディレクトリの `.env` に入れ子の項目を書くと `Settings()` に反映される」。
   直し方（入れ子にも `env_file` を持たせる / 親から `env_nested_delimiter` で渡す / 親の構築時に `.env` を読んで
   入れ子に渡す）は pydantic-settings の挙動を確かめて選ぶ。H-01 で鍵や設定の置き場を `.env` に寄せる前提になる
+  → 完了（2026-10-25。**入れ子にも `env_file` を持たせる**案を採った: 共通基底 `_DotenvSettings` に
+  `env_file` / `env_file_encoding` / `extra` を置き、`Settings` と 4 つの層が継承する。`env_nested_delimiter` は
+  変数名が `SBP_BRIDGE__…` に変わり `.env.example` と運用の設定を全部書き換えることになるので棄却。
+  再現テスト `tests/unit/core/test_config.py` 12 件（修正前は 9 件が赤、対照の `SBP_SITE_ID` だけ緑）——各層から
+  1 項目ずつ `.env` で効くこと、`SBP_BRIDGE_PROBE_IDS` のカンマ区切りが `.env` からも分割されること、環境変数が
+  `.env` に勝つこと、**入れ子の層がすべて親と同じ `env_file` を持つ**ことを構造で検査（層を足して基底を
+  継承し忘れると落ちる）。`.env.example` の有効行（`SBP_WM_TORCH_DEVICE=mps` / `SBP_ACTIONS_RECORD_EFFECT_FLOOR=0.5`）は
+  既定値と同じなので、CI が `.env.example` を `.env` にコピーしても挙動は変わらない）
 - [ ] **X-12** `make up PROFILES=a,b` が基本 4 サービスだけを起こす不具合を直す（**バグ修正**） — Makefile が
   `$(comma)` を定義していないので `--profile ui,observability` の 1 引数になり、compose はそれを未知の profile
   として扱う（所見 111。`docker compose ... config --services` で確認）。`comma := ,` を定義し、`make -n up
