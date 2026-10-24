@@ -6,33 +6,33 @@
 
 ## 開発環境（macOS / Apple Silicon）
 - 前提: macOS 14+、Apple Silicon（Intel は `SBP_PLATFORM=linux/amd64` で可）、Docker Desktop または OrbStack、Homebrew、uv、Python 3.12。Node 20 は `apps/ui` のみ。
-- 初回: `make bootstrap`（brew bundle → `uv sync` → `.env` を `.env.example` から生成 → `docker compose pull`）。
+- 初回: Homebrew で前提を入れてから `make bootstrap`（`uv sync` → `.env` を `.env.example` から生成 → `docker compose pull`。Brewfile は無い）。
 - ML は PyTorch の MPS バックエンド。`PYTORCH_ENABLE_MPS_FALLBACK=1` 前提で、非対応 op の CPU フォールバックを許容。CUDA 前提のコードを書かない。
-- Compose 全体のメモリは 6 GB 以内（Docker Desktop の上限もそれに合わせる）。サービス追加は ADR 必須。
+- Compose の既定 4 サービスのメモリは合計 6 GB 以内（Docker Desktop の上限もそれに合わせる。任意 profile は別枠で、全部起こすと約 7.6 GB）。サービス追加は ADR 必須。
 
 ## よく使うコマンド
 | コマンド | 内容 |
 |---|---|
-| `make up` / `make down` | Compose 起動/停止。`--profile ui`, `--profile observability`, `--profile console` は任意 |
-| `make seed` | オントロジー投入（Oxigraph）、トピック作成（Redpanda）、DB マイグレーション（alembic）、MinIO バケット作成 |
-| `make dev` | API（FastAPI, :8000）とワーカーをローカルプロセスで起動（ホットリロード） |
+| `make up` / `make down` | Compose 起動/停止。profile は `PROFILES=ui,observability,console` で任意に指定（`make up --profile …` は make のオプションと解釈される）。直下の `.env` は `--env-file` で compose に渡る |
+| `make seed` | オントロジー投入（Oxigraph）、トピック作成（Redpanda）、DB マイグレーション（alembic）、objectstore（SeaweedFS）のバケット作成 |
+| `make dev` | API（FastAPI, :8000）をローカルプロセスで起動（ホットリロード）。ワーカーは既定で起こさない——`uv run python -m scripts.dev --workers belief,reconcile` で選ぶ |
 | `make test` | 単体テストのみ（外部サービス・ネットワーク不要、5 分以内） |
 | `make test-int` | 統合テスト（Compose 必須、`-m integration`） |
 | `make lint` / `make typecheck` | ruff（format + lint）/ pyright strict |
-| `make gen` | `ontology/` → `src/sbp/core/vocab.py`、EventType → `schemas/*.json` を再生成 |
+| `make gen` | `ontology/` → `src/sbp/core/vocab.py`、EventType → `schemas/*.json`、`METRICS` → Grafana ダッシュボードを再生成 |
 | `make ontology-check` | TTL 構文、SHACL 形状の自己検証、事象計算規則の対応、semver 互換、生成物の差分確認 |
-| `make check` | lint + typecheck + ontology-check + test。コミット前に必ず緑にする |
+| `make check` | lint + typecheck + 層依存（import-linter）+ ontology-check + シークレット走査 + test。コミット前に必ず緑にする |
 
 ## リポジトリ構成
 ```
-ontology/      core/ imports/（標準、改変禁止） domain/ shapes/（SHACL） process/（clingo .lp） norms/ VERSION CHANGELOG.md
+ontology/      core/ imports/（標準、改変禁止。未取得——必要になったら scripts/fetch_imports.sh） domain/ shapes/（SHACL） process/（clingo .lp） norms/ VERSION CHANGELOG.md
 schemas/       生成物: EventType 由来の JSON Schema（手編集禁止）
 src/sbp/
   core/        型（pydantic v2）: Assertion, EventEnvelope, Belief, Modality, IRI / vocab.py（生成物）/ time / ids / config / errors
   eventlog/    Redpanda producer・consumer、スキーマ検証、冪等性
   knowledge/   Oxigraph クライアント、二時制アサーション API、名前付きグラフ、PROV、潜在索引（pgvector）、再接地
-  integration/ コネクタ、写像（RML）、BusinessEvent 化、情報源信頼性モデル、計画・規範取込、書き戻し
-  worldmodel/  WorldModel Protocol、モデル族（koopman / jepa_ts / gnn）、記号条件付け、レジストリ、学習
+  integration/ コネクタ、写像（写像 DSL、ADR-0006）、BusinessEvent 化、情報源信頼性モデル、計画・規範取込、書き戻し
+  worldmodel/  WorldModel Protocol（ADR-0007）、モデル族（koopman / jepa_ts。gnn は未実装）、記号条件付け、レジストリ、学習
   bridge/      プローブ、較正、事象昇格、同一性束縛、空間束縛、検証
   reasoning/   belief / reconciliation / prediction / whatif / expectation / discovery / scheduler / explain / rules
   actions/     ActionType（YAML）、意味契約、承認、実行、補償
@@ -100,7 +100,7 @@ tests/         unit/ integration/ contract/ property/ fixtures/
 |---|---|---|---|
 | redpanda | `redpandadata/redpanda` | 9092 / 9644 | イベントログ（Kafka API） |
 | postgres | `timescale/timescaledb-ha:pg16` | 5432 | 時系列（hypertable）、潜在索引（pgvector）、投影・メトリクス |
-| oxigraph | `oxigraph/oxigraph`（healthcheck なし。ADR-0004） | 7878 | 知識グラフ（SPARQL 1.1 + RDF-star） |
+| oxigraph | `oxigraph/oxigraph`（healthcheck なし。ADR-0004） | 7878 | 知識グラフ（SPARQL 1.1 + RDF 1.2 の triple term。ADR-0005） |
 | objectstore | `chrislusf/seaweedfs`（ADR-0003: MinIO が匿名取得不可になったため置換） | 9000 | raw 層・モデル重み（S3 互換） |
 | console / grafana+prometheus | 任意 profile | 8080 / 3000 | 運用可視化 |
 - SHACL は pyshacl、OWL RL は owlrl、事象計算・規範は clingo をアプリ側で実行する（ストアの推論機能に依存しない）。
