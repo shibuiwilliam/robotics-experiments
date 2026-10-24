@@ -64,7 +64,7 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | テスト | 単体 1370 / 性質 21 / 契約 67（`make check` で 1458）/ **統合 188（実行）** / UI 77（2026-10-25 のタスク実行後。棚卸し時点は 1332 / 21 / 67 = 1420、統合 187） |
 | `make check` の内訳 | ruff・pyright strict（0 errors）・import-linter 契約 7 本 KEPT・ontology-check 7 項目・シークレット走査 350 件。警告 2 件（依存の非推奨警告 1・意図的なソケット遮断 1。`docs/PROGRESS.md` の到達状況を参照） |
 | オントロジー | 0.5.0（938 トリプル、注釈検査対象 107 語、FluentType 7 / EventType 9） |
-| ADR | 15 件（テンプレートを除く） |
+| ADR | 16 件（テンプレートを除く。0016 は 2026-10-25、取込ワーカー・記録の主張・資産台帳の投影） |
 | ワーカー | 5（bridge / belief / reconcile / scheduler / learning）。指標を書くのは前 3 つ |
 | DB マイグレーション | 9（`0001_initial_projections` … `0009_concept_proposals`） |
 | 指標 | 6 領域 25 指標。**書き込み配線済みは 9**（残り 16 は M8-15）。`suppression_rate` は書かれているが運用では構造的に 0（類型 2 だけを回し、その抑制規則が常に偽のため。所見 113） |
