@@ -18,7 +18,7 @@
 <https://sbp.example/ent>
     a owl:Ontology ;
     rdfs:label "設備保全ドメインオントロジー"@ja , "Equipment maintenance domain ontology"@en ;
-    owl:versionInfo "0.5.0" ;
+    owl:versionInfo "0.6.0" ;
     owl:imports <https://sbp.example/core> ;
     skos:definition "回転機の稼働・保全と、その業務記録（CMMS 作業指示・MES 稼働実績・保全計画）を結ぶ概念。"@ja ;
     dcterms:publisher "maintenance-domain-owner" .
@@ -84,6 +84,14 @@ ent:MaintenancePlan
     rdfs:subClassOf sbp:PlanItem ;
     rdfs:label "保全計画"@ja , "Maintenance plan"@en ;
     skos:definition "計画保全の予定項目。様相 planned のアサーションになり、遵守率の事前分布を伴う。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:AssetRegisterEntry
+    a owl:Class ;
+    rdfs:subClassOf sbp:Record ;
+    rdfs:label "資産台帳の行"@ja , "Asset register entry"@en ;
+    skos:definition "資産台帳（設計書 §7.1 のマスタ）の 1 行。設備の型と部分−全体の関係を主張する記録で、知識グラフでは observed のアサーションと、その投影（素の三つ組）になる（ADR-0016）。"@ja ;
     sbp:layer "L3" ;
     sbp:owner "maintenance-domain-owner" .
 

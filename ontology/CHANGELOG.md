@@ -8,7 +8,20 @@ semver の判定基準（CLAUDE.md「オントロジー変更の手順」）:
 
 非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 
-## 0.5.0 — 2026-10-03
+## 0.6.0 — 2026-10-25
+
+MINOR（加法的な追加）。既存のクラス・関係・形状・フルーエント型・事象型に変更はない。プローブ・
+クエリ・`schemas/` の後方互換は保たれる（契約テスト `test_ontology_compat.py`）。再接地は不要
+（台帳の個体は新規で、既存の文の意味は変わらない）。
+
+### 追加（ドメイン — `ontology/domain/equipment-maintenance.ttl`）
+
+- `ent:AssetRegisterEntry`（Class、`sbp:Record` の下位）: 資産台帳（設計書 §7.1 のマスタ）の 1 行。
+  設備の型と部分−全体の関係を主張する記録である。写像（`mappings/asset_register.yaml`）が業務側の
+  台帳の行をこの記録型にし、取込ワーカーが `rdf:type` / `sbp:partOf` の `observed` アサーションと、その
+  投影（素の三つ組のグラフ `urn:sbp:g:master:<site>`）に変える（ADR-0016）。**記録型として持つ**のは、
+  写像の 3 つの保存性の検査と信頼性モデル（情報源 × 記録型）をそのまま使うためである。
+
 
 MINOR（加法的な追加）。既存のクラス・関係・形状に変更はない。
 

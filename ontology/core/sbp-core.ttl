@@ -26,7 +26,7 @@
 <https://sbp.example/core>
     a owl:Ontology ;
     rdfs:label "SBP 中核オントロジー"@ja , "SBP core ontology"@en ;
-    owl:versionInfo "0.5.0" ;
+    owl:versionInfo "0.6.0" ;
     skos:definition "物理世界の観測と業務世界の記録を同じ語彙・時間軸・確信度で突き合わせるための接続概念を定義する。"@ja ;
     dcterms:publisher "sbp-platform-team" .
 
