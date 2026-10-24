@@ -26,8 +26,8 @@ __all__ = ["Connector", "RawRecord", "SchemaFingerprint"]
 class RawRecord:
     """業務システムから取り出したままの 1 行。
 
-    写像（RML）を通す前の生データ。``source`` と ``table`` で写像を選び、``fields`` を
-    オントロジーの語彙へ移す。
+    写像（写像 DSL、ADR-0006）を通す前の生データ。``source`` と ``table`` で写像を選び、
+    ``fields`` をオントロジーの語彙へ移す。
 
     Attributes:
         source: 情報源 IRI（``ent:CmmsSource`` など）。

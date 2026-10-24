@@ -9,10 +9,10 @@
 前提: macOS 14+ / Apple Silicon、Docker Desktop または OrbStack、Homebrew、uv、Python 3.12。
 
 ```sh
-make bootstrap   # brew bundle → uv sync → .env 生成 → docker compose pull
-make up          # Compose 起動（redpanda / postgres / oxigraph / objectstore）
+make bootstrap   # uv sync → .env 生成 → docker compose pull（Homebrew の依存は手で入れる。Brewfile は無い）
+make up          # Compose 起動（redpanda / postgres / oxigraph / objectstore）。profile は PROFILES=ui,observability
 make seed        # オントロジー投入・トピック作成・マイグレーション
-make dev         # API（:8000）とワーカーをホットリロードで起動
+make dev         # API（:8000、ホットリロード）。ワーカーは uv run python -m scripts.dev --workers belief,reconcile
 make check       # lint + 型 + 層依存 + ontology-check + シークレット走査 + 単体（コミット前に必ず緑）
 make test-int    # 統合テスト（Compose 必須）
 ```

@@ -23,7 +23,7 @@ class ConfigError(SbpError):
 
 
 class DependencyUnavailableError(SbpError):
-    """依存サービス（Redpanda / Postgres / Oxigraph / MinIO）に到達できない。"""
+    """依存サービス（Redpanda / Postgres / Oxigraph / objectstore）に到達できない。"""
 
 
 # ---- 不変条件の違反 ----------------------------------------------------------
@@ -158,7 +158,7 @@ class IntegrationError(SbpError):
 
 
 class MappingError(IntegrationError):
-    """写像（RML/R2RML）の不変条件違反。"""
+    """写像（写像 DSL、ADR-0006）の不変条件違反。"""
 
 
 class UnresolvedReferenceError(IntegrationError):

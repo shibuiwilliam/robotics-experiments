@@ -58,7 +58,7 @@ seed: ## オントロジー投入・トピック作成・DB マイグレーシ�
 
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
-dev: ## API（:8000）とワーカーをホットリロードで起動
+dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ
 	$(UV) python -m scripts.dev
 
 # ---- 生成物 -----------------------------------------------------------------
@@ -74,7 +74,7 @@ ontology-check: ## TTL 構文・SHACL 自己検証・事象計算対応・semver
 
 # ---- 品質 -------------------------------------------------------------------
 .PHONY: lint
-lint: ## ruff（format + lint）と Turtle 正規化検査
+lint: ## ruff（format + lint）。Turtle は編集時のフックで構文検査、ontology-check で全体を検査
 	$(UV) ruff format --check src tests services scripts
 	$(UV) ruff check src tests services scripts
 

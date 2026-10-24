@@ -63,7 +63,9 @@ print([o['Key'] for o in client.list_objects_v2(Bucket='models').get('Contents',
 ### オントロジー
 
 Git にあるので別途のバックアップは不要。**ただしストアに投入された版と Git の版が一致している
-ことを確認する**（`make ontology-check` の版検査）。
+ことを確認する**。`make ontology-check` の版検査は**オフライン**で、TTL の `owl:versionInfo` と
+`ontology/VERSION` を突き合わせるだけである（ストアは見ない）。ストアの版は投入先の名前付きグラフ
+（`urn:sbp:g:schema:ontology:<版>`）で確かめる。リストア後に `make seed` を流すと、Git の版が投入される。
 
 ## リストア
 
@@ -97,7 +99,7 @@ docker compose -f infra/compose.yaml exec -T postgres \
 ```sh
 make check
 export SBP_PG_DSN="postgresql://sbp:sbp@localhost:15432/sbp" SBP_S3_ENDPOINT="http://localhost:19000"
-uv run pytest tests/integration -m integration     # G0〜G6 が通ること
+uv run pytest tests/integration -m integration     # 全件（G0〜G7 と M8 の統合テスト）が通ること
 ```
 
 **as-of クエリで過去の信念が返ることを必ず確認する。** これが返らないリストアは失敗である

@@ -22,7 +22,7 @@ paths:
 - 出力は必ず `Calibrator.apply` を通し、認識的 / 偶然的不確実性を分けて返す。
 
 ## 事象昇格（`sbp.bridge.lifting`）
-- 変化点検出は自前の BOCPD（`bocpd.py`）。`ruptures` はオフライン評価にだけ使う。
+- 変化点検出は自前の BOCPD（`bocpd.py`）。`ruptures` を使うならオフライン評価に限る（いまは依存に入っていない。入れるなら dev 依存にする）。
 - 処理順: 変化点 → ヒステリシス（0.7 / 0.3、Settings）→ 最小持続 → 逆写像（clingo で候補事象型と尤度）→ 重複抑制 → `TypedProbabilisticEvent`。
 - 区間には `uncertainty_s` を必ず入れる。点時刻のイベントを出さない。
 

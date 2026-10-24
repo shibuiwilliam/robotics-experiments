@@ -17,4 +17,4 @@ paths:
 - 版管理: `ontology/VERSION` と `CHANGELOG.md`。MINOR までは既存プローブ・クエリ・`schemas/` の後方互換を `tests/contract/test_ontology_compat.py` で証明する。非推奨は `owl:deprecated true` と `dcterms:isReplacedBy` を付け、2 MINOR 版残す。
 - `schemas/*.json` と `src/sbp/core/vocab.py` は生成物。手編集しても `make gen` で消える。生成差分は生成専用コミットに分ける。
 - 標準にある概念を再定義しない。迷ったら「物理と業務を結ぶためだけに必要な概念か」で判断し、該当するもの（Situation, Discrepancy, Expectation, IdentityClaim, Track, Anchor, Probe, ModelVersion, DataSource）だけ独自定義する。
-- Turtle の整形は `make lint`（`rdflib` による正規化）。プレフィクス宣言はファイル冒頭に集約する。
+- Turtle の構文は編集時のフック（`.claude/hooks/post-edit.sh`、rdflib で解析）と `make ontology-check` で検査する。**`make lint` は Turtle を正規化しない**（ruff だけ。2026-10-25 に確認）。プレフィクス宣言はファイル冒頭に集約する。

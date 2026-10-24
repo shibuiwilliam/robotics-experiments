@@ -30,11 +30,11 @@ paths:
 - ハイブリッドクエリ（グラフ述語 + 近傍）は `sbp.knowledge.hybrid.plan()` を通す。選択率で押し下げ順を決める。
 
 ## PROV
-- 活動種別は `vocab.prov_activities` の列挙のみ（probe-run, rule-run, belief-update, reconciliation, llm-extraction, human-review, regrounding）。
+- 活動種別は列挙に限る（probe-run, rule-run, belief-update, reconciliation, llm-extraction, human-review, regrounding）。**列挙はまだ実装されていない**——`vocab` にもオントロジーにも無く、来歴は bundle の IRI だけを持つ。足すときはオントロジーに定義してから `make gen` で `vocab` に出す（IRI をコードに直書きしない。不変条件 5）。
 - 来歴はバンドル単位で保存し、証拠は参照で持つ。展開は説明サービスの責務。
 
 ## 再接地（`sbp.knowledge.regrounding`）
-- `plan(scope)` → コスト見積り → `run(plan)` の順。旧アサーションは `tx_to` を閉じるだけで消さない。
+- `plan(scope)` → コスト見積り → `run(plan)` の順。旧アサーションは `tx_to` を閉じるだけで消さない。**`run(plan)` はまだ無い**（公開されているのは `plan` と `summarise` だけ。`docs/PROGRESS.md` 所見 110、扱う里程は `docs/HITL.md` H-24）。
 - 差分レポート（確信度変化 ≥ 閾値、新規 / 消滅した不一致）を `docs/runbooks/regrounding.md` の形式で出力する。
 
 ## SQL

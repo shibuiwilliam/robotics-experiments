@@ -469,7 +469,7 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   → 完了（2026-10-25。`comma := ,` を定義。再現テスト `tests/unit/test_makefile.py` 5 件（修正前は 3 件が赤）——
   `make -n up` の出力で、複数指定が `--profile` 2 つになること・空白や空要素が落ちること・単一指定と無指定を検査。
   修正後に `docker compose ... --profile ui --profile observability config --services` が 7 サービスに解決されることを確認）
-- [ ] **X-13** 入口の文書のコマンドと設定の記述を実装に合わせる — 所見 111 / 112 の乖離のうち X-09（ADR 追従）に
+- [x] **X-13** 入口の文書のコマンドと設定の記述を実装に合わせる — 所見 111 / 112 の乖離のうち X-09（ADR 追従）に
   入らないもの。**CLAUDE.md**（`make up --profile` → `PROFILES=`、`make dev` は API だけ、`make bootstrap` は
   `brew bundle` を呼ばない、`make check` の中身、`make gen` はダッシュボードも生成、`make seed` の「MinIO
   バケット」、「写像（RML）」、モデル族の `gnn`、Oxigraph の「RDF-star」、Compose 6 GB の範囲、
@@ -484,6 +484,21 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   `scripts/fetch_imports.sh` を実行して同梱するかを先に決める。CLAUDE.md の変更はそれ自体が規約の変更なので、
   変更点を PR で人が確認する。**機械で検査できるもの**（Makefile ターゲットと文書のコマンド表、`Settings` と
   `.env.example` のキー、層別ルールが名指しする記号の実在）は X-07 の契約テストに入れることを検討する
+  → 完了（2026-10-25。**CLAUDE.md を除く全項目**。README のコマンド（bootstrap / up の profile / dev）、層別ルール 5 本
+  （PROV の列挙と `run(plan)` は「未実装」と明記、LLM のプロバイダ実装は無いと明記、`tenacity` / `ruptures` は依存に
+  無いと明記、写像の契約テストは 1 本、ポートと `.env` の渡し方、`make lint` は Turtle を正規化しない、層別の閾値を
+  足すときは `_DotenvSettings` を継承）、runbook 2 本、PROMPT.md（P-00 / P-01 は HITL.md を見る、P-30 は取り込みの
+  健全性から見て日次点検の runbook を作る、M1-03 は実施済みの注記）、`.env.example`（`Settings` の 15 項目と compose の
+  4 変数をコメントで追加、`SBP_ENV` に `prod`、`make up PROFILES=`）、docstring 5 か所、Makefile のヘルプ 2 行、
+  development-rules.md §3 の `imports/` と §6.2 の PROV と §7 のコマンド表。`ontology/imports/` は**取得せず、未取得で
+  あることを文書に書いた**（取得はネットワークを使い、いま必要としている処理が無い）。**機械検査を 1 つ入れた**:
+  `tests/unit/core/test_config.py` が `Settings` の全項目（入れ子を含む）が `.env.example` に載っていることを検査する
+  （項目を消すと落ちることを確認済み）。CLAUDE.md は X-15 に分けた）
+- [ ] **X-15** CLAUDE.md を実装に合わせる（**規約の変更なので人が確認する**） — X-13 のうち CLAUDE.md の項目
+  （`make up --profile` → `PROFILES=`、`make dev` は API だけ、`make bootstrap` は `brew bundle` を呼ばない、`make check` と
+  `make gen` の中身、`make seed` の「MinIO バケット」、「写像（RML）」、モデル族の `gnn`、Oxigraph の「RDF-star」、
+  Compose 6 GB の範囲、`ontology/imports/` の「固定版同梱」）。**変更案をブランチ `docs/claude-md-sync` に置いた
+  （main に未統合）**。CLAUDE.md は毎セッション読み込まれる規約の正典なので、内容を人が確認してから main に入れる
 - [x] **X-10** M8 のブランチを main に統合する — M8-01〜M8-21 と棚卸しの 20 コミットが
   `feat/bridge-probe-serialization`（M8-01 のブランチ名）に積まれ、main は M7 完了直後（`74974d8`）のまま
   （所見 105）。§2 の「1 タスク = 1 ブランチ」から外れている。統合したうえで、以後のタスクは

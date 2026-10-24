@@ -28,7 +28,7 @@ __all__ = ["DEFAULT_SCENARIO", "MockBusinessSystem", "Scenario", "ScenarioStep"]
 log = get_logger(__name__)
 
 # 業務システム側のテーブル定義。列名は業務語彙（オントロジーの語彙ではない）。
-# 写像（RML）がこれをオントロジーへ移す。
+# 写像（写像 DSL、ADR-0006）がこれをオントロジーへ移す。
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS work_order (
     wo_number    TEXT PRIMARY KEY,

@@ -8,6 +8,8 @@
 2. **環境変数は ``.env`` に勝つ** — 直下の項目と同じ優先順位（pydantic-settings の既定）。
 3. **新しい層を足したときも同じ** — 入れ子の設定がすべて親と同じ ``.env`` を読むことを
    構造で検査する。
+4. **``.env.example`` が全項目を載せている** — 載っていない項目は運用者が存在を知らず、
+   ``.env`` で上書きできることに気付かない（X-13、``docs/PROGRESS.md`` 所見 112）。
 
 単体テストはふだん ``Settings(...)`` を引数で組むので ``.env`` の読み込みを通らない。ここでは
 一時ディレクトリに ``.env`` を置き、その中で ``Settings()`` を作る。
@@ -15,6 +17,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -109,3 +112,38 @@ class TestEveryLayerSharesTheDotenv:
         child = layer.model_config
         assert child.get("env_file") == parent.get("env_file"), name
         assert child.get("env_file_encoding") == parent.get("env_file_encoding"), name
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def _setting_variables() -> set[str]:
+    """``Settings`` の全項目の環境変数名（入れ子は層の接頭辞つき）。"""
+    names: set[str] = set()
+    nested = dict(_nested_settings())
+    for name in Settings.model_fields:
+        if name in nested:
+            layer = nested[name]
+            prefix = str(layer.model_config.get("env_prefix", ""))
+            names.update(f"{prefix}{field}".upper() for field in layer.model_fields)
+        else:
+            names.add(f"SBP_{name}".upper())
+    return names
+
+
+class TestEnvExampleListsEverySetting:
+    def test_every_setting_is_listed(self) -> None:
+        """コメントアウトでもよい（既定値を見せる）。名前が無いことだけを落とす。"""
+        listed = set(
+            re.findall(
+                r"^#?\s*(SBP_[A-Z0-9_]+)=",
+                (ROOT / ".env.example").read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+        )
+        missing = sorted(_setting_variables() - listed)
+        assert missing == [], f".env.example に無い設定: {missing}"
+
+    def test_the_check_sees_nested_layers(self) -> None:
+        """陽性対照: 入れ子の項目も数えている（直下だけを見ていたら上の検査は空振りする）。"""
+        assert "SBP_REASONING_BP_PERIOD_S" in _setting_variables()

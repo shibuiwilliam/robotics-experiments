@@ -70,7 +70,7 @@ sbp/
 │
 ├── ontology/               # ★ 概念の正典。コードより先にここを変更する
 │   ├── core/*.ttl          #   L1 SBP 中核（Situation, Discrepancy, Expectation, IdentityClaim, Track, Anchor, Probe, ModelVersion…）
-│   ├── imports/            #   L0 標準（BFO/IAO/SOSA/PROV/OWL-Time/GeoSPARQL/QUDT）。固定版同梱・改変禁止・fetch_imports.sh で取得
+│   ├── imports/            #   L0 標準（BFO/IAO/SOSA/PROV/OWL-Time/GeoSPARQL/QUDT）。改変禁止。**未取得**（README のみ。必要になったら scripts/fetch_imports.sh で固定版を取得）
 │   ├── domain/*.ttl        #   L2/L3 ドメイン・企業概念
 │   ├── shapes/             #   SHACL（Violation=構造制約→隔離 / Warning=整合制約→不一致候補）
 │   ├── process/*.lp        #   事象計算（clingo）: initiates/terminates。FluentType/EventType と対応必須
@@ -195,7 +195,7 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 - 文メタデータは RDF 1.2 の triple term + `rdf:reifies`（`<assertion/{id}> rdf:reifies <<( s p o )>> ; sbp:txFrom ...`。旧 RDF-star の「引用三つ組を主語に置く」記法は pyoxigraph 0.5 で使えない。ADR-0005）。rdflib は TTL 読み書き専用。`query` は必ず `ontology_version` を返す。
 - 予測は `horizon_origin` 違いで共存（既定クエリ=最新起点、精度追跡=全起点）。
 - 潜在索引: 次元ごとの表 `latent_index_d<次元>(entity, ts, level, wm_version, vec)` + HNSW(cosine) と、版 → 表の登録表 `latent_index_registry`。`level`/`wm_version` で絞ってから近傍検索。次元が変わる WM 更新は新しい次元の表（マイグレーション）+ 再接地ジョブで移行（`docs/PROGRESS.md` 所見 19 / 53）。
-- PROV 活動種別は列挙のみ（probe-run, rule-run, belief-update, reconciliation, llm-extraction, human-review, regrounding）。来歴はバンドル単位、証拠は参照。
+- PROV 活動種別は列挙のみ（probe-run, rule-run, belief-update, reconciliation, llm-extraction, human-review, regrounding）。**列挙はまだ実装されていない**（来歴は bundle IRI のみ。足すときはオントロジーに定義してから）。来歴はバンドル単位、証拠は参照。
 - SQL は alembic のみ（DDL 手流し禁止）。時刻は `timestamptz`、区間は `tstzrange`。
 
 ### 6.3 ワールドモデル・接地層
@@ -245,14 +245,14 @@ CLAUDE.md の 12 箇条。全コード・全テスト・全レビューの判定
 
 | コマンド | 用途 |
 |---|---|
-| `make up` / `make down` | Compose 起動/停止 |
+| `make up` / `make down` | Compose 起動/停止。profile は `PROFILES=ui,observability`（`make up --profile …` は make のオプションと解釈される） |
 | `make seed` | オントロジー投入・トピック作成・alembic・objectstore のバケット |
-| `make dev` | API（:8000）とワーカーをホットリロードで起動 |
+| `make dev` | API（:8000）をホットリロードで起動。ワーカーは既定で起こさない（`uv run python -m scripts.dev --workers belief,reconcile` で選ぶ） |
 | `make test` / `make test-int` | 単体（ネットワーク不要・5 分以内）/ 統合（Compose 必須） |
 | `make lint` / `make typecheck` | ruff / pyright strict |
-| `make gen` | ontology → `vocab.py`・`schemas/*.json` 再生成 |
+| `make gen` | ontology → `vocab.py`・`schemas/*.json`、`METRICS` → Grafana ダッシュボードを再生成 |
 | `make ontology-check` | TTL 構文・SHACL 自己検証・.lp 対応・semver 互換・生成物差分 |
-| `make check` | lint + typecheck + ontology-check + test。**コミット前に必ず緑** |
+| `make check` | lint + typecheck + 層依存（import-linter）+ ontology-check + シークレット走査 + test。**コミット前に必ず緑** |
 
 コーディング規約（抜粋）: `from __future__ import annotations` + 型ヒント必須（pyright strict）、契約は pydantic v2 / 内部一時構造は `dataclass(frozen=True)`、ログは structlog（`event_id`/`correlation_id`/`entity` を bind、`print` 禁止）、例外は `sbp.core.errors` 階層（リトライは eventlog consumer と `llm.Provider` の 2 箇所だけ）、CPU 重い処理は同期関数 + `asyncio.to_thread`、確率は log 空間、乱数関数は `seed` 引数必須、1 ファイル 400 行 / 1 関数 60 行で分割検討、閾値定数は `Settings`（`SBP_` プレフィクス）。
 

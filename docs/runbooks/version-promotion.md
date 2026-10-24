@@ -48,7 +48,7 @@ make check           # 後方互換を契約テストが検査する
 ```sh
 export SBP_PG_DSN="postgresql://sbp:sbp@localhost:15432/sbp"   # ポート衝突時の例
 make seed            # ストアに新しい版を投入する
-uv run pytest tests/integration -m integration   # G0〜G6 が通ること
+uv run pytest tests/integration -m integration   # 全件（G0〜G7 と M8 の統合テスト）が通ること
 ```
 
 **`make seed` を忘れると G0/G1/G2 の版検査が落ちる。** ストアだけが古い版を名乗る状態になる。
