@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal, Self
@@ -30,7 +31,7 @@ from sbp.core.time import ensure_utc
 if TYPE_CHECKING:
     from sbp.integration.connectors import RawRecord
 
-__all__ = ["Mapping", "MappingRegistry", "MappingResult", "SubjectReference"]
+__all__ = ["Claim", "Mapping", "MappingRegistry", "MappingResult", "SubjectReference"]
 
 log = get_logger(__name__)
 
@@ -118,6 +119,68 @@ class _TimeSpec(BaseModel):
     """「実際に起きた」時刻が入っている列。無ければ ``None``。"""
 
 
+class _ClaimSpec(BaseModel):
+    """記録が主張するフルーエントの宣言（ADR-0016 の問い 2）。
+
+    記録には「存在する」と「何かを主張する」の 2 つの事実がある。前者は写像だけで決まるが、
+    後者は「どの列がどのフルーエントの真偽を言っているか」を知らないと取り出せない
+    （``EventEnvelope`` は記録の中身を運ばないので、消費側では復元できない。所見 115）。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    fluent: str
+    """主張の対象のフルーエント型（CURIE で宣言し IRI に展開される）。"""
+    field: str
+    """真偽が入っている ``Record.payload`` のキー（``fields`` の値側）。"""
+
+    @model_validator(mode="after")
+    def _fluent_exists(self) -> Self:
+        """フルーエントを展開し、オントロジーに実在することを検証する。
+
+        綴り違いを通すと、主張が永久にどのフルーエントにも当たらず、照合の記録列が静かに空になる。
+        """
+        from sbp.core import vocab  # noqa: PLC0415 — 生成物の読み込みを宣言の検証時だけにする
+
+        iri = expand_curie(self.fluent)
+        if iri not in vocab.FLUENT_TYPES:
+            raise ValueError(f"claim fluent {self.fluent!r} is not a FluentType in the ontology")
+        object.__setattr__(self, "fluent", iri)
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class Claim:
+    """記録 1 件が 1 つのフルーエントについて主張していること。
+
+    Attributes:
+        fluent: フルーエント型 IRI。
+        says: 記録が主張する真偽（信頼性で割り引く前の生の主張）。
+    """
+
+    fluent: str
+    says: bool
+
+
+_TRUE_WORDS: Final = frozenset({"true", "1", "yes"})
+_FALSE_WORDS: Final = frozenset({"false", "0", "no"})
+
+
+def _read_bool(value: object) -> bool | None:
+    """業務側の真偽の表現を読む。読めなければ ``None``。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return {1: True, 0: False}.get(value)
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+    return None
+
+
 class Mapping(BaseModel):
     """写像 1 本の宣言（``mappings/<name>.yaml``）。
 
@@ -133,6 +196,7 @@ class Mapping(BaseModel):
         cardinality: 多重度。``one_to_one`` は 1 行から 1 件。
         time: 時刻列の対応。
         fields: ``Record.payload`` に移す列（業務側の列名 → payload のキー）。
+        claims: 記録が主張するフルーエント（ADR-0016）。無ければ「存在する」イベントだけを出す。
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -148,6 +212,41 @@ class Mapping(BaseModel):
     cardinality: Literal["one_to_one"] = "one_to_one"
     time: _TimeSpec
     fields: dict[str, str] = Field(default_factory=dict)
+    claims: tuple[_ClaimSpec, ...] = ()
+
+    @model_validator(mode="after")
+    def _claims_read_mapped_fields(self) -> Self:
+        """主張が読むキーは ``fields`` で payload に移されていなければならない。"""
+        mapped = set(self.fields.values())
+        for claim in self.claims:
+            if claim.field not in mapped:
+                raise ValueError(
+                    f"claim on {claim.fluent} reads {claim.field!r}, which is not in `fields`"
+                )
+        return self
+
+    def claims_of(self, record: Record) -> list[Claim]:
+        """記録の主張を取り出す。値が ``None`` の主張は「何も言っていない」として飛ばす。
+
+        Args:
+            record: この写像で作った記録。
+
+        Raises:
+            MappingError: 真偽として読めない値（推測で真偽に寄せない）。
+        """
+        found: list[Claim] = []
+        for claim in self.claims:
+            value = record.payload.get(claim.field)
+            if value is None:
+                continue
+            says = _read_bool(value)
+            if says is None:
+                raise MappingError(
+                    f"mapping {self.mapping!r}: cannot read {claim.field}={value!r} as a boolean "
+                    f"claim on {claim.fluent} (record {record.external_id!r})"
+                )
+            found.append(Claim(fluent=claim.fluent, says=says))
+        return found
 
     @model_validator(mode="after")
     def _expand_iris(self) -> Self:

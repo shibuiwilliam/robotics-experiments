@@ -7,14 +7,19 @@ Unix ミリ秒であるため、文字列順＝おおよその生成時刻順に
 
 from __future__ import annotations
 
+import hashlib
 import re
-from typing import Annotated, Final
+from typing import TYPE_CHECKING, Annotated, Final
 from uuid import UUID
 
 from pydantic import AfterValidator
 from uuid6 import uuid7
 
 from sbp.core.errors import VocabularyError
+from sbp.core.time import ensure_utc
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 __all__ = [
     "EventId",
@@ -22,6 +27,7 @@ __all__ = [
     "event_id_timestamp_ms",
     "new_event_id",
     "site_iri",
+    "stable_event_id",
     "validate_iri",
 ]
 
@@ -29,6 +35,26 @@ __all__ = [
 def new_event_id() -> UUID:
     """新しい UUIDv7 を返す（時刻順序性を持つ）。"""
     return uuid7()
+
+
+def stable_event_id(at: datetime, key: str) -> UUID:
+    """内容から導く決定的な UUIDv7 を返す（ADR-0016 の問い 4）。
+
+    時刻部（先頭 48 bit）は ``at`` の Unix ミリ秒、乱数部（74 bit）は ``key`` の SHA-256 で埋める。
+    **同じ記録を読み直したイベントが同じ ``event_id`` を持つ**ので、at-least-once の取込で再送しても
+    消費側の冪等記録が弾く（不変条件 4）。RFC 9562 は乱数部の埋め方を実装に任せているので、形式は
+    UUIDv7 のまま（版 7・変種 RFC）である。
+
+    Args:
+        at: 時刻部に入れる時刻（timezone-aware UTC）。取込なら記録時刻。
+        key: 同じ事実なら同じになる文字列（情報源・表・外部 ID・更新時刻など）。
+    """
+    millis = int(ensure_utc(at).timestamp() * 1000) & ((1 << 48) - 1)
+    digest = int.from_bytes(hashlib.sha256(key.encode("utf-8")).digest()[:10], "big")
+    rand_a = (digest >> 62) & 0xFFF  # 12 bit
+    rand_b = digest & ((1 << 62) - 1)  # 62 bit
+    value = (millis << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
+    return UUID(int=value)
 
 
 def event_id_timestamp_ms(event_id: UUID) -> int:

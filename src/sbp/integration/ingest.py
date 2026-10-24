@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from sbp.core import vocab
 from sbp.core.belief import BooleanBelief
 from sbp.core.events import (
     EventEnvelope,
@@ -24,6 +26,7 @@ from sbp.core.events import (
     ValidTime,
     topic_name,
 )
+from sbp.core.ids import stable_event_id
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.records import Record, UnresolvedRef
@@ -32,8 +35,8 @@ from sbp.integration.resolver import resolve_subject
 
 if TYPE_CHECKING:
     from sbp.integration.connectors import Connector, RawRecord
-    from sbp.integration.mappings import MappingRegistry
-    from sbp.integration.reliability import ReliabilityRegistry
+    from sbp.integration.mappings import Claim, MappingRegistry
+    from sbp.integration.reliability import ReliabilityModel, ReliabilityRegistry
     from sbp.integration.resolver import EntityResolver
 
 __all__ = ["IngestResult", "IngestionPipeline", "MappingDriftDetected"]
@@ -177,10 +180,12 @@ class IngestionPipeline:
             （1 行の誤りで取り込み全体を止めない）。
         """
         result = IngestResult()
+        topic = topic_name(self._site_id, EventLayer.INTEGRATION, "business")
         for raw in rows:
             try:
                 mapping = self._mappings.for_table(raw.table)
                 mapped = mapping.apply(raw, ontology_version=self._ontology_version)
+                claims = mapping.claims_of(mapped.record)
             except Exception as exc:
                 result.failed.append((raw.external_id, str(exc)))
                 log.warning(
@@ -194,15 +199,22 @@ class IngestionPipeline:
             if outcome.unresolved is not None:
                 result.unresolved.append(outcome.unresolved)
 
-            # 信頼性モデルを引いて記録に紐づける（未登録なら例外。既定で信頼しない）
+            # 信頼性モデルを引いて記録に紐づける（未登録なら例外。既定で信頼しない）。
+            # 1 行ではなく設定の誤り（情報源 × 記録型のモデルが無い）なので、行を飛ばさず
+            # 大きく落とす
             model = self._reliability.for_record(record)
             record = record.model_copy(
                 update={"reliability_profile": _reliability_iri(model.source, model.record_type)}
             )
             result.records[-1] = record
 
-            topic = topic_name(self._site_id, EventLayer.INTEGRATION, "business")
-            result.events.append((topic, self._to_event(record, mapped.mapping_version)))
+            key = _event_key(self._site_id, raw, record)
+            result.events.append((topic, self._to_event(record, mapped.mapping_version, key=key)))
+            for claim in claims:
+                event = self._to_claim_event(
+                    record, claim, model, mapped.mapping_version, key=f"{key}|claim|{claim.fluent}"
+                )
+                result.events.append((topic, event))
         log.info(
             "integration.ingested",
             rows=len(rows),
@@ -213,18 +225,24 @@ class IngestionPipeline:
         )
         return result
 
-    def _to_event(self, record: Record, mapping_version: str) -> EventEnvelope:
+    def _to_event(self, record: Record, mapping_version: str, *, key: str) -> EventEnvelope:
         """記録を業務事象のイベントに載せる。
 
         様相は ``observed``: 「この記録が存在する」ことは観測された事実である。記録が主張する
-        状態が真かどうかは別問題で、それは ``reasoning`` が信頼性モデルを使って
-        ``inferred`` の信念に変える。
+        状態が真かどうかは別問題で、それは主張イベント（:meth:`_to_claim_event`）が信頼性で
+        割り引いた確率として運び、``reasoning`` が ``inferred`` の信念に変える。
 
         適用した写像の版を producer に残す。業務スキーマ変更で写像を上げたとき、どの版で
         作られたイベントかを後から辿れないと再接地の範囲が決められない（設計書 §12.4）。
+
+        Args:
+            record: 記録。
+            mapping_version: 適用した写像の版。
+            key: 決定的な ``event_id`` の鍵（同じ記録の読み直しで同じになる）。
         """
         occurred = record.occurred_at or record.recorded_at
         return EventEnvelope(
+            event_id=stable_event_id(record.recorded_at, f"{key}|exists"),
             type=record.record_type,
             subject=record.is_about or _unresolved_subject(record),
             valid_time=ValidTime(start=occurred, uncertainty_s=0.0),
@@ -244,6 +262,75 @@ class IngestionPipeline:
             ),
             ontology_version=record.ontology_version,
         )
+
+    def _to_claim_event(
+        self,
+        record: Record,
+        claim: Claim,
+        model: ReliabilityModel,
+        mapping_version: str,
+        *,
+        key: str,
+    ) -> EventEnvelope:
+        """記録の主張を、フルーエントの確率のイベントにする（ADR-0016 の問い 2、所見 115）。
+
+        型は ``<core#BusinessEvent>/<フルーエント型>`` の複合型で、照合・信念ワーカーの
+        ``fluent_of_event`` が区切りの後ろからフルーエントを取り出す（接地層の
+        ``PhysicalEvent/<fluent>`` と同じ形）。確率は**一様事前の下で信頼性モデルを通した値**
+        ``σ(log P(rec | 真) − log P(rec | 偽))`` で、生の真偽ではない——MES の「稼働」は
+        テンプレ入力があるので 0.79 の主張にすぎない（``rules/kind2.py``）。信念を入力にしないので、
+        監査隔離（不変条件 6）は消費側がそのまま適用できる。
+
+        有効時間の不確実幅には情報源の時刻ずれの標準偏差を入れる（記録が言う時刻はその分ずれうる）。
+
+        Args:
+            record: 記録（``reliability_profile`` を紐づけ済み）。
+            claim: 記録の主張。
+            model: 記録の情報源 × 記録型の信頼性モデル。
+            mapping_version: 適用した写像の版。
+            key: 決定的な ``event_id`` の鍵。
+
+        Raises:
+            IntegrationError: 信頼性モデルが混同行列を持たない（真偽を主張しない記録型に主張を
+                宣言した設定の誤り）。
+        """
+        log_ratio = model.log_likelihood_boolean(
+            record_says=claim.says, state=True
+        ) - model.log_likelihood_boolean(record_says=claim.says, state=False)
+        occurred = record.occurred_at or record.recorded_at
+        return EventEnvelope(
+            event_id=stable_event_id(record.recorded_at, key),
+            type=f"{vocab.core.BusinessEvent}/{claim.fluent}",
+            subject=record.is_about or _unresolved_subject(record),
+            valid_time=ValidTime(start=occurred, uncertainty_s=model.time_offset.stddev_s),
+            tx_time=record.recorded_at,
+            modality=Modality.OBSERVED,
+            belief=BooleanBelief(p=1.0 / (1.0 + math.exp(-log_ratio))),
+            evidence=(
+                RecordEvidence(
+                    record=_record_iri(self._site_id, record),
+                    source=record.source,
+                    source_reliability=record.reliability_profile,
+                ),
+            ),
+            producer=Producer(
+                agent=f"integration@{self._site_id}",
+                version=f"{_PRODUCER_VERSION}+mapping-{mapping_version}",
+            ),
+            ontology_version=record.ontology_version,
+        )
+
+
+def _event_key(site_id: str, raw: RawRecord, record: Record) -> str:
+    """決定的な ``event_id`` の鍵。同じ拠点の同じ業務記録の同じ版なら同じになる。
+
+    **拠点を含める。** 冪等記録の鍵は ``(consumer_group, event_id)`` なので、拠点が違う同じ
+    業務記録が同じ ID になると、片方が「処理済み」として弾かれる。業務側の訂正（``updated_at`` が
+    進む）は新しい主張として別のイベントにする。``updated_at`` を持たない情報源では記録時刻で
+    代える。
+    """
+    revision = raw.fields.get("updated_at") or record.recorded_at.isoformat()
+    return f"{site_id}|{raw.source}|{raw.table}|{raw.external_id}|{revision}"
 
 
 def _record_iri(site_id: str, record: Record) -> str:

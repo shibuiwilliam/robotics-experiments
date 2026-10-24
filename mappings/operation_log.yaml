@@ -26,3 +26,9 @@ time:
 fields:
   running: running
   shift: shift
+
+# 記録の主張（ADR-0016）。running の真偽が Running の主張で、取込は信頼性モデルを通した確率の
+# 主張イベント（…/ent:Running、様相 observed）を出す。照合ワーカーはこれを記録列に入れる。
+claims:
+  - fluent: ent:Running
+    field: running

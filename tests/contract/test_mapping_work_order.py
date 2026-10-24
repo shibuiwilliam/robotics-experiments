@@ -249,3 +249,21 @@ class TestVocabularyReferences:
     def test_sources_exist_in_the_ontology(self, registry: MappingRegistry) -> None:
         for name in registry.names():
             assert registry.get(name).source in vocab.ALL_IRIS
+
+
+class TestClaimsHaveAReliabilityModel:
+    """主張を宣言した写像は、混同行列を持つ信頼性モデルと対になる（ADR-0016）。
+
+    取込は主張の確率を ``σ(log P(rec|真) − log P(rec|偽))`` で作るので、混同行列が無いと
+    実行時に落ちる。設定の組み合わせの誤りなので、リポジトリの宣言どうしを静的に突き合わせる。
+    """
+
+    def test_every_claim_can_be_discounted(self, registry: MappingRegistry) -> None:
+        from sbp.integration.reliability import ReliabilityRegistry  # noqa: PLC0415
+
+        reliability = ReliabilityRegistry.from_directory(REPO_ROOT / "reliability")
+        claimed = [registry.get(name) for name in registry.names() if registry.get(name).claims]
+        assert claimed, "陽性対照: 主張を宣言した写像が 1 本も無いなら検査が空振りしている"
+        for mapping in claimed:
+            model = reliability.get(mapping.source, mapping.record_type)
+            assert model.confusion is not None, f"{mapping.mapping}: 混同行列が無い"

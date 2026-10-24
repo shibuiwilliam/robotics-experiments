@@ -96,7 +96,8 @@ class TestG1RecordPathReachesTheEventLog:
 
         result = pipeline.ingest_rows(rows)
         assert result.failed == []
-        assert len(result.events) == 1
+        # 記録が存在するイベントと Running の主張イベント（ADR-0016）
+        assert len(result.events) == 2
         _, event = result.events[0]
 
         topic = topic_name(settings.site_id, EventLayer.INTEGRATION, "business")

@@ -124,7 +124,8 @@ class TestIngestion:
         assert record.is_about == "https://sbp.example/site/siteA/asset/P-101"
         assert record.reliability_profile is not None, "信頼性モデルが紐づいている"
 
-        assert len(result.events) == 1
+        # 記録が存在するイベントと、Running の主張イベント（ADR-0016）
+        assert len(result.events) == 2
         topic, event = result.events[0]
         assert topic == "siteA.integration.business"
         assert event.subject == record.is_about
@@ -154,8 +155,8 @@ class TestIngestion:
         assert len(result.unresolved) == 1
         assert result.unresolved[0].raw_reference == "P-101"
         assert result.unresolved[0].reason == "not_found"
-        assert len(result.events) == 1, "未解決でもイベントは出す（存在不一致の材料）"
-        assert result.events[0][1].subject.startswith("urn:sbp:unresolved:")
+        assert len(result.events) == 2, "未解決でもイベントは出す（存在不一致の材料）"
+        assert all(e.subject.startswith("urn:sbp:unresolved:") for _t, e in result.events)
 
     async def test_mapping_failure_does_not_stop_other_rows(
         self, pipeline: IngestionPipeline
