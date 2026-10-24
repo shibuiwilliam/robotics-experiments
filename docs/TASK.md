@@ -455,10 +455,13 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   `.env` に勝つこと、**入れ子の層がすべて親と同じ `env_file` を持つ**ことを構造で検査（層を足して基底を
   継承し忘れると落ちる）。`.env.example` の有効行（`SBP_WM_TORCH_DEVICE=mps` / `SBP_ACTIONS_RECORD_EFFECT_FLOOR=0.5`）は
   既定値と同じなので、CI が `.env.example` を `.env` にコピーしても挙動は変わらない）
-- [ ] **X-12** `make up PROFILES=a,b` が基本 4 サービスだけを起こす不具合を直す（**バグ修正**） — Makefile が
+- [x] **X-12** `make up PROFILES=a,b` が基本 4 サービスだけを起こす不具合を直す（**バグ修正**） — Makefile が
   `$(comma)` を定義していないので `--profile ui,observability` の 1 引数になり、compose はそれを未知の profile
   として扱う（所見 111。`docker compose ... config --services` で確認）。`comma := ,` を定義し、`make -n up
   PROFILES=ui,observability` が `--profile ui --profile observability` を出すことを確かめる
+  → 完了（2026-10-25。`comma := ,` を定義。再現テスト `tests/unit/test_makefile.py` 5 件（修正前は 3 件が赤）——
+  `make -n up` の出力で、複数指定が `--profile` 2 つになること・空白や空要素が落ちること・単一指定と無指定を検査。
+  修正後に `docker compose ... --profile ui --profile observability config --services` が 7 サービスに解決されることを確認）
 - [ ] **X-13** 入口の文書のコマンドと設定の記述を実装に合わせる — 所見 111 / 112 の乖離のうち X-09（ADR 追従）に
   入らないもの。**CLAUDE.md**（`make up --profile` → `PROFILES=`、`make dev` は API だけ、`make bootstrap` は
   `brew bundle` を呼ばない、`make check` の中身、`make gen` はダッシュボードも生成、`make seed` の「MinIO

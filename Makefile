@@ -4,6 +4,10 @@
 SHELL := /bin/bash
 COMPOSE := docker compose -f infra/compose.yaml
 UV := uv run
+# $(subst) の区切りにカンマを渡すための変数（関数の引数ではカンマを直接書けない）。
+# 未定義だと PROFILES=ui,observability が --profile ui,observability の 1 引数になり、
+# compose は未知の profile として基本 4 サービスだけを黙って起こす（所見 111）
+comma := ,
 
 .DEFAULT_GOAL := help
 
