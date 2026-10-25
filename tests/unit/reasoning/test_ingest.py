@@ -90,6 +90,34 @@ class TestFluentExtraction:
         """複合型でなければ ``None``。**推測で割り当てない**（不変条件 5 の趣旨）。"""
         assert fluent_of_event(event_type) is None
 
+    @pytest.mark.parametrize(
+        "event_type",
+        [
+            vocab.ent.OperationLog,  # 取込の「記録が存在する」イベント（型は記録型の完全 IRI）
+            vocab.ent.SparePart,
+            vocab.ent.Running,  # 素のフルーエント型 IRI は複合型ではない
+            f"{vocab.core.Discrepancy}/kind2",  # 不一致の通知（類型の複合型）
+        ],
+    )
+    def test_full_iris_are_not_mistaken_for_composites(self, event_type: str) -> None:
+        """完全 IRI はスキームに ``/`` を含むので、区切りの有無だけで複合型と判定しない。
+
+        判定を誤ると、記録の存在イベントが ``OperationLog`` という「フルーエント」になり、信念の
+        取込は述語が無いと例外で落ちる（M8-25-6 の統合テストで照合ワーカーの窓の数から発見）。
+        """
+        assert fluent_of_event(str(event_type)) is None
+
+    def test_the_ingest_claim_type_yields_its_fluent(self) -> None:
+        """取込の主張イベント（``<core#BusinessEvent>/<フルーエント型 IRI>``、ADR-0016）。"""
+        assert fluent_of_event(f"{vocab.core.BusinessEvent}/{vocab.ent.Running}") == "Running"
+
+    def test_an_existence_event_is_skipped_not_raised(self) -> None:
+        """記録の存在イベントは「フルーエントでない」として飛ばす（例外で取込を止めない）。"""
+        ingest = _ingest()
+        event = _event(at=T0, p=1.0).model_copy(update={"type": vocab.ent.OperationLog})
+        outcome = ingest.handle(event)
+        assert outcome.skipped is SkipReason.NOT_A_FLUENT
+
 
 class TestPerEntityFilters:
     """実体ごとにフィルタが分かれる。"""
@@ -258,10 +286,19 @@ class TestPredicateResolution:
     """述語 IRI の解決（不変条件 5）。"""
 
     def test_an_unknown_fluent_raises(self) -> None:
-        """述語を引けないフルーエントは落とす。**推測で IRI を作らない。**"""
+        """述語を引けないフルーエントは落とす。**推測で IRI を作らない。**
+
+        オントロジーの FluentType だが配線に述語が無いもの（``_ingest`` は ``Running`` だけ）。
+        オントロジーに無い名前はそもそもフルーエントとして取り出さない（所見 116）。
+        """
         ingest = _ingest()
         with pytest.raises(ReasoningError, match="no predicate IRI"):
-            ingest.handle(_event(fluent="NotAFluentWeKnow"))
+            ingest.handle(_event(fluent="Faulted"))
+
+    def test_a_name_outside_the_ontology_is_not_a_fluent(self) -> None:
+        """オントロジーに無い名前は例外ではなく「フルーエントでない」として飛ばす。"""
+        outcome = _ingest().handle(_event(fluent="NotAFluentWeKnow"))
+        assert outcome.skipped is SkipReason.NOT_A_FLUENT
 
     def test_the_assertion_carries_the_vocab_predicate(self) -> None:
         """アサーションの述語は vocab から来た値である。"""

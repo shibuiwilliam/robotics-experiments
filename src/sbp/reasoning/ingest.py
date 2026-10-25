@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from sbp.core import vocab
 from sbp.core.audit import AuditMask, no_audit
 from sbp.core.belief import BooleanBelief
 from sbp.core.errors import ReasoningError
@@ -67,14 +68,32 @@ class SkipReason:
     """不変条件 6。監査対象の記録とその派生信念を入力にしない。"""
 
 
-_FLUENT_SEPARATOR = "/"
-"""``type`` の複合型の区切り（``sbp-core:PhysicalEvent/ent:Running``、設計書 §6.1）。"""
+_COMPOSITE_HEADS: tuple[str, ...] = (
+    f"{vocab.core.PhysicalEvent}/",
+    f"{vocab.core.BusinessEvent}/",
+    "sbp-core:PhysicalEvent/",
+    "sbp-core:BusinessEvent/",
+)
+"""フルーエントを運ぶ複合型の頭（事象昇格の ``PhysicalEvent/<fluent>``、取込の主張
+``BusinessEvent/<fluent>``。設計書 §6.1、ADR-0016）。CURIE と完全 IRI の両方を受ける。"""
+
+_FLUENT_LOCAL_NAMES: frozenset[str] = frozenset(
+    iri.rsplit("#", 1)[-1] for iri in vocab.FLUENT_TYPES
+)
+"""オントロジーの FluentType のローカル名。複合型の末尾がこれに当たるときだけフルーエントとする。"""
 
 
 def fluent_of_event(event_type: str) -> str | None:
     """イベント型からフルーエントのローカル名を取り出す。
 
-    ``sbp-core:PhysicalEvent/ent:Running`` → ``Running``。複合型でなければ ``None``。
+    ``sbp-core:PhysicalEvent/ent:Running`` → ``Running``。フルーエントを運ぶ複合型でなければ
+    ``None``。
+
+    **区切りの有無だけで複合型と判定しない。** 完全 IRI はスキームに ``/`` を含むので、
+    ``https://…/ent#OperationLog``（取込の「記録が存在する」イベント）が ``OperationLog`` という
+    フルーエントに化け、信念の取込は述語が無いと例外で落ちていた（M8-25-6 の統合テストで発見、
+    ``docs/PROGRESS.md`` 所見 116）。頭が既知の事象クラスで、末尾がオントロジーの FluentType の
+    ときに限る。
 
     **``None`` を「全フルーエント」と解釈しない。** 取り出せない型は信念更新に入れない。
     推測で特定のフルーエントに割り当てると、関係ないイベントが信念を動かす。
@@ -85,11 +104,12 @@ def fluent_of_event(event_type: str) -> str | None:
     Returns:
         フルーエントのローカル名、取り出せなければ ``None``。
     """
-    if _FLUENT_SEPARATOR not in event_type:
-        return None
-    tail = event_type.rsplit(_FLUENT_SEPARATOR, 1)[1]
-    local = tail.rsplit(":", 1)[-1].rsplit("#", 1)[-1]
-    return local or None
+    for head in _COMPOSITE_HEADS:
+        if event_type.startswith(head):
+            tail = event_type[len(head) :]
+            local = tail.rsplit(":", 1)[-1].rsplit("#", 1)[-1]
+            return local if local in _FLUENT_LOCAL_NAMES else None
+    return None
 
 
 @dataclass(frozen=True, slots=True)
