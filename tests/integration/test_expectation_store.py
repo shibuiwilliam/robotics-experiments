@@ -256,6 +256,9 @@ class TestOverdueActive:
                 late.expectation_id,
                 later.expectation_id,
             ]
+            # 隔離した行は除く（毎周期失敗する行が先頭の件数を占めて後ろを飢えさせない）
+            skipped = await store.overdue_active(at=at, exclude={late.expectation_id})
+            assert [row.expectation_id for row in skipped] == [later.expectation_id]
             # 期限ちょうどは期限切れではない（右開）
             assert await store.overdue_active(at=late.deadline) == []  # type: ignore[arg-type]
             await _cleanup(connection)

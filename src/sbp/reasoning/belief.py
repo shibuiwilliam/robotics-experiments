@@ -323,6 +323,7 @@ def update_belief(
     plan: PlanView | None = None,
     mask: AuditMask,
     weak_evidence_threshold: float = 0.3,
+    advance: bool = True,
 ) -> BeliefUpdate:
     """三源を統合して事後信念を計算する（設計書 §8.1 の擬似コード）。
 
@@ -354,6 +355,9 @@ def update_belief(
         mask: 監査隔離マスク（必須）。
         weak_evidence_threshold: この確信度未満のプローブ出力は弱い証拠として扱い、
             寄与を半分にする（設計書 §5.7）。
+        advance: 偽なら時間が進んでいない更新（遅れて届いた記録の主張）。遷移を適用せず、直前の
+            事後を事前にして証拠だけを足す。遷移を主張ごとに適用すると、実時間と無関係に
+            事前が再適用される。初期状態（``previous`` が無い）は従来どおり事前から始める。
 
     Returns:
         更新結果（事後・事前・三源寄与率・隔離の記録）。
@@ -362,9 +366,12 @@ def update_belief(
         ReasoningError: 記録があるのに信頼性モデルが与えられていない場合。
             未知の情報源を既定で信頼しない（設計書 §7.3）。
     """
-    prior_log_odds, plan_log_odds = transition.prior_log_odds(
-        fluent=fluent, previous=previous, elapsed=elapsed, plan=plan, at=at
-    )
+    if advance or previous is None:
+        prior_log_odds, plan_log_odds = transition.prior_log_odds(
+            fluent=fluent, previous=previous, elapsed=elapsed, plan=plan, at=at
+        )
+    else:
+        prior_log_odds, plan_log_odds = _log_odds(previous), 0.0
 
     # ---- 2. 観測尤度（プローブ）----
     observed_log_odds = 0.0
@@ -484,6 +491,7 @@ class BeliefFilter:
         reliability: dict[tuple[str, str], ReliabilityModel] | None = None,
         plan: PlanView | None = None,
         mask: AuditMask,
+        advance: bool = True,
     ) -> BeliefUpdate:
         """1 刻み進める。
 
@@ -498,6 +506,8 @@ class BeliefFilter:
             reliability: 信頼性モデル。
             plan: 当該時刻に有効な計画項目。
             mask: 監査隔離マスク。
+            advance: 偽なら時間を進めない（遷移を適用せず、滞在時間も延ばさない。
+                :func:`update_belief` を参照）。
 
         Returns:
             この刻みの更新結果。
@@ -515,12 +525,16 @@ class BeliefFilter:
             reliability=reliability,
             plan=plan,
             mask=mask,
+            advance=advance,
         )
         # 状態が反転したら滞在時間をリセットする（半マルコフの「続いた長さ」）
         flipped = self.posterior is not None and (self.posterior >= 0.5) != (
             update.posterior >= 0.5
         )
-        self.elapsed = self.transition.step if flipped else self.elapsed + self.transition.step
+        if flipped:
+            self.elapsed = self.transition.step
+        elif advance:
+            self.elapsed = self.elapsed + self.transition.step
         self.posterior = update.posterior
         return update
 

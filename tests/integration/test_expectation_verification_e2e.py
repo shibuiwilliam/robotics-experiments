@@ -155,7 +155,9 @@ class TestPeriodicVerification:
                         source=str(vocab.ent.CmmsSource),
                         external_id=f"WO-{entity[-5:]}",
                         is_about=entity,
-                        recorded_at=now() - timedelta(days=2),
+                        recorded_at=now()
+                        - timedelta(days=3)
+                        + timedelta(minutes=30),  # 期限（1 時間）の前
                         ontology_version=vocab.ONTOLOGY_VERSION,
                     )
                 ]

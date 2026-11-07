@@ -469,3 +469,42 @@ class TestThreeSources:
         assert ingest.tracked_entities == 1
         assert ingest.prune(before=T0 + timedelta(hours=1)) == 1
         assert ingest.tracked_entities == 0
+
+
+class TestClaimsDoNotMoveTheClock:
+    """記録の主張は時間を進めない（M8-27 のレビュー）。主張 1 件ごとに遷移を適用すると、
+    滞在時間が実時間と無関係に延び、事前が再適用される。"""
+
+    def test_claims_leave_the_dwell_time_alone(self) -> None:
+        ingest = _ingest()
+        ingest.handle(_event(at=T0))
+        before = ingest.filter_for(entity=PUMP_A, fluent="Running").elapsed
+        for minute in range(1, 31):
+            ingest.handle(_claim_event(at=T0 + timedelta(minutes=minute)))
+        assert ingest.filter_for(entity=PUMP_A, fluent="Running").elapsed == before
+
+    def test_a_claim_starts_from_the_current_posterior_not_a_new_transition(self) -> None:
+        ingest = _ingest()
+        probe = ingest.handle(_event(at=T0, p=0.9))
+        claim = ingest.handle(_claim_event(at=T0 + timedelta(minutes=1)))
+        assert probe.update is not None
+        assert claim.update is not None
+        assert claim.update.prior == pytest.approx(probe.update.posterior)
+
+    def test_a_late_claim_is_stamped_no_earlier_than_the_latest_update(self) -> None:
+        """遅れて届いた主張の事後は、後の観測の証拠を含んでいる。古い時刻を付けると最新の読み出しが
+        その主張を飛ばす。"""
+        ingest = _ingest()
+        ingest.handle(_event(at=T0 + timedelta(minutes=10)))
+        late = ingest.handle(_claim_event(at=T0))
+        assert late.update is not None
+        assert late.update.at > T0 + timedelta(minutes=10)
+
+    def test_consecutive_late_claims_are_strictly_ordered(self) -> None:
+        ingest = _ingest()
+        ingest.handle(_event(at=T0 + timedelta(minutes=10)))
+        first = ingest.handle(_claim_event(at=T0))
+        second = ingest.handle(_claim_event(at=T0 + timedelta(seconds=1)))
+        assert first.update is not None
+        assert second.update is not None
+        assert second.update.at > first.update.at

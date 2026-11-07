@@ -73,21 +73,24 @@ class RecordIndex:
         log.debug("knowledge.business_records_added", site=self.site, added=added)
         return added
 
-    async def present_types(self, entity: str, *, since: datetime) -> frozenset[str]:
-        """``since`` 以降に記録のある型の集合を引く。
+    async def first_seen(self, entity: str, *, since: datetime) -> dict[str, datetime]:
+        """``since`` 以降に最初に計上された時刻を、記録型ごとに引く。
+
+        **有無ではなく最初の時刻を返す。** 期限を過ぎてから計上された記録は、その効果の期限には
+        間に合っていない。呼び出し側が効果ごとの期限と比べられるようにする。
 
         Args:
             entity: 対象実体の IRI。
             since: この時刻以降（含む）に計上された記録を数える。
 
         Returns:
-            記録型 IRI の集合。
+            記録型 IRI → 最初の ``recorded_at``。記録の無い型は含まれない。
         """
         async with self._connection.cursor() as cursor:
             await cursor.execute(
-                f"SELECT DISTINCT record_type FROM {_TABLE} "
-                "WHERE site = %s AND entity = %s AND recorded_at >= %s",
+                f"SELECT record_type, min(recorded_at) FROM {_TABLE} "
+                "WHERE site = %s AND entity = %s AND recorded_at >= %s GROUP BY record_type",
                 (self.site, entity, ensure_utc(since)),
             )
             rows = await cursor.fetchall()
-        return frozenset(str(row[0]) for row in rows)
+        return {str(row[0]): ensure_utc(row[1]) for row in rows}

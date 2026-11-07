@@ -10,16 +10,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from services.learning_worker import ExpectationVerification, LearningWorker
 
 from sbp.core import vocab
-from sbp.core.config import Settings
+from sbp.core.config import ReasoningSettings, Settings
+from sbp.core.errors import KnowledgeError
 from sbp.core.time import now
 from sbp.reasoning import Expectation, ExpectationStatus, ExpectedEffect
 from sbp.reasoning.expectation_store import from_record, to_record
@@ -36,6 +38,8 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PUMP = "https://sbp.example/site/siteA/asset/P-101"
+T_RECORD = now() - timedelta(days=2)
+"""期限（作成から 1 時間）の前に計上された記録の時刻。"""
 WORK_ORDER = str(vocab.ent.WorkOrder)
 INSPECTED = str(vocab.ent.Inspected)
 
@@ -88,19 +92,29 @@ class _World:
         self.written: list[ExpectationRecord] = []
         self.fail_expectation_write = False
         self.fail_discrepancy_write = False
+        self.refuse_discrepancy_write = False
+        self.fail_overdue = False
+        self.excluded: list[frozenset[UUID]] = []
 
-    async def overdue(self, at: datetime, limit: int) -> list[ExpectationRecord]:
+    async def overdue(
+        self, at: datetime, limit: int, exclude: frozenset[UUID]
+    ) -> list[ExpectationRecord]:
         del at
-        return self.rows[:limit]
+        self.excluded.append(exclude)
+        if self.fail_overdue:
+            raise ConnectionError("db down")
+        return [row for row in self.rows if row.expectation_id not in exclude][:limit]
 
     async def read_beliefs(self, entity: str) -> dict[str, float]:
         return self.beliefs.get(entity, {})
 
-    async def records(self, entity: str, since: datetime) -> frozenset[str]:
+    async def records(self, entity: str, since: datetime) -> dict[str, datetime]:
         del since
-        return self.present.get(entity, frozenset())
+        return dict.fromkeys(self.present.get(entity, frozenset()), T_RECORD)
 
     async def write_discrepancy(self, record: DiscrepancyRecord) -> None:
+        if self.refuse_discrepancy_write:
+            raise KnowledgeError("further along its lifecycle")
         if self.fail_discrepancy_write:
             raise ConnectionError("db down")
         self.discrepancies.append(record)
@@ -126,10 +140,17 @@ def _verification(world: _World, *, types: dict[str, str] | None = None) -> Expe
     )
 
 
-def _worker(world: _World, *, types: dict[str, str] | None = None) -> LearningWorker:
+def _worker(
+    world: _World, *, types: dict[str, str] | None = None, every_step: bool = False
+) -> LearningWorker:
     verification = _verification(world, types=types)
+    settings = (
+        Settings(reasoning=ReasoningSettings(expectation_verify_period_s=1e-6))
+        if every_step
+        else Settings()
+    )
     return LearningWorker(
-        Settings(),
+        settings,
         beliefs=world.read_beliefs,
         expectations=world.write_expectation,
         observations=world.enqueue,
@@ -209,7 +230,7 @@ class TestFailures:
         worker = _worker(world)
         assert await worker.step() == 0
         assert world.written == []
-        assert worker.failed_total == 1
+        assert worker.verify_failed_total == 1
 
     @pytest.mark.asyncio
     async def test_one_failure_does_not_stop_the_rest(self) -> None:
@@ -232,7 +253,47 @@ class TestFailures:
         world.write_expectation = flaky  # type: ignore[method-assign]
         worker = _worker(world)
         assert await worker.step() == 1
-        assert worker.failed_total == 1
+        assert worker.verify_failed_total == 1
+
+
+class TestResilience:
+    @pytest.mark.asyncio
+    async def test_a_refused_discrepancy_write_is_treated_as_already_recorded(self) -> None:
+        """同じ不一致が先へ進んでいても（人が振り分けた）、期待は進める。止めると毎周期失敗する。"""
+        world = _World(_expectation())
+        world.beliefs[PUMP] = {INSPECTED: 0.95}
+        world.refuse_discrepancy_write = True
+        worker = _worker(world)
+        assert await worker.step() == 1
+        assert [from_record(row).status for row in world.written] == [ExpectationStatus.VIOLATED]
+        assert worker.verify_failed_total == 0
+
+    @pytest.mark.asyncio
+    async def test_a_row_that_keeps_failing_is_quarantined(self) -> None:
+        """毎周期失敗する行が先頭に居座って後ろを飢えさせない。"""
+        poison = _expectation(target="https://sbp.example/site/siteA/asset/P-BAD")
+        world = _World(poison, _expectation())
+        world.beliefs[PUMP] = {INSPECTED: 0.95}
+        world.present[PUMP] = frozenset({WORK_ORDER})
+        bad = world.rows[0]
+        world.rows[0] = replace(bad, payload={"broken": True})
+        worker = _worker(world, every_step=True)
+        for _ in range(3):
+            await worker.step()
+        assert worker.verify_failed_total == 3
+        assert all(bad.expectation_id not in excluded for excluded in world.excluded)
+        await worker.step()
+        assert bad.expectation_id in world.excluded[-1], "3 回失敗した行は引かない"
+        # 代役の表は書いても Active のまま返すので、書いた回数ではなく状態の集合で見る
+        assert {from_record(row).status for row in world.written} == {ExpectationStatus.FULFILLED}
+
+    @pytest.mark.asyncio
+    async def test_an_unavailable_dependency_does_not_stop_the_step(self) -> None:
+        world = _World(_expectation())
+        world.fail_overdue = True
+        worker = _worker(world)
+        assert await worker.step() == 0
+        assert worker.verify_failed_total == 1
 
 
 class TestUnwired:

@@ -57,9 +57,13 @@ class TestRecordIndex:
                     ),
                 ]
             )
-            assert await index.present_types(PUMP, since=T0) == {WORK_ORDER, LOG}
-            assert await index.present_types(PUMP, since=T0 + timedelta(minutes=1)) == {LOG}
-            assert await index.present_types(PUMP + "-x", since=T0) == frozenset()
+            assert await index.first_seen(PUMP, since=T0) == {
+                WORK_ORDER: T0,
+                LOG: T0 + timedelta(hours=1),
+            }
+            after = await index.first_seen(PUMP, since=T0 + timedelta(minutes=1))
+            assert after == {LOG: T0 + timedelta(hours=1)}
+            assert await index.first_seen(PUMP + "-x", since=T0) == {}
             await connection.rollback()
 
     @pytest.mark.asyncio
@@ -83,5 +87,5 @@ class TestRecordIndex:
                 [_record(external_id="WO-1", at=T0, about=PUMP)]
             )
             other = RecordIndex(connection, site="siteOther")
-            assert await other.present_types(PUMP, since=T0) == frozenset()
+            assert await other.first_seen(PUMP, since=T0) == {}
             await connection.rollback()

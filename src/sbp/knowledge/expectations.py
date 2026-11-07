@@ -29,7 +29,7 @@ from sbp.core.logging import get_logger
 from sbp.core.time import ensure_utc
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from psycopg import AsyncConnection
 
@@ -204,7 +204,9 @@ class ExpectationStore:
         )
         return found
 
-    async def overdue_active(self, *, at: datetime, limit: int = 50) -> list[ExpectationRecord]:
+    async def overdue_active(
+        self, *, at: datetime, limit: int = 50, exclude: Collection[UUID | str] = ()
+    ) -> list[ExpectationRecord]:
         """期限を過ぎた ``Active`` の期待を、期限の古い順に返す（M8-27、ADR-0017）。
 
         **検証してよいのは期限切れだけ**（早く検証すると「まだ判定できない」が「判定不能」に
@@ -213,6 +215,8 @@ class ExpectationStore:
         Args:
             at: この時刻より前に期限が来たものを返す（期限ちょうどは含めない。右開）。
             limit: 返す件数の上限。
+            exclude: 除く期待の識別子。毎周期失敗する行が先頭の ``limit`` 件を占めて後ろを
+                飢えさせないよう、呼び出し側が隔離した行を渡す。
 
         Returns:
             行の列（期限の昇順）。
@@ -222,8 +226,9 @@ class ExpectationStore:
                 "SELECT expectation_id, status, status_rank, action_type, target, created_at, "
                 f"deadline, payload FROM {_TABLE} "
                 "WHERE site = %s AND status = 'Active' AND deadline < %s "
+                "AND NOT (expectation_id = ANY(%s::uuid[])) "
                 "ORDER BY deadline ASC LIMIT %s",
-                (self.site, ensure_utc(at), limit),
+                (self.site, ensure_utc(at), [str(item) for item in exclude], limit),
             )
             rows = await cursor.fetchall()
         return [_to_record(row) for row in rows]

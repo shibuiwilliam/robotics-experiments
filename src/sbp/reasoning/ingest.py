@@ -252,8 +252,18 @@ class BeliefIngest:
             if self.plan_provider is not None
             else None
         )
+        # 主張は時間を進めない。事後は後の観測の証拠を含みうるので、時刻は最新の更新より後に
+        # する（遅れて届いた主張に古い時刻を付けると、最新の読み出しがその主張を飛ばす）。
+        # 同じ時刻の 2 件が並ばないよう 1 マイクロ秒だけ進める
+        touched = self._touched.get(key)
+        step_at = (
+            max(event.tx_time, touched + timedelta(microseconds=1))
+            if claim and touched is not None
+            else event.tx_time
+        )
         update = probe_filter.step(
-            at=event.tx_time,
+            at=step_at,
+            advance=not claim,
             probe_probabilities=() if claim else (event.belief.p,),
             claim_probabilities=(event.belief.p,) if claim else (),
             reliability=self.reliability,
@@ -262,7 +272,7 @@ class BeliefIngest:
         )
         if not claim:
             self._last_seen[key] = event.tx_time
-        self._touched[key] = max(event.tx_time, self._touched.get(key, event.tx_time))
+        self._touched[key] = max(step_at, self._touched.get(key, step_at))
 
         assertion = update.to_assertion(
             predicate=predicate,

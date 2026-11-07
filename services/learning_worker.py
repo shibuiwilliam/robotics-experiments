@@ -54,7 +54,7 @@ from sbp.actions import (
 )
 from sbp.core import vocab
 from sbp.core.config import Settings, WritebackMode
-from sbp.core.errors import ActionError
+from sbp.core.errors import ActionError, KnowledgeError
 from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.knowledge.decisions import DecisionKind
@@ -102,10 +102,10 @@ if TYPE_CHECKING:
     """期待を作業項目表に書く（``ExpectationStore.upsert``）。"""
     ProposalCurator = Callable[[str, str, int, str], Awaitable[bool]]
     """``(提案 ID, 採否, rank, 理由) -> 更新できたか``（``ConceptProposalStore.curate``）。"""
-    OverdueReader = Callable[[datetime, int], Awaitable[list["ExpectationRecord"]]]
-    """``(時刻, 件数) -> 期限切れの Active``（``ExpectationStore.overdue_active``）。"""
-    RecordReader = Callable[[str, datetime], Awaitable[frozenset[str]]]
-    """``(実体, 時刻) -> その時刻以降に記録のある記録型``（``RecordIndex.present_types``）。"""
+    OverdueReader = Callable[[datetime, int, frozenset[UUID]], Awaitable[list["ExpectationRecord"]]]
+    """``(時刻, 件数, 除く期待) -> 期限切れの Active``（``ExpectationStore.overdue_active``）。"""
+    RecordReader = Callable[[str, datetime], Awaitable[dict[str, datetime]]]
+    """``(実体, 時刻) -> 記録型ごとの最初の計上時刻``（``RecordIndex.first_seen``）。"""
     DiscrepancySink = Callable[["DiscrepancyRecord"], Awaitable[None]]
     """不一致を作業項目表に書く（``DiscrepancyStore.upsert``）。"""
 
@@ -120,6 +120,13 @@ __all__ = [
 log = get_logger(__name__)
 
 WORKER_NAME = "learning-worker"
+
+_VERIFY_MAX_FAILURES = 3
+"""期待の検証がこの回数失敗した行は、このプロセスの間は引かない（隔離）。
+
+毎周期失敗する行は期限の古い順で先頭に居座り、``batch_size`` 件を占めると後ろの期待を
+飢えさせる。隔離は警告ログに出し、再起動で再試行する（永続化しない: 原因の修正後に
+再起動すれば戻る）。"""
 
 _DEFAULT_PERIOD_S = 30.0
 """キューを引く周期（秒）。人の判断は毎秒来るものではない。"""
@@ -224,7 +231,9 @@ class LearningWorker:
         self._proposals = proposals
         self._verification = verification
         self._last_verify: datetime | None = None
+        self._verify_failures: dict[UUID, int] = {}
         self.verified_total = 0
+        self.verify_failed_total = 0
         # **プロセス内にしか無い。** 再起動で消えるので、冪等の鍵が防ぐのは「同じ判断の
         # 二度適用」だけで、「別の判断で短時間に 2 回」は再起動後に通る（ADR-0014 の未決 1）
         self._rate_limits = RateLimitState()
@@ -325,10 +334,18 @@ class LearningWorker:
             return 0
         self._last_verify = at
 
-        rows = await v.overdue(at, self.settings.reasoning.batch_size)
-        if not rows:
+        quarantined = frozenset(
+            item for item, count in self._verify_failures.items() if count >= _VERIFY_MAX_FAILURES
+        )
+        try:
+            rows = await v.overdue(at, self.settings.reasoning.batch_size, quarantined)
+            if not rows:
+                return 0
+            types = await asyncio.to_thread(v.entity_types)
+        except Exception as exc:  # 依存の一時的な障害でワーカーのループを止めない
+            self.verify_failed_total += 1
+            log.warning("worker.expectation_verify_unavailable", worker=WORKER_NAME, error=str(exc))
             return 0
-        types = await asyncio.to_thread(v.entity_types)
         verified = 0
         for row in rows:
             try:
@@ -338,14 +355,23 @@ class LearningWorker:
                 verdict = verify_if_overdue(
                     expectation,
                     beliefs=beliefs,
-                    present_records=present,
+                    first_records=present,
                     at=at,
                     severity_for=lambda item: self._severity_of(item, types=types, at=at),
                 )
                 if verdict is None:
                     continue
                 if verdict.discrepancy is not None:
-                    await v.discrepancies(discrepancy_to_record(verdict.discrepancy))
+                    try:
+                        await v.discrepancies(discrepancy_to_record(verdict.discrepancy))
+                    except KnowledgeError:
+                        # 同じ不一致が既に先へ進んでいる（人が振り分けた等）。
+                        # **記録済みとして続ける**——止めると期待が Active のまま失敗し続ける
+                        log.info(
+                            "worker.expectation_discrepancy_already_recorded",
+                            worker=WORKER_NAME,
+                            discrepancy=str(verdict.discrepancy.discrepancy_id),
+                        )
                 if verdict.observation_requests and self._observations is not None:
                     await self._observations(verdict.observation_requests)
                 await self._expectations(expectation_to_record(verdict.expectation))
@@ -362,11 +388,15 @@ class LearningWorker:
                     observation_requests=len(verdict.observation_requests),
                 )
             except Exception as exc:  # 1 件の失敗で残りを止めない。次の周期で再試行する
-                self.failed_total += 1
+                self.verify_failed_total += 1
+                failures = self._verify_failures.get(row.expectation_id, 0) + 1
+                self._verify_failures[row.expectation_id] = failures
                 log.warning(
                     "worker.expectation_verify_failed",
                     worker=WORKER_NAME,
                     correlation_id=str(row.expectation_id),
+                    failures=failures,
+                    quarantined=failures >= _VERIFY_MAX_FAILURES,
                     error=str(exc),
                 )
         self.verified_total += verified
@@ -935,13 +965,15 @@ async def build_worker(
         """
         await expectations.upsert(record)
 
-    async def overdue(at: datetime, limit: int) -> list[ExpectationRecord]:
-        """期限切れの ``Active`` を引く。"""
-        return await expectations.overdue_active(at=at, limit=limit)
+    async def overdue(
+        at: datetime, limit: int, exclude: frozenset[UUID]
+    ) -> list[ExpectationRecord]:
+        """期限切れの ``Active`` を引く（隔離した行を除く）。"""
+        return await expectations.overdue_active(at=at, limit=limit, exclude=exclude)
 
-    async def present_records(entity: str, since: datetime) -> frozenset[str]:
+    async def present_records(entity: str, since: datetime) -> dict[str, datetime]:
         """期待の作成後に対象へ記録のある記録型を引く（記号側の検証）。"""
-        return await records.present_types(entity, since=since)
+        return await records.first_seen(entity, since=since)
 
     def entity_types() -> dict[str, str]:
         """実体の型を知識グラフから引く（深刻度の業務価値）。"""

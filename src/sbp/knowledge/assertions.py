@@ -444,9 +444,11 @@ def current_beliefs(
     （:meth:`BeliefUpdate.to_assertion`）。アクションの前提検証は
     「フルーエント型 IRI → 確信度」の表を要求するので、ここで畳む。
 
-    **同じフルーエントが複数あれば最も確信度が高いものを採る。** 重なるのは区間が分かれて
-    いるときで、``valid_at`` を指定すれば 1 件に絞れる。指定しない呼び出しで黙って先頭を
-    採ると、どれが返るかが格納順に依存する。
+    **同じフルーエントが複数あれば最新の文（有効開始が最も遅いもの）を採る。** belief-worker は
+    ``valid_to`` の無い文を追記するだけで閉じないので、開いた文が時系列で積まれる。確信度の
+    最大を採ると、0.95 だった設備が 0.05 に落ちても 0.95 を返し、前提検査と期待の検証が古い
+    値で判定する（M8-27 のレビューで発見）。``valid_at`` を指定すればその時点で有効だった
+    文の中の最新を採る。
 
     **様相は既定で ``inferred`` に絞る。** 前提の物理面は「基盤が推定した状態」を見るべきで、
     計画（``planned``）を混ぜると「計画どおりなら前提を満たす」ことになり、安全ガードが
@@ -463,14 +465,26 @@ def current_beliefs(
         （フルーエントの成立を表していないため）。
     """
     rows = store.query(subject=entity, valid_at=at, modality=modality)
-    beliefs: dict[str, float] = {}
+    latest: dict[str, AssertionRow] = {}
     for row in rows:
         if row.object_ not in _TRUE_LITERALS:
             continue
-        current = beliefs.get(row.predicate)
-        if current is None or row.confidence > current:
-            beliefs[row.predicate] = row.confidence
-    return beliefs
+        held = latest.get(row.predicate)
+        if held is None or _is_newer(row, held):
+            latest[row.predicate] = row
+    return {predicate: row.confidence for predicate, row in latest.items()}
+
+
+def _is_newer(row: AssertionRow, held: AssertionRow) -> bool:
+    """``row`` が ``held`` より新しい信念か（有効開始 → 記録開始 → 確信度の順）。
+
+    確信度は最後の決め手にすぎない（同時刻の 2 文で結果が揺れないため）。
+    """
+    return (row.valid_from, row.tx_from, row.confidence) > (
+        held.valid_from,
+        held.tx_from,
+        held.confidence,
+    )
 
 
 _TRUE_LITERALS = frozenset({"true", "True"})

@@ -41,7 +41,7 @@ from sbp.reasoning.expectation import (
 from sbp.reasoning.reconciliation.discrepancy import Discrepancy, DiscrepancyKind
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection, Mapping
+    from collections.abc import Callable, Mapping
     from datetime import datetime
 
     from sbp.reasoning.reconciliation.severity import Severity
@@ -100,7 +100,7 @@ def verify_if_overdue(
     expectation: Expectation,
     *,
     beliefs: Mapping[str, float],
-    present_records: Collection[str],
+    first_records: Mapping[str, datetime],
     at: datetime,
     severity_for: SeverityFor,
 ) -> ExpectationVerdict | None:
@@ -109,7 +109,9 @@ def verify_if_overdue(
     Args:
         expectation: 期待。
         beliefs: 対象実体の信念（フルーエント型 IRI → 確率。``current_beliefs``）。
-        present_records: 期待の作成後に対象へ記録のある記録型 IRI（``RecordIndex.present_types``）。
+        first_records: 期待の作成後に対象へ最初に計上された時刻（記録型 IRI → 時刻。
+            ``RecordIndex.first_seen``）。**効果の期限までに計上された記録だけが効果を満たす**
+            ——期限を過ぎてから届いた記録で満たしたことにすると、期限が意味を失う。
         at: 検証時刻。
         severity_for: 深刻度の算出（``Violated`` と ``Undetermined`` のときだけ呼ぶ）。
 
@@ -119,12 +121,17 @@ def verify_if_overdue(
     if expectation.status is not ExpectationStatus.ACTIVE or not expectation.is_overdue(at=at):
         return None
 
-    symbolic_types = {effect.fluent for effect in expectation.effects_of("symbolic")}
+    deadlines: dict[str, datetime] = {}
+    for effect in expectation.effects_of("symbolic"):
+        # 同じ記録型の効果が複数あれば最も早い期限で数える（厳しい側）
+        held = deadlines.get(effect.fluent, effect.deadline)
+        deadlines[effect.fluent] = min(effect.deadline, held)
     inputs = VerificationInputs(
         at=at,
         beliefs=dict(beliefs),
         records_present={
-            record_type: record_type in present_records for record_type in symbolic_types
+            record_type: record_type in first_records and first_records[record_type] <= deadline
+            for record_type, deadline in deadlines.items()
         },
     )
     verified = verify_expectation(expectation, inputs=inputs)

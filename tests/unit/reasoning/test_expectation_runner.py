@@ -73,7 +73,7 @@ class TestOnlyOverdueIsVerified:
             verify_if_overdue(
                 expectation,
                 beliefs={},
-                present_records=(),
+                first_records={},
                 at=T0 + timedelta(hours=2),
                 severity_for=_severity,
             )
@@ -83,9 +83,7 @@ class TestOnlyOverdueIsVerified:
     def test_a_non_active_expectation_is_not_touched(self) -> None:
         done = _active().expire(at=AFTER)
         assert (
-            verify_if_overdue(
-                done, beliefs={}, present_records=(), at=AFTER, severity_for=_severity
-            )
+            verify_if_overdue(done, beliefs={}, first_records={}, at=AFTER, severity_for=_severity)
             is None
         )
 
@@ -96,7 +94,7 @@ class TestOnlyOverdueIsVerified:
             verify_if_overdue(
                 expectation,
                 beliefs={},
-                present_records=(),
+                first_records={},
                 at=expectation.deadline,
                 severity_for=_severity,
             )
@@ -109,7 +107,7 @@ class TestVerdicts:
         verdict = verify_if_overdue(
             _active(),
             beliefs={INSPECTED: 0.95},
-            present_records={WORK_ORDER},
+            first_records={WORK_ORDER: T0 + timedelta(minutes=10)},
             at=AFTER,
             severity_for=_severity,
         )
@@ -123,7 +121,7 @@ class TestVerdicts:
         verdict = verify_if_overdue(
             _active(),
             beliefs={INSPECTED: 0.95},
-            present_records=(),
+            first_records={},
             at=AFTER,
             severity_for=_severity,
         )
@@ -142,7 +140,7 @@ class TestVerdicts:
         verdict = verify_if_overdue(
             _active(),
             beliefs={INSPECTED: 0.1},
-            present_records={WORK_ORDER},
+            first_records={WORK_ORDER: T0 + timedelta(minutes=10)},
             at=AFTER,
             severity_for=_severity,
         )
@@ -156,7 +154,7 @@ class TestVerdicts:
         verdict = verify_if_overdue(
             _active(),
             beliefs={},
-            present_records={WORK_ORDER},
+            first_records={WORK_ORDER: T0 + timedelta(minutes=10)},
             at=AFTER,
             severity_for=_severity,
         )
@@ -176,7 +174,7 @@ class TestVerdicts:
         verdict = verify_if_overdue(
             only_records,
             beliefs={},
-            present_records={WORK_ORDER},
+            first_records={WORK_ORDER: T0 + timedelta(minutes=10)},
             at=AFTER,
             severity_for=_severity,
         )
@@ -185,14 +183,39 @@ class TestVerdicts:
         assert verdict.observation_requests == ()
 
 
+class TestRecordsMustMeetTheDeadline:
+    def test_a_record_after_the_effect_deadline_does_not_satisfy_it(self) -> None:
+        """期限（作成から 1 時間）の後に計上された記録では、業務効果を満たしたことにしない。"""
+        verdict = verify_if_overdue(
+            _active(),
+            beliefs={INSPECTED: 0.95},
+            first_records={WORK_ORDER: T0 + timedelta(hours=2)},
+            at=AFTER,
+            severity_for=_severity,
+        )
+        assert verdict is not None
+        assert verdict.expectation.status is ExpectationStatus.VIOLATED
+
+    def test_a_record_exactly_at_the_deadline_counts(self) -> None:
+        verdict = verify_if_overdue(
+            _active(),
+            beliefs={INSPECTED: 0.95},
+            first_records={WORK_ORDER: T0 + timedelta(hours=1)},
+            at=AFTER,
+            severity_for=_severity,
+        )
+        assert verdict is not None
+        assert verdict.expectation.status is ExpectationStatus.FULFILLED
+
+
 class TestDiscrepancyIdentity:
     def test_the_same_expectation_gives_the_same_discrepancy_id(self) -> None:
         expectation = _active()
         first = verify_if_overdue(
-            expectation, beliefs={}, present_records=(), at=AFTER, severity_for=_severity
+            expectation, beliefs={}, first_records={}, at=AFTER, severity_for=_severity
         )
         again = verify_if_overdue(
-            expectation, beliefs={}, present_records=(), at=AFTER, severity_for=_severity
+            expectation, beliefs={}, first_records={}, at=AFTER, severity_for=_severity
         )
         assert first is not None
         assert again is not None
