@@ -457,6 +457,20 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
 
 ---
 
+### M9 運用の入口 — 運用で呼ぶ者がいなかった機能に入口を作る（H-24 案 A、ADR-0030）
+
+目的: ライブラリと統合テストはあるが運用で呼ぶ者がいない機能（再接地の実行、予測、問い合わせ）に入口を作り、未配線の指標を閉じる。
+M8 の目的と G8 は変えない。ADR-0030。
+
+- [ ] **M9-01** 再接地の実行 — `scripts/reground.py`（既定 dry-run、`--apply`）、潜在 → プローブ → 昇格 → 信念更新の再生。旧文は `tx_to` を閉じるだけ。差分レポートと `regrounding_duration`
+- [ ] **M9-02** 予測の周期ジョブ — WM のロールアウト → `predicted` の予測 → 後から来る観測で採点（`forecast_coverage` / `forecast_crps`）
+- [ ] **M9-03** 問い合わせの入口 — GraphQL で予測・説明を読む。What-if はコマンド（`hypothetical` を主信念に入れない）
+- [ ] **M9-04** ゲート G9 の統合テスト — M9-01〜03 を外界だけの模擬で通す。`test_metrics_wiring` の分類を更新
+
+**ゲート G9**: G8 維持 + M9-04 緑。M9 に入れないもの（同一性束縛・LLM の入口・SHACL 隔離）は `docs/HITL.md` H-27。
+
+---
+
 ## 4. 横断・継続タスク（マイルストーンに属さない）
 
 - [x] **X-01** CI 整備 — `.github/workflows/ci.yml`。3 ジョブ（`check` / `integration` / `ui`）。`check` が落ちたら `integration` を走らせない（型が通らないのに Compose の起動を待っても情報が増えない）。`integration` は `.env.example` の既定ポートを使い、**healthy の期待件数を明示して待つ**——「healthy でないものが 0 件」を成功条件にすると、コンテナが 1 つも起きていないときも通る
