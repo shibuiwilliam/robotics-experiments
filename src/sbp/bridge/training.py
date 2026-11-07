@@ -203,8 +203,9 @@ def train_probe(
     )
     by_entity = {s.entity: [b for b in bags if b.entity == s.entity] for s in series}
     train_bags = _training_bags(series, by_entity, settings)
-    if not train_bags:
-        return _declined(spec, bags, "no weak label falls in the training window")
+    used = [b for mine in train_bags.values() for b in mine]
+    if not any(b.positive for b in used) or all(b.positive for b in used):
+        return _declined(spec, bags, "the training window needs weak labels of both polarities")
 
     probe = LinearProbe(dim=dims.pop(), seed=seed)
     for _ in range(_ROUNDS):
@@ -212,13 +213,16 @@ def train_probe(
             mine = train_bags.get(s.entity)
             if mine:
                 train = _slices(len(s.timestamps), settings)[0]
-                fit_with_bags(
-                    probe,
-                    s.latents[train.start : train.stop],
-                    mine,
-                    s.timestamps[train.start : train.stop],
-                    epochs=_EPOCHS // _ROUNDS,
-                )
+                try:
+                    fit_with_bags(
+                        probe,
+                        s.latents[train.start : train.stop],
+                        mine,
+                        s.timestamps[train.start : train.stop],
+                        epochs=_EPOCHS // _ROUNDS,
+                    )
+                except BridgeError as exc:  # どの標本にも当たらないバッグだけ: 学習できない
+                    return _declined(spec, bags, str(exc))
 
     calib = _labelled(series, by_entity, settings, slot=1)
     held = _labelled(series, by_entity, settings, slot=2)
@@ -229,6 +233,8 @@ def train_probe(
         return _declined(spec, bags, problem)
     probe.attach_calibrator(TemperatureScaler().fit(probe.logits(calib[0]), calib[1]))
     metrics = _metrics(probe, held, series, settings)
+    if metrics is None:
+        return _declined(spec, bags, "no evaluation window is long enough to measure alignment")
     candidate = spec.model_copy(update={"metrics": metrics})
     try:
         active = promote(
@@ -262,6 +268,24 @@ def _training_bags(
     return found
 
 
+def _bags_of_slot(
+    series: EntitySeries, bags: Sequence[TimeBag], settings: BridgeSettings, slot: int
+) -> list[TimeBag]:
+    """区間の終端が属する枠のバッグだけ（較正と評価が同じ主張を共有しない）。"""
+    _train, calib, held = _slices(len(series.timestamps), settings)
+    if len(calib) == 0 or len(held) == 0:
+        return []
+    calib_start, held_start = series.timestamps[calib.start], series.timestamps[held.start]
+    out: list[TimeBag] = []
+    for bag in bags:
+        end = bag.interval.end
+        if end is None:
+            continue
+        if (slot == 1 and calib_start < end <= held_start) or (slot == 2 and end > held_start):
+            out.append(bag)
+    return out
+
+
 def _labelled(
     series: Sequence[EntitySeries],
     by_entity: dict[str, list[TimeBag]],
@@ -275,7 +299,7 @@ def _labelled(
     where: dict[str, tuple[NDArray[np.intp], range]] = {}
     for s in series:
         window = _slices(len(s.timestamps), settings)[slot]
-        keep, flags = _labels(s, by_entity[s.entity], window)
+        keep, flags = _labels(s, _bags_of_slot(s, by_entity[s.entity], settings, slot), window)
         if len(keep):
             rows.append(s.latents[keep])
             labels.append(flags)
@@ -307,8 +331,8 @@ def _metrics(
     held: tuple[NDArray[np.float64], NDArray[np.bool_], dict[str, tuple[NDArray[np.intp], range]]],
     series: Sequence[EntitySeries],
     settings: BridgeSettings,
-) -> ProbeMetrics:
-    """評価枠の指標。整合残差は評価枠全体の記号化に対して測る。"""
+) -> ProbeMetrics | None:
+    """評価枠の指標。整合残差は評価枠全体の記号化に対して測る（測れなければ ``None``）。"""
     latents, labels, _where = held
     output = probe.predict(latents)
     residuals: list[float] = []
@@ -319,10 +343,12 @@ def _metrics(
                 {"fluent": probe.predict(s.latents[window.start : window.stop]).probabilities}
             )
             residuals.append(alignment_residual(states, _transition()).residual)
+    if not residuals:
+        return None
     return ProbeMetrics(
         auroc=auroc(labels, output.raw_scores),
         ece=expected_calibration_error(labels, output.probabilities),
-        alignment_residual=float(np.mean(residuals)) if residuals else 0.0,
+        alignment_residual=float(np.mean(residuals)),
         n_samples=len(labels),
     )
 

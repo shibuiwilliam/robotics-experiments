@@ -6,7 +6,10 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from scripts.train_probe import train_and_store
+from scripts.train_probe import (
+    _active_residuals,  # pyright: ignore[reportPrivateUsage]
+    train_and_store,
+)
 
 from sbp.bridge.serialization import artifact_key, loads
 from sbp.bridge.training import EntitySeries
@@ -135,3 +138,20 @@ def test_a_missing_wm_version_is_refused(
             probe_id=PROBE,
             seed=1,
         )
+
+
+def test_the_active_probes_residuals_are_the_promotion_baseline(
+    tmp_path: Path, inputs: tuple[list[EventEnvelope], EntitySeries]
+) -> None:
+    """比較対象は運用中の active の整合残差。無視すると AND 条件が空洞になる。"""
+    events, series = inputs
+    store = LocalArtifactStore(tmp_path)
+    first, _ = train_and_store(
+        _settings(), events, [series], store=store, fluent=FLUENT, probe_id=PROBE, seed=1
+    )
+    assert first.bundle is not None and first.metrics is not None
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,  # type: ignore[call-arg]  # pyright: ignore[reportCallIssue]
+        bridge=BridgeSettings(wm_version=WM, weak_label_min_half_width_s=60.0, probe_ids=(PROBE,)),
+    )
+    assert _active_residuals(settings, store) == (first.metrics.alignment_residual,)

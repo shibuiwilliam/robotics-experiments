@@ -20,10 +20,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import psycopg
 
-from sbp.bridge.serialization import artifact_key, dumps
+from sbp.bridge.probes import ProbeKind, ProbeSpec
+from sbp.bridge.serialization import artifact_key, dumps, loads
 from sbp.bridge.training import EntitySeries, TrainingOutcome, bags_from_claims, train_probe
+from sbp.core import vocab
 from sbp.core.config import Settings, get_settings
-from sbp.core.errors import ConfigError
+from sbp.core.errors import ArtifactNotFoundError, ConfigError
 from sbp.core.events import EventEnvelope, EventLayer, topic_name
 from sbp.core.logging import configure_logging, get_logger
 from sbp.core.metrics import MetricSample, metric
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
 
     from sbp.knowledge.artifacts import ArtifactStore
 
-__all__ = ["main", "run_training", "train_and_store"]
+__all__ = ["main", "run_training", "store_bundle", "train_and_store", "train_outcome"]
 
 log = get_logger(__name__)
 
@@ -45,7 +47,7 @@ _MAX_LATENTS = 200_000
 """1 実体あたり読む潜在の上限（無制限に読まない）。"""
 
 
-def train_and_store(
+def train_outcome(
     settings: Settings,
     events: Sequence[EventEnvelope],
     series: Sequence[EntitySeries],
@@ -55,7 +57,7 @@ def train_and_store(
     probe_id: str,
     seed: int,
 ) -> tuple[TrainingOutcome, list[MetricSample]]:
-    """弱ラベルから学習し、昇格したら束を置く。
+    """弱ラベルから学習する（置き場には置かない）。昇格の比較対象は置き場の active を読んで決める。
 
     Args:
         settings: 設定（``SBP_BRIDGE_WM_VERSION`` が要る）。
@@ -67,11 +69,10 @@ def train_and_store(
         seed: 乱数シード。
 
     Returns:
-        ``(結果, 記録する指標)``。昇格しなければ束は置かれない。
+        ``(結果, 記録する指標)``。昇格しなければ ``outcome.bundle`` は ``None``。
 
     Raises:
         ConfigError: WM 版が未設定の場合。
-        ArtifactImmutableError: その版の束が既に置かれている場合。
     """
     wm_version = settings.bridge.wm_version
     if not wm_version:
@@ -85,6 +86,7 @@ def train_and_store(
         wm_version=wm_version,
         level="mid",
         settings=settings.bridge,
+        active_alignment_residuals=_active_residuals(settings, store),
         seed=seed,
     )
     samples: list[MetricSample] = []
@@ -95,10 +97,64 @@ def train_and_store(
             MetricSample(metric("probe_auroc"), outcome.metrics.auroc, at, labels),
             MetricSample(metric("probe_ece"), outcome.metrics.ece, at, labels),
         ]
-    if outcome.bundle is not None:
-        key = artifact_key(outcome.spec)
-        store.put(key, dumps(outcome.bundle))
-        log.info("train_probe.stored", key=key, probe_id=probe_id)
+    return outcome, samples
+
+
+def _key_of(probe_id: str) -> str:
+    """プローブ IRI から置き場の鍵を組む（鍵は IRI だけで決まる）。"""
+    stub = ProbeSpec(
+        probe_id=probe_id,
+        grounds=probe_id,
+        kind=ProbeKind.CLASSIFIER,
+        wm_version="urn:sbp:unknown",
+        ontology_version=vocab.ONTOLOGY_VERSION,
+    )
+    return artifact_key(stub)
+
+
+def _active_residuals(settings: Settings, store: ArtifactStore) -> tuple[float, ...]:
+    """運用中（``SBP_BRIDGE_PROBE_IDS``）の active プローブの整合残差。昇格の比較対象。"""
+    found: list[float] = []
+    for probe_id in settings.bridge.probe_ids:
+        try:
+            bundle = loads(store.get(_key_of(probe_id)))
+        except ArtifactNotFoundError:
+            continue
+        spec = bundle.spec
+        if spec.wm_version == settings.bridge.wm_version and spec.metrics is not None:
+            found.append(spec.metrics.alignment_residual)
+    return tuple(found)
+
+
+def store_bundle(store: ArtifactStore, outcome: TrainingOutcome) -> str | None:
+    """昇格した束を置く（上書きしない）。昇格していなければ何もしない。
+
+    Raises:
+        ArtifactImmutableError: その版の束が既に置かれている場合。
+    """
+    if outcome.bundle is None:
+        return None
+    key = artifact_key(outcome.spec)
+    store.put(key, dumps(outcome.bundle))
+    log.info("train_probe.stored", key=key, probe_id=outcome.spec.probe_id)
+    return key
+
+
+def train_and_store(
+    settings: Settings,
+    events: Sequence[EventEnvelope],
+    series: Sequence[EntitySeries],
+    *,
+    store: ArtifactStore,
+    fluent: str,
+    probe_id: str,
+    seed: int,
+) -> tuple[TrainingOutcome, list[MetricSample]]:
+    """学習して、昇格したら置く（:func:`train_outcome` + :func:`store_bundle`）。"""
+    outcome, samples = train_outcome(
+        settings, events, series, store=store, fluent=fluent, probe_id=probe_id, seed=seed
+    )
+    store_bundle(store, outcome)
     return outcome, samples
 
 
@@ -139,6 +195,10 @@ async def run_training(
                 level="mid",
                 limit=_MAX_LATENTS,
             )
+            if len(rows) >= _MAX_LATENTS:
+                log.warning("train_probe.latents_truncated", entity=entity, limit=_MAX_LATENTS)
+            if not rows:
+                log.warning("train_probe.no_latents", entity=entity)
             if rows:
                 series.append(
                     EntitySeries(
@@ -147,17 +207,13 @@ async def run_training(
                         np.vstack([v for _a, v in rows]).astype(np.float64),
                     )
                 )
-        outcome, samples = train_and_store(
-            settings,
-            events,
-            series,
-            store=S3ArtifactStore.from_settings(settings),
-            fluent=fluent,
-            probe_id=probe_id,
-            seed=seed,
+        store = S3ArtifactStore.from_settings(settings)
+        outcome, samples = train_outcome(
+            settings, events, series, store=store, fluent=fluent, probe_id=probe_id, seed=seed
         )
-        if samples:
+        if samples:  # 置く前に記録する（置けなくても落ちた理由の指標は残る）
             await MetricStore(connection, site=settings.site_id).write(samples)
+        store_bundle(store, outcome)
     log.info(
         "train_probe.done",
         promoted=outcome.bundle is not None,

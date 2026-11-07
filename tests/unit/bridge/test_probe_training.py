@@ -13,6 +13,7 @@ import pytest
 
 from sbp.bridge.training import (
     EntitySeries,
+    _bags_of_slot,  # pyright: ignore[reportPrivateUsage]
     _slices,  # pyright: ignore[reportPrivateUsage]
     bags_from_claims,
     train_probe,
@@ -160,7 +161,7 @@ class TestTrainProbe:
     ) -> None:
         outcome = self._train(series, _claims_from(world, every=400), probe_min_labelled=50)
         assert outcome.bundle is None
-        assert any("needs at least" in r or "falls" in r for r in outcome.reasons)
+        assert outcome.reasons
 
     def test_the_split_is_chronological(self) -> None:
         train, calib, held = _slices(100, BridgeSettings())
@@ -192,3 +193,95 @@ class TestTrainProbe:
         b = self._train(series, _claims_from(world), promote_min_auroc=0.0, promote_max_ece=1.0)
         assert a.bundle is not None and b.bundle is not None
         assert np.allclose(a.bundle.weights, b.bundle.weights)
+
+
+class TestReviewFixes:
+    def test_claims_outside_the_latent_history_decline_instead_of_crashing(
+        self, series: EntitySeries
+    ) -> None:
+        far = T0 - timedelta(days=30)
+        bags, _ = bags_from_claims(
+            [_claim(far, 0.9), _claim(far + timedelta(hours=1), 0.1)],
+            fluent=FLUENT,
+            settings=BridgeSettings(),
+        )
+        outcome = train_probe(
+            [series],
+            bags,
+            probe_id=PROBE,
+            grounds=FLUENT,
+            wm_version=WM,
+            level="mid",
+            settings=BridgeSettings(),
+            seed=1,
+        )
+        assert outcome.bundle is None
+        assert outcome.reasons
+
+    def test_one_polarity_only_declines(self, world: SynthWorld, series: EntitySeries) -> None:
+        positives = [c for c in _claims_from(world) if c.belief.p > 0.5]  # type: ignore[union-attr]
+        bags, _ = bags_from_claims(positives, fluent=FLUENT, settings=BridgeSettings())
+        outcome = train_probe(
+            [series],
+            bags,
+            probe_id=PROBE,
+            grounds=FLUENT,
+            wm_version=WM,
+            level="mid",
+            settings=BridgeSettings(),
+            seed=1,
+        )
+        assert outcome.bundle is None
+        assert any("both polarities" in r for r in outcome.reasons)
+
+    def test_calibration_and_evaluation_never_share_a_claim(
+        self, world: SynthWorld, series: EntitySeries
+    ) -> None:
+        bags, _ = bags_from_claims(
+            _claims_from(world),
+            fluent=FLUENT,
+            settings=BridgeSettings(weak_label_min_half_width_s=60.0),
+        )
+        calib = _bags_of_slot(series, bags, BridgeSettings(), 1)
+        held = _bags_of_slot(series, bags, BridgeSettings(), 2)
+        assert calib and held
+        assert not {id(b) for b in calib} & {id(b) for b in held}
+
+    def test_two_entities_are_sliced_and_matched_separately(
+        self, world: SynthWorld, series: EntitySeries
+    ) -> None:
+        other = EntitySeries(PUMP + "-2", series.timestamps, series.latents)
+        claims = _claims_from(world)
+        settings = BridgeSettings(
+            weak_label_min_half_width_s=60.0, promote_min_auroc=0.7, promote_max_ece=0.2
+        )
+        bags, _ = bags_from_claims(claims, fluent=FLUENT, settings=settings)
+        # 2 つ目の実体には主張が無い: その実体の標本は学習・評価に入らない
+        outcome = train_probe(
+            [series, other],
+            bags,
+            probe_id=PROBE,
+            grounds=FLUENT,
+            wm_version=WM,
+            level="mid",
+            settings=settings,
+            seed=7,
+        )
+        assert outcome.bundle is not None, outcome.reasons
+        assert outcome.metrics is not None
+        assert outcome.metrics.n_samples == self._single(series, bags, settings)
+
+    @staticmethod
+    def _single(series: EntitySeries, bags: list, settings: BridgeSettings) -> int:  # type: ignore[type-arg]
+        outcome = train_probe(
+            [series],
+            bags,
+            probe_id=PROBE,
+            grounds=FLUENT,
+            wm_version=WM,
+            level="mid",
+            settings=settings,
+            seed=7,
+        )
+        assert outcome.metrics is not None
+        return outcome.metrics.n_samples
