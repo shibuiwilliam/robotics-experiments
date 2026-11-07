@@ -25,13 +25,21 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sbp.api.factory import build_app
+from sbp.core import vocab
+from sbp.core.assertion import Assertion
+from sbp.core.belief import BooleanBelief
 from sbp.core.config import Settings
 from sbp.core.metrics import MetricSample, metric
+from sbp.core.modality import Modality
 from sbp.core.time import Interval, now
 from sbp.knowledge import (
+    AssertionStore,
     ConceptProposalStore,
+    ContributionRecord,
+    ContributionStore,
     DiscrepancyStore,
     ExpectationStore,
+    HttpGraphStore,
     MetricStore,
 )
 from sbp.reasoning.concept_store import to_record as concept_to_record
@@ -463,3 +471,102 @@ class TestProposalResource:
 
         assert response.status_code == 200
         assert response.json().get("errors"), "要求者なしで提案が返っている"
+
+
+class TestEvidenceResource:
+    """証拠の三源並置の GraphQL 資源（M8-17、ADR-0020）。
+
+    実物の Oxigraph（信念・計画）と Postgres（寄与）を、実物の API が突き合わせる。
+    """
+
+    def test_beliefs_contributions_and_plans_come_back_side_by_side(
+        self, settings: Settings, test_graph_suffix: str, assertion_store: AssertionStore
+    ) -> None:
+        del assertion_store  # 後片付け（テスト用グラフを消す）のために要求する
+        site = f"{test_graph_suffix}-evidence"
+        entity = f"https://sbp.example/site/{site}/asset/P-E2E"
+        fluent = str(vocab.ent.Running)
+        at = now().replace(microsecond=0) - timedelta(minutes=30)
+        dev_settings = settings.model_copy(update={"env": "dev", "site_id": site})
+        graph = AssertionStore(HttpGraphStore(dev_settings), site_id=site)
+        belief = Assertion(
+            subject=entity,
+            predicate=fluent,
+            object=True,
+            valid_from=at,
+            tx_from=at,
+            modality=Modality.INFERRED,
+            belief=BooleanBelief(p=0.8),
+            provenance="urn:sbp:prov:belief-worker/evt-e2e",
+            ontology_version=vocab.ONTOLOGY_VERSION,
+        )
+        plan = Assertion(
+            subject=entity,
+            predicate=fluent,
+            object=True,
+            valid_from=at - timedelta(hours=1),
+            valid_to=at + timedelta(hours=1),
+            tx_from=at,
+            modality=Modality.PLANNED,
+            belief=BooleanBelief(p=0.9),
+            provenance="urn:sbp:prov:plan/e2e",
+            ontology_version=vocab.ONTOLOGY_VERSION,
+        )
+        graph.assert_(belief)
+        graph.assert_(plan)
+
+        async def write() -> None:
+            async with await psycopg.AsyncConnection.connect(dev_settings.pg_dsn) as connection:
+                await ContributionStore(connection, site=site).write(
+                    ContributionRecord(
+                        assertion_id=belief.assertion_id,
+                        entity=entity,
+                        fluent=fluent,
+                        at=at,
+                        prior=0.5,
+                        posterior=0.8,
+                        observed=0.4,
+                        record=2.1,
+                        plan=0.3,
+                        source_event_id="evt-e2e",
+                    )
+                )
+                await connection.commit()
+
+        async def clean() -> None:
+            async with await psycopg.AsyncConnection.connect(dev_settings.pg_dsn) as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "DELETE FROM belief_contributions WHERE site = %s", (site,)
+                    )
+                await connection.commit()
+
+        asyncio.run(write())
+        try:
+            start = (at - timedelta(minutes=5)).isoformat()
+            end = (at + timedelta(minutes=5)).isoformat()
+            with TestClient(build_app(dev_settings)) as client:
+                response = client.post(
+                    "/graphql",
+                    json={
+                        "query": f"""{{ beliefEvidence(entity: "{entity}", fluent: "{fluent}",
+                            start: "{start}", end: "{end}") {{
+                          points {{ assertionId probability origin
+                            contribution {{ observed record plan dominant sourceEventId }} }}
+                          planned {{ adherence }} }} }}"""
+                    },
+                    headers={"X-SBP-Principal": OPERATOR},
+                )
+        finally:
+            asyncio.run(clean())
+
+        payload = response.json()
+        assert not payload.get("errors"), payload.get("errors")
+        data = payload["data"]["beliefEvidence"]
+        assert [p["assertionId"] for p in data["points"]] == [str(belief.assertion_id)]
+        contribution = data["points"][0]["contribution"]
+        assert contribution["dominant"] == "record"
+        assert contribution["record"] == pytest.approx(2.1)
+        assert contribution["sourceEventId"] == "evt-e2e"
+        assert data["points"][0]["origin"] == "update"
+        assert data["planned"] == [{"adherence": pytest.approx(0.9)}]

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 import strawberry
 
 from sbp.api.authorization import AuthorizationError, visible_rows
+from sbp.api.evidence import build_evidence
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 
@@ -42,6 +43,7 @@ else:  # Protocol の注釈を実行時にも解決できるようにする
     ExpectationRecord = object
 
 __all__ = [
+    "BeliefEvidenceType",
     "BeliefReader",
     "BeliefSource",
     "BeliefType",
@@ -415,8 +417,186 @@ class ConceptProposalType:
 
 
 @strawberry.type
+class ContributionType:
+    """信念 1 点の三源の寄与（対数尤度比の絶対値。生の大きさ。ADR-0020）。
+
+    Attributes:
+        observed: 物理観測（プローブ）の寄与。
+        record: 業務記録の寄与。
+        plan: 計画の寄与。
+        dominant: 最も事後を動かした源（``observed`` / ``record`` / ``plan``）。全部 0 なら
+            ``None``。
+        prior: 事前確率。
+        sourceEventId: 起因したイベントの識別子。
+        excludedRecords: 監査隔離で除外した記録の数（不変条件 6）。
+    """
+
+    observed: float
+    record: float
+    plan: float
+    dominant: str | None
+    prior: float
+    sourceEventId: str  # noqa: N815 — GraphQL は camelCase
+    excludedRecords: int  # noqa: N815
+
+
+@strawberry.type
+class EvidencePointType:
+    """信念の時系列の 1 点。
+
+    Attributes:
+        assertionId: アサーションの識別子。
+        at: 信念の有効開始。
+        probability: 較正済みの確率。
+        origin: 出どころ（``update`` = 前向きフィルタ / ``coupling`` = 実体間の結合）。
+        contribution: 三源の寄与。**``None`` は「記録されていない」**（寄与 0 ではない）。
+    """
+
+    assertionId: str  # noqa: N815
+    at: datetime
+    probability: float
+    origin: str
+    contribution: ContributionType | None
+
+
+@strawberry.type
+class PlannedSpanType:
+    """区間と重なる計画。
+
+    Attributes:
+        start: 計画の始端。
+        end: 計画の終端（継続中は ``None``）。
+        adherence: 遵守率の事前。
+    """
+
+    start: datetime
+    end: datetime | None
+    adherence: float
+
+
+@strawberry.type
+class BeliefEvidenceType:
+    """実体 × フルーエントの証拠の三源並置（設計書 §8.2、ADR-0020）。
+
+    **どちらが正しいかは示さない。** 並べるだけで、判断は人がする。
+
+    Attributes:
+        entity: 実体の IRI。
+        fluent: フルーエント型の IRI。
+        start: 区間の始端。
+        end: 区間の終端（含まない）。
+        points: 信念の点（時刻順）。
+        planned: 区間と重なる計画（開始順）。
+    """
+
+    entity: str
+    fluent: str
+    start: datetime
+    end: datetime
+    points: list[EvidencePointType]
+    planned: list[PlannedSpanType]
+
+
+@strawberry.type
 class Query:
     """読み取り専用のクエリ根（設計書 §10.1）。"""
+
+    @strawberry.field(description="証拠の三源並置（観測・記録・計画の寄与の時系列と計画）")
+    def beliefEvidence(  # noqa: N802 — GraphQL は camelCase
+        self,
+        info: strawberry.Info,
+        entity: str,
+        fluent: str,
+        start: datetime,
+        end: datetime,
+    ) -> BeliefEvidenceType:
+        """実体 × フルーエント × 区間の三源並置を返す（M8-17、ADR-0020）。
+
+        **ABAC を通す。** 信念と同じ文（``inferred`` / ``planned``）を ``visible_rows`` で絞り、
+        見えない文の寄与は点として出さない。寄与の行だけ読めても、文が見えなければ出さない。
+
+        Args:
+            info: strawberry の文脈（``beliefs`` と ``evidence`` を持つ）。
+            entity: 実体の IRI。
+            fluent: フルーエント型の IRI。
+            start: 区間の始端（含む）。
+            end: 区間の終端（含まない）。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: 区間が空、または寄与の読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if end <= start:
+            raise ValueError("区間は start < end（右開）")
+        reader = info.context.get("evidence")
+        if reader is None:
+            raise ValueError(
+                "寄与の読み出しが設定されていない（create_app に evidence_reader を渡す）"
+            )
+        source: BeliefSource = info.context["beliefs"]
+
+        def visible(modality: Modality) -> tuple[AssertionRow, ...]:
+            rows = source.beliefs(
+                subject=entity,
+                predicate=fluent,
+                as_of=None,
+                valid_at=None,
+                modality=modality,
+                min_confidence=_DEFAULT_MIN_CONFIDENCE,
+            )
+            return visible_rows(principal, rows)
+
+        inferred = visible(Modality.INFERRED)
+        planned = visible(Modality.PLANNED)
+        contributions = reader(entity, fluent, start, end)
+        points, spans = build_evidence(inferred, planned, contributions, start=start, end=end)
+        log.info(
+            "api.belief_evidence_queried",
+            principal=principal.subject,
+            entity=entity,
+            fluent=fluent,
+            points=len(points),
+            recorded=sum(1 for point in points if point.contribution is not None),
+            planned=len(spans),
+        )
+        return BeliefEvidenceType(
+            entity=entity,
+            fluent=fluent,
+            start=start,
+            end=end,
+            points=[
+                EvidencePointType(
+                    assertionId=str(point.assertion_id),
+                    at=point.at,
+                    probability=point.probability,
+                    origin=point.origin,
+                    contribution=(
+                        None
+                        if point.contribution is None
+                        else ContributionType(
+                            observed=point.contribution.observed,
+                            record=point.contribution.record,
+                            plan=point.contribution.plan,
+                            dominant=point.contribution.dominant,
+                            prior=point.contribution.prior,
+                            sourceEventId=point.contribution.source_event_id,
+                            excludedRecords=point.contribution.excluded_records,
+                        )
+                    ),
+                )
+                for point in points
+            ],
+            planned=[
+                PlannedSpanType(start=span.start, end=span.end, adherence=span.adherence)
+                for span in spans
+            ],
+        )
 
     # GraphQL のリゾルバは引数がそのまま並ぶため位置引数が多くなる（PLR0917 は構造上避けられ
     # ない。キーワード専用にすると GraphQL の引数として公開されない）

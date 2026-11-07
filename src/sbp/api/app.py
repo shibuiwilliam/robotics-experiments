@@ -35,12 +35,14 @@ from sbp.core.metrics import prometheus_exposition
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
+    from datetime import datetime
 
     from sbp.api.authorization import Principal
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.concepts import ConceptProposalRecord
+    from sbp.knowledge.contributions import ContributionRecord
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 
@@ -48,6 +50,8 @@ if TYPE_CHECKING:
     """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
     ExpectationReader = Callable[..., Sequence["ExpectationRecord"]]
     ProposalReader = Callable[..., Sequence["ConceptProposalRecord"]]
+    EvidenceReader = Callable[[str, str, datetime, datetime], Sequence["ContributionRecord"]]
+    """``(実体, フルーエント, 始端, 終端) -> 寄与の列``（``ContributionStore.series`` を包む）。"""
     """curation 待ちの概念提案を返す（``ConceptProposalStore.queue`` を包む）。"""
     """期待ボードを返す（``ExpectationStore.board`` を包む。同期）。"""
     DiscrepancyReader = Callable[..., Sequence["DiscrepancyRecord"]]
@@ -99,6 +103,7 @@ def create_app(
     discrepancy_reader: DiscrepancyReader | None = None,
     expectation_reader: ExpectationReader | None = None,
     proposal_reader: ProposalReader | None = None,
+    evidence_reader: EvidenceReader | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -124,6 +129,9 @@ def create_app(
         expectation_reader: 期待ボードを返すもの（``ExpectationStore.board`` を包む。
             M8-18）。``None`` だと GraphQL の ``expectations`` が**エラーを返す**
             （空の列を返すと「期待が無い」と「配線していない」が区別できない）。
+        evidence_reader: 信念の三源の寄与を返すもの（``ContributionStore.series`` を包む。
+            M8-17）。``None`` だと ``beliefEvidence`` が**エラーを返す**（空を返すと「寄与が
+            無い」と「配線していない」が区別できない）。
         metric_reader: 系列ごとの最新値を返すもの（``MetricStore.latest`` を包む）。
             ``None`` なら ``/metrics`` は**空ではなく 503 を返す**——空の exposition を返すと
             Prometheus は「スクレイプ成功、系列 0 件」と読み、指標が止まっていることと
@@ -147,6 +155,7 @@ def create_app(
             "discrepancies": discrepancy_reader,
             "expectations": expectation_reader,
             "proposals": proposal_reader,
+            "evidence": evidence_reader,
         }
 
     app = FastAPI(

@@ -32,10 +32,12 @@ from sbp.core.modality import Modality
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Coroutine
+    from datetime import datetime
 
     from fastapi import FastAPI, Request
 
     from sbp.core.metrics import MetricSample
+    from sbp.knowledge.contributions import ContributionRecord
     from sbp.knowledge.decisions import DecisionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
@@ -149,6 +151,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         AssertionStore,
         ConceptProposalRecord,
         ConceptProposalStore,
+        ContributionStore,
         DecisionQueue,
         DiscrepancyStore,
         ExpectationStore,
@@ -224,6 +227,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = ConceptProposalStore(_connection(), site=resolved.site_id)
         return _run_sync(store.queue(include_curated=include_curated, limit=limit))
 
+    def read_evidence(
+        entity: str, fluent: str, start: datetime, end: datetime
+    ) -> list[ContributionRecord]:
+        """信念の三源の寄与を同期の形で返す（M8-17、ADR-0020）。
+
+        Args:
+            entity: 実体の IRI。
+            fluent: フルーエント型の IRI。
+            start: 区間の始端（含む）。
+            end: 区間の終端（含まない）。
+        """
+        store = ContributionStore(_connection(), site=resolved.site_id)
+        return _run_sync(store.series(entity=entity, fluent=fluent, start=start, end=end))
+
     async def read_metrics() -> list[MetricSample]:
         """系列ごとの最新値を返す。"""
         return await MetricStore(_connection(), site=resolved.site_id).latest()
@@ -256,6 +273,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         discrepancy_reader=read_discrepancies,
         expectation_reader=read_expectations,
         proposal_reader=read_proposals,
+        evidence_reader=read_evidence,
     )
     app.router.lifespan_context = lifespan
     return app
