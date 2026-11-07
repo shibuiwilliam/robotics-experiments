@@ -68,6 +68,24 @@ class TestEnqueueAndRead:
             await connection.rollback()
 
     @pytest.mark.asyncio
+    async def test_get_finds_a_request_by_its_key_even_when_satisfied(
+        self, settings: Settings
+    ) -> None:
+        """人の回答は鍵を名指す（ADR-0018）。満たされた要求にも訂正の回答がありうる。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            queue = ObservationQueue(connection, site=SITE)
+            row = _row()
+            await queue.enqueue([row])
+            found = await queue.get(discrepancy_id=row.discrepancy_id, fluent=row.fluent)
+            assert found == row
+            await queue.mark_satisfied(
+                discrepancy_id=row.discrepancy_id, fluent=row.fluent, at=now()
+            )
+            assert await queue.get(discrepancy_id=row.discrepancy_id, fluent=row.fluent) == row
+            assert await queue.get(discrepancy_id="no-such", fluent=row.fluent) is None
+            await connection.rollback()
+
+    @pytest.mark.asyncio
     async def test_results_are_ordered_by_utility(self, settings: Settings) -> None:
         """効用の高い順に返る（スケジューラが上から評価する）。"""
         async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:

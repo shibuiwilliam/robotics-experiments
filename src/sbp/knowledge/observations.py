@@ -137,6 +137,37 @@ class ObservationQueue:
         log.info("knowledge.observation_requests_enqueued", site=self.site, count=len(rows))
         return len(rows)
 
+    async def get(self, *, discrepancy_id: str, fluent: str) -> ObservationRow | None:
+        """鍵で 1 件引く（満たされた要求も返す）。
+
+        人の回答（ADR-0018）は要求の鍵を名指すので、存在の確認に使う。**満たされた要求も
+        返す**——訂正の回答がありうる。
+
+        Args:
+            discrepancy_id: 由来の不一致（または期待）。
+            fluent: 対象フルーエント。
+
+        Returns:
+            要求。無ければ ``None``。
+        """
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT entity, fluent, valid_from, valid_to, reason, utility, discrepancy_id "
+                f"FROM {_TABLE} WHERE request_id = %s AND site = %s",
+                (self.request_id(discrepancy_id=discrepancy_id, fluent=fluent), self.site),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return ObservationRow(
+            entity=str(row[0]),
+            fluent=str(row[1]),
+            interval=Interval(ensure_utc(row[2]), None if row[3] is None else ensure_utc(row[3])),
+            reason=str(row[4]),
+            utility=float(row[5]),
+            discrepancy_id=str(row[6]),
+        )
+
     async def outstanding(self, *, limit: int = 200) -> list[ObservationRow]:
         """まだ満たされていない要求を効用の高い順に返す。
 

@@ -18,6 +18,7 @@ import pytest
 from pydantic import ValidationError
 
 from sbp.api.commands import (
+    AnswerCommand,
     CurationCommand,
     ExecutionCommand,
     ResolutionCommand,
@@ -65,6 +66,47 @@ def _curation_payload(**overrides: object) -> dict[str, object]:
         "decided_by": OPERATOR,
     }
     return base | overrides
+
+
+def _answer_payload(**overrides: object) -> dict[str, object]:
+    return {
+        "decision_id": "a-1",
+        "discrepancy_id": "expectation:3f2b8c1e",
+        "fluent": "https://sbp.example/ent#Running",
+        "entity": PUMP,
+        "state": True,
+        "note": "現場で稼働中を目視した",
+        "answered_by": OPERATOR,
+        **overrides,
+    }
+
+
+class TestAnswerCommand:
+    """人の確認回答（M8-29、ADR-0018）。"""
+
+    def test_a_valid_answer_parses(self) -> None:
+        command = AnswerCommand.model_validate(_answer_payload())
+        assert command.state is True
+        assert command.discrepancy_id == "expectation:3f2b8c1e", (
+            "UUID に限らない（期待由来の鍵もある）"
+        )
+
+    def test_a_note_is_required(self) -> None:
+        """根拠の無い回答は監査で読めない。"""
+        with pytest.raises(ValidationError):
+            AnswerCommand.model_validate(_answer_payload(note=""))
+
+    def test_state_must_be_a_boolean_not_a_guess(self) -> None:
+        with pytest.raises(ValidationError):
+            AnswerCommand.model_validate(_answer_payload(state="maybe"))
+
+    def test_an_unknown_field_is_refused(self) -> None:
+        with pytest.raises(ValidationError):
+            AnswerCommand.model_validate(_answer_payload(confidence=1.0))
+
+    def test_the_caller_cannot_set_the_confidence(self) -> None:
+        """人の確信度は設定の値で、回答者が自由に決めない（ADR-0018）。"""
+        assert "confidence" not in AnswerCommand.model_fields
 
 
 class TestResolutionCommand:
@@ -208,6 +250,24 @@ class TestHandler:
         assert rows[0].kind is DecisionKind.ACTION
         assert rows[0].subject == PUMP
         assert rows[0].decided_by == OPERATOR
+
+    @pytest.mark.asyncio
+    async def test_an_answer_is_enqueued_with_the_entity_as_subject(self) -> None:
+        rows: list[DecisionRow] = []
+
+        async def enqueue(row: DecisionRow) -> bool:
+            rows.append(row)
+            return True
+
+        handler = build_command_handler(enqueue)
+        result = handler("answer_observation", _answer_payload())
+        await asyncio.sleep(0)
+
+        assert result["accepted"] is True
+        assert rows[0].kind is DecisionKind.ANSWER
+        assert rows[0].subject == PUMP
+        assert rows[0].decided_by == OPERATOR
+        assert rows[0].payload["state"] is True
 
     @pytest.mark.asyncio
     async def test_an_unknown_command_is_refused(self) -> None:

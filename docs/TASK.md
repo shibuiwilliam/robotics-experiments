@@ -359,7 +359,7 @@ H-22 の決定次第**である。
 - [x] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク → 完了（2026-10-25。`situation_members` を `<Situation> sbp:hasParticipant <実体>` で読むように直し、`SituationLink` の docstring も揃えた。単体テストの fixture を正しい向きにし、**文の所属（reifier の `inSituation`）を参加者として返さない**回帰テストを足した（修正前は reifier が参加者として返り赤）。単体 1 件追加。運用に参加関係を書く者はまだいないので、結合の入力が空であることは変わらない）
 - [ ] **M8-29** 人の確認回答を `observed` で戻す経路 — 設計書 §14 の手順 4（人の回答が最上位の事実性を持ち、記録訂正と信頼性更新に変わる）。スケジューラが選んだ「人への質問」の回答を API コマンドで受け、`observed` のイベントにして観測要求を充足する。**いまは回答の入口が無い**（コマンドは `resolve_discrepancy` / `curate_concept` / `execute_action` の 3 つ）。**H-13**（充足の判定）と合わせて設計する。**2026-11-07 に ADR-0018 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-29-1** ADR-0018 と H-13 の注記、所見 121（文書のみ。入口は 4 つ目のコマンド `answer_observation`、回答は `observed` の主張イベントにして業務トピックへ、要求の充足は鍵の一致）→ 完了（2026-11-07）
-  - [ ] **M8-29-2** コマンドと種別 — `AnswerCommand`、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get`
+  - [x] **M8-29-2** コマンドと種別 — `AnswerCommand`、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get` → 完了（2026-11-07。`answer_observation` コマンド（`discrepancy_id` は UUID に限らない文字列、`state` は厳密な真偽、確信度は引数にしない）、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get`（満たされた要求も返す）。単体 6 件 + 統合 2 件）
   - [ ] **M8-29-3** 回答イベントと適用 — `sbp.integration.human_answer`、`human_answer_confidence`、learning-worker の `_apply_answer` と配線
   - [ ] **M8-29-4** 統合テスト — API ハンドラ → キュー → learning-worker → 業務トピック → belief-worker
   - [ ] **M8-29-5** レビュー・評価・記録

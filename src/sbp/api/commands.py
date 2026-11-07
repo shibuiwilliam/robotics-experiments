@@ -18,7 +18,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from sbp.actions.requests import ExecutionCommand
 from sbp.core.logging import get_logger
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     """``DecisionQueue.enqueue`` を包む。"""
 
 __all__ = [
+    "AnswerCommand",
     "CurationCommand",
     "ExecutionCommand",
     "ResolutionCommand",
@@ -82,6 +83,35 @@ class CurationCommand(BaseModel):
     accepted: bool
     reason: str = Field(min_length=1)
     decided_by: str = Field(min_length=1)
+
+
+class AnswerCommand(BaseModel):
+    """観測要求への人の確認回答（`/commands/answer_observation`。M8-29、ADR-0018）。
+
+    **確信度を引数にしない。** 人の確信度は設定（``human_answer_confidence``）で、回答者が
+    自由に決めると、同じ「見た」が回答者ごとに違う重みで信念に入る。
+
+    Attributes:
+        decision_id: 冪等の鍵。
+        discrepancy_id: 観測要求の鍵の前半。**UUID に限らない**（期待の期限切れ由来は
+            ``expectation:<id>``。ADR-0017）。
+        fluent: 観測要求の鍵の後半（フルーエント型 IRI）。
+        entity: 回答の対象実体。
+        state: そのフルーエントは成立しているか。**真偽だけを受ける**（「たぶん」は回答に
+            ならない。判断できないなら ``resolve_discrepancy`` の ``undetermined``）。
+        note: 回答の根拠。**空を許さない**。
+        answered_by: 回答した主体の IRI。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    decision_id: str = Field(min_length=1)
+    discrepancy_id: str = Field(min_length=1)
+    fluent: str = Field(min_length=1)
+    entity: str = Field(min_length=1)
+    state: StrictBool
+    note: str = Field(min_length=1)
+    answered_by: str = Field(min_length=1)
 
 
 def build_command_handler(enqueue: Enqueue) -> Any:
@@ -195,7 +225,17 @@ def _to_row(name: str, payload: dict[str, Any]) -> DecisionRow:
             decided_by=curation.decided_by,
             payload=curation.model_dump(mode="json"),
         )
+    if name == "answer_observation":
+        answer = AnswerCommand.model_validate(payload)
+        return DecisionRow(
+            decision_id=answer.decision_id,
+            kind=DecisionKind.ANSWER,
+            # 対象実体を主語にする（アクションの承認と同じ。要求の鍵は payload にある）
+            subject=answer.entity,
+            decided_by=answer.answered_by,
+            payload=answer.model_dump(mode="json"),
+        )
     raise ValueError(
         f"unknown command {name!r}; known commands: resolve_discrepancy, "
-        "curate_concept, execute_action"
+        "curate_concept, execute_action, answer_observation"
     )

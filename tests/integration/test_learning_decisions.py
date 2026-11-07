@@ -97,6 +97,22 @@ class TestQueueSemantics:
             await _cleanup(connection)
 
     @pytest.mark.asyncio
+    async def test_an_answer_decision_is_accepted_by_the_table(self, settings: Settings) -> None:
+        """``kind = answer``（ADR-0018、alembic 0012）が表の CHECK を通る。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            queue = DecisionQueue(connection, site=SITE)
+            row = DecisionRow(
+                decision_id="a-1",
+                kind=DecisionKind.ANSWER,
+                subject=PUMP,
+                decided_by=OPERATOR,
+                payload={"state": True},
+            )
+            assert await queue.enqueue(row) is True
+            assert [item.kind for item in await queue.pending()] == [DecisionKind.ANSWER]
+            await _cleanup(connection)
+
+    @pytest.mark.asyncio
     async def test_pending_is_ordered_oldest_first(self, settings: Settings) -> None:
         """古い順に返る（後の判断が前の判断を前提にしうる）。"""
         async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
