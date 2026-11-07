@@ -77,6 +77,9 @@ OPERATOR = "https://sbp.example/person/operator-g8"
 WRONG_AT = 275
 """台本の「誤った記録」の位置。物理は停止区間（216〜359）にいるのに、MES は稼働中と言う。
 
+**この配置は窓の割り当て規則（記録は最も近い刻みへ入る）に依存する。** 記録は刻みから
+10 分離れており、同時刻の食い違いではない。割り当てを時間幅で縛る変更をしたら見直すこと。
+
 昇格イベントの刻みは状態の変わり目（216 の停止、360 の稼働…）にしか無く、記録は最も近い刻みに入る
 （後から届いたものが勝つ）。275 は刻み 216 に最も近い最後の記録なので、刻み 216 で食い違い、
 次の刻み 360 で一致に戻る——食い違いは 1440 秒続く。"""
@@ -201,7 +204,7 @@ class TestG8:
             seed=31,
         )
         pump = site_iri(site, "asset", "P-101")
-        version = f"1.0.{int(time.time())}"
+        version = f"1.0.{time.time_ns()}"
         wm_version = f"{MODEL}/{version}"
         probe_id = f"https://sbp.example/probe/Running/{version}"
         db = tmp_path / "business.sqlite"
@@ -264,9 +267,12 @@ class TestG8:
         )
         try:
             promoted = 0
-            for _ in range(200):
-                promoted += await bridge.step()
-                if promoted and await bridge.step() == 0:
+            idle = 0
+            for _ in range(600):  # 潜在を読み切るまで（0 が続いたら終わり）
+                n = await bridge.step()
+                promoted += n
+                idle = 0 if n else idle + 1
+                if idle >= 5:
                     break
             assert promoted > 0, "bridge-worker"
         finally:

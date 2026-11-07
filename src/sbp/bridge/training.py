@@ -53,6 +53,8 @@ __all__ = ["EntitySeries", "TrainingOutcome", "bags_from_claims", "train_probe"]
 log = get_logger(__name__)
 
 _EPOCHS = 400
+_MAX_SHIFT = 60.0
+"""切片の補正幅の上限（ロジット）。これを超えるずれは学習の失敗で、補正で隠さない。"""
 _ROUNDS = 3
 """実体をまたいで学習するときの周回数（実体ごとに順に全バッチ更新を繰り返す）。"""
 
@@ -297,16 +299,23 @@ def _shift_intercept(
     AUROC 1.0 のまま ECE 0.39）。切片の最尤（ニュートン法）で較正枠の事前に合わせる。
     """
     logits = probe.logits(latents)
-    targets = labels.astype(np.float64)
-    shift = 0.0
-    for _ in range(50):
-        p = 1.0 / (1.0 + np.exp(-(logits + shift)))
-        gradient = float(np.mean(p - targets))
-        curvature = float(np.mean(p * (1.0 - p))) + 1e-9
-        step = gradient / curvature
-        shift -= step
-        if abs(step) < 1e-8:
-            break
+    targets = float(np.mean(labels))
+
+    def excess(shift: float) -> float:
+        """較正枠での予測の平均 − 実際の陽性率（切片について単調増加）。"""
+        return (
+            float(np.mean(1.0 / (1.0 + np.exp(-np.clip(logits + shift, -500.0, 500.0))))) - targets
+        )
+
+    # 単調な関数の根を二分法で求める。ニュートン法は飽和した領域で曲率が潰れて発散する
+    low, high = -_MAX_SHIFT, _MAX_SHIFT
+    for _ in range(80):
+        mid = 0.5 * (low + high)
+        if excess(mid) > 0.0:
+            high = mid
+        else:
+            low = mid
+    shift = 0.5 * (low + high)
     probe.load_parameters(weights=probe.weights, bias=float(probe.bias) + shift)
 
 

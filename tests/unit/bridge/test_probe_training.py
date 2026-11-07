@@ -11,9 +11,12 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
+from sbp.bridge.probes import LinearProbe
 from sbp.bridge.training import (
     EntitySeries,
     _bags_of_slot,  # pyright: ignore[reportPrivateUsage]
+    _core,  # pyright: ignore[reportPrivateUsage]
+    _shift_intercept,  # pyright: ignore[reportPrivateUsage]
     _slices,  # pyright: ignore[reportPrivateUsage]
     bags_from_claims,
     train_probe,
@@ -285,3 +288,29 @@ class TestReviewFixes:
         )
         assert outcome.metrics is not None
         return outcome.metrics.n_samples
+
+
+class TestInterceptAndCore:
+    @pytest.mark.parametrize("offset", [0.0, 2.0, 10.0, 25.0, -25.0])
+    def test_the_intercept_shift_converges_even_when_scores_are_far_off(
+        self, offset: float
+    ) -> None:
+        """飽和したスコアでも発散せず、較正枠の陽性率に合う（ニュートン法は 10 以上で発散した）。"""
+        rng = np.random.default_rng(0)
+        latents = rng.normal(size=(400, 3))
+        labels = latents[:, 0] > 0
+        probe = LinearProbe(dim=3, seed=0)
+        probe.load_parameters(weights=np.array([3.0, 0.0, 0.0]), bias=offset)
+        _shift_intercept(probe, latents, labels)
+        predicted = float(np.mean(1.0 / (1.0 + np.exp(-probe.logits(latents)))))
+        assert predicted == pytest.approx(float(np.mean(labels)), abs=1e-3)
+        assert abs(probe.bias) < 100.0
+
+    def test_the_label_core_is_the_claim_instant_not_the_widened_window(self) -> None:
+        bags, _ = bags_from_claims(
+            [_claim(T0, 0.9, uncertainty=900.0)], fluent=FLUENT, settings=BridgeSettings()
+        )
+        core = _core(bags[0], timedelta(seconds=60))
+        assert core.interval.end is not None
+        assert core.interval.end - core.interval.start == timedelta(seconds=120)
+        assert core.interval.start + timedelta(seconds=60) == T0

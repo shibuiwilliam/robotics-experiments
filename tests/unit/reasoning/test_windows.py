@@ -149,6 +149,16 @@ class TestRecord:
         assert a.recorded == b.recorded
         assert a.recorded[2] == 0.1
 
+    def test_a_stale_record_older_than_the_oldest_tick_is_not_pinned_to_it(self) -> None:
+        """刻みが捨てられた後に残った古い記録が、最古の刻みに貼り付かない（レビュー指摘）。"""
+        window = _window()
+        window.record(at=T0 - timedelta(hours=3), probability=0.1)
+        for index in range(5):
+            window.observe(at=T0 + STEP * index, probability=0.9)
+        series = window.to_series()
+        assert series is not None
+        assert series.recorded[0] is None
+
     def test_the_newer_record_wins_on_the_same_tick(self) -> None:
         window = _window()
         for index in range(5):

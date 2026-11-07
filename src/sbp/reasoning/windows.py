@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import timedelta
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from sbp.core.errors import ReasoningError
@@ -148,7 +149,14 @@ class SeriesWindow:
     def _assign_records(self) -> list[float | None]:
         """記録を最も近い刻みへ割り当てる（同じ刻みに複数なら時刻の新しい記録が勝つ）。"""
         recorded: list[float | None] = [None] * len(self._timestamps)
+        # 最も古い刻みより、刻みの間隔の半分を超えて前の記録は割り当てない。刻みが捨てられた
+        # 後に残った古い記録が、最古の刻みに貼り付いて現在の観測と比べられるのを防ぐ
+        oldest = self._timestamps[0]
+        gaps = [b - a for a, b in pairwise(self._timestamps)]
+        slack = (sorted(gaps)[len(gaps) // 2] / 2) if gaps else timedelta(0)
         for at, probability in sorted(self._records, key=lambda item: item[0]):
+            if at < oldest - slack:
+                continue
             nearest = min(
                 range(len(self._timestamps)),
                 key=lambda i: abs((self._timestamps[i] - at).total_seconds()),
