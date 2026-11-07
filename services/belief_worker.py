@@ -46,6 +46,7 @@ from sbp.core.config import Settings
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.time import Interval, now
+from sbp.knowledge.contributions import ContributionRecord
 from sbp.knowledge.relations import (
     aggregation_rules,
     group_by_whole,
@@ -77,6 +78,8 @@ if TYPE_CHECKING:
     """
     AssertionSink = Callable[[Assertion], object]
     """アサーションを 1 件書く。戻り値は使わない（``assert_`` は ID を返す）。"""
+    ContributionSink = Callable[["ContributionRecord"], Awaitable[None]]
+    """信念 1 件の三源の寄与を書く（``ContributionStore.write``。ADR-0020）。"""
     CommitHook = Callable[[], Awaitable[None]]
     """終了時のオフセットコミット。"""
     RelationProvider = Callable[
@@ -221,6 +224,7 @@ class BeliefWorker:
         relations: RelationProvider | None = None,
         metrics: MetricRecorder | None = None,
         plans: GraphPlans | None = None,
+        contributions: ContributionSink | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -233,6 +237,8 @@ class BeliefWorker:
             実体を含む関係を渡すと例外になる。
         metrics: 指標の記録（``None`` なら測らない）。M8-14。
         plans: 計画の引き当て（``None`` なら計画源は使わない。``contrib_plan`` は 0 になる）。
+        contributions: 三源の寄与の書き込み（``None`` なら残さない。証拠の並置が「寄与は記録
+            されていない」になる。ADR-0020）。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -247,6 +253,7 @@ class BeliefWorker:
         self._metrics = metrics
         self.ingest = ingest if ingest is not None else default_ingest(self.settings)
         self._plans = plans
+        self._contributions = contributions
         if plans is not None and self.ingest.plan_provider is None:
             self.ingest.plan_provider = plans
         self.applied_total = 0
@@ -315,6 +322,27 @@ class BeliefWorker:
         if not outcome.applied:
             return
         assert outcome.assertion is not None  # applied が真なら必ずある
+        assert outcome.update is not None
+        if self._contributions is not None:
+            # **寄与 → アサーションの順。** 逆だと、アサーションがあるのに源が分からない文が残る。
+            # 寄与だけ残る孤児は無害（読み出しがアサーションと突き合わせる）。失敗は上に投げて
+            # 再配送で再試行する（ADR-0020）
+            contribution = outcome.update.contribution
+            await self._contributions(
+                ContributionRecord(
+                    assertion_id=outcome.assertion.assertion_id,
+                    entity=outcome.entity,
+                    fluent=outcome.assertion.predicate,
+                    at=outcome.update.at,
+                    prior=outcome.update.prior,
+                    posterior=outcome.update.posterior,
+                    observed=contribution.observed,
+                    record=contribution.record,
+                    plan=contribution.plan,
+                    source_event_id=str(event.event_id),
+                    excluded_records=outcome.update.excluded_records,
+                )
+            )
         self._write(outcome.assertion)
         self.applied_total += 1
         self._measure(event, outcome, started=started)
@@ -619,7 +647,12 @@ async def build_worker(
     from sbp.core.events import EventLayer, topic_name  # noqa: PLC0415
     from sbp.eventlog.consumer import ConsumerPolicy, KafkaEventConsumer  # noqa: PLC0415
     from sbp.eventlog.idempotency import PostgresIdempotencyStore  # noqa: PLC0415
-    from sbp.knowledge import AssertionStore, HttpGraphStore, MetricStore  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        AssertionStore,
+        ContributionStore,
+        HttpGraphStore,
+        MetricStore,
+    )
 
     resolved = settings or Settings()
     store = HttpGraphStore(resolved)
@@ -632,6 +665,7 @@ async def build_worker(
         relations=graph_relations(store),
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
         plans=GraphPlans(graph),
+        contributions=ContributionStore(connection, site=site_id).write,
     )
 
     consumer = KafkaEventConsumer(

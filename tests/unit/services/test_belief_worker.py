@@ -26,7 +26,7 @@ from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
 from sbp.core.time import now
 from sbp.eventlog.consumer import EventHandler
-from sbp.knowledge import AssertionStore, EmbeddedGraphStore
+from sbp.knowledge import AssertionStore, ContributionRecord, EmbeddedGraphStore
 from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
@@ -568,3 +568,117 @@ class TestThreeSourceWiring:
         await worker.handle_event(_event().model_copy(update={"type": str(vocab.ent.OperationLog)}))
         assert sink.written == []
         assert worker.ingest.skipped
+
+
+class _Contributions:
+    """寄与の書き込み先（アサーションの書き込みとの順序も記録する）。"""
+
+    def __init__(self, order: list[str]) -> None:
+        self.order = order
+        self.written: list[ContributionRecord] = []
+
+    async def __call__(self, record: ContributionRecord) -> None:
+        self.order.append("contribution")
+        self.written.append(record)
+
+
+class TestContributionPersistence:
+    """三源の寄与を残す（M8-17-2、ADR-0020）。"""
+
+    @pytest.mark.asyncio
+    async def test_the_contribution_is_written_before_the_assertion(self) -> None:
+        order: list[str] = []
+        contributions = _Contributions(order)
+
+        def sink(assertion: Assertion) -> None:
+            del assertion
+            order.append("assertion")
+
+        worker = BeliefWorker(Settings(), sink=sink, contributions=contributions)
+        await worker.handle_event(_event(at=T0, p=0.9))
+        assert order == ["contribution", "assertion"], "逆だと源の分からない文が残る"
+
+    @pytest.mark.asyncio
+    async def test_the_record_carries_the_assertion_id_and_the_three_sources(self) -> None:
+        sink = _Sink()
+        contributions = _Contributions([])
+        worker = BeliefWorker(Settings(), sink=sink, contributions=contributions)
+        await worker.handle_event(_claim(at=T0, p=0.79))
+        record = contributions.written[0]
+        assert record.assertion_id == sink.written[0].assertion_id
+        assert record.fluent == sink.written[0].predicate
+        assert record.record > 0.0
+        assert record.observed == 0.0
+        assert record.dominant == "record"
+        assert record.posterior == pytest.approx(sink.written[0].belief.p)  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_a_probe_event_is_observed_dominant(self) -> None:
+        contributions = _Contributions([])
+        worker = BeliefWorker(Settings(), sink=_Sink(), contributions=contributions)
+        await worker.handle_event(_event(at=T0, p=0.95))
+        assert contributions.written[0].dominant == "observed"
+        assert contributions.written[0].source_event_id
+
+    @pytest.mark.asyncio
+    async def test_a_skipped_event_leaves_no_contribution(self) -> None:
+        contributions = _Contributions([])
+        worker = BeliefWorker(Settings(), sink=_Sink(), contributions=contributions)
+        await worker.handle_event(_event().model_copy(update={"type": "sbp-core:Heartbeat"}))
+        assert contributions.written == []
+
+    @pytest.mark.asyncio
+    async def test_a_failed_contribution_write_stops_before_the_assertion(self) -> None:
+        sink = _Sink()
+
+        async def broken(record: ContributionRecord) -> None:
+            del record
+            raise ConnectionError("db down")
+
+        worker = BeliefWorker(Settings(), sink=sink, contributions=broken)
+        with pytest.raises(ConnectionError):
+            await worker.handle_event(_event(at=T0, p=0.9))
+        assert sink.written == [], "寄与が書けなければ文も書かない（再配送で再試行される）"
+
+    @pytest.mark.asyncio
+    async def test_the_coupling_assertions_have_no_contribution(self) -> None:
+        """結合の信念は寄与を持たない（源は「結合」。表に行が無い）。"""
+        fluent = str(vocab.ent.Running)
+
+        def relations(
+            priors: Mapping[tuple[str, str], float],
+        ) -> tuple[list[PartWhole], list[SituationLink]]:
+            parts = tuple(e for e, name in priors if name == fluent and e != LINE)
+            if (LINE, fluent) not in priors or not parts:
+                return [], []
+            return [PartWhole(whole=LINE, parts=parts, fluent=fluent, rule=AggregationRule.ALL)], []
+
+        contributions = _Contributions([])
+        sink = _Sink()
+        worker = BeliefWorker(
+            Settings(), sink=sink, relations=relations, contributions=contributions
+        )
+        worker.attach_driver(
+            _Driver(
+                [
+                    [
+                        _event_for(LINE, at=T0, p=0.9),
+                        _event_for(PUMP, at=T0, p=0.02),
+                        _event_for(PUMP_B, at=T0, p=0.02),
+                    ]
+                ]
+            )
+        )
+        await worker.step()
+        line_rows = [row for row in sink.written if row.subject == LINE]
+        assert len(line_rows) == 2, "前向きフィルタの 1 件と結合の 1 件"
+        recorded = {record.assertion_id for record in contributions.written}
+        assert line_rows[0].assertion_id in recorded
+        assert line_rows[1].assertion_id not in recorded, "結合の信念に寄与は無い"
+
+    @pytest.mark.asyncio
+    async def test_without_a_contribution_sink_the_belief_is_still_written(self) -> None:
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink)
+        await worker.handle_event(_event(at=T0, p=0.9))
+        assert len(sink.written) == 1

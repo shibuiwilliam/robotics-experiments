@@ -17,6 +17,7 @@ from sbp.knowledge.artifacts import (
 )
 from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_beliefs
 from sbp.knowledge.concepts import ConceptProposalRecord, ConceptProposalStore
+from sbp.knowledge.contributions import ContributionRecord, ContributionStore
 from sbp.knowledge.cursors import IngestCursorStore
 from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
@@ -66,6 +67,8 @@ __all__ = [
     "CompatibilityMatrix",
     "ConceptProposalRecord",
     "ConceptProposalStore",
+    "ContributionRecord",
+    "ContributionStore",
     "DecisionKind",
     "DecisionQueue",
     "DecisionRow",
