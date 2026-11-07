@@ -11,17 +11,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
+  fetchActionTypes,
   fetchBeliefEvidence,
   fetchBeliefs,
+  fetchDecisions,
   fetchDiscrepancies,
   fetchExpectations,
   fetchProposals,
   resolveApiUrl,
+  submitAction,
   submitCuration,
   submitResolution,
 } from "./lib/api";
 import type { EvidenceTarget } from "./lib/evidence";
 import type {
+  ActionRequest,
+  ActionType,
   Belief,
   ConceptProposal,
   Discrepancy,
@@ -56,6 +61,9 @@ export function App(): React.JSX.Element {
   // 読めなかったときの理由。**空と「読めない」を区別して画面に出す**（所見 32）
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [subject] = useState(DEFAULT_SUBJECT);
+  // アクション契約（M8-22）。**読めなかった理由を画面に出す**——空は「提案できない」と読まれる
+  const [actionTypes, setActionTypes] = useState<readonly ActionType[] | undefined>(undefined);
+  const [actionTypesError, setActionTypesError] = useState<string | null>(null);
 
   let apiUrl = "";
   let configError: string | null = null;
@@ -91,6 +99,13 @@ export function App(): React.JSX.Element {
           caught instanceof Error ? caught.message : String(caught),
         );
       }
+      try {
+        setActionTypes(await fetchActionTypes(apiUrl));
+        setActionTypesError(null);
+      } catch (caught) {
+        setActionTypes(undefined);
+        setActionTypesError(caught instanceof Error ? caught.message : String(caught));
+      }
       setError(null);
     } catch (caught) {
       // 失敗を空の成功として描かない。空のキューは「不一致が無い」と読まれる
@@ -109,6 +124,17 @@ export function App(): React.JSX.Element {
       if (result.accepted) await load();
     },
     [apiUrl, load],
+  );
+
+  // アクションの承認（M8-22）。投入は受け付けまで。実行の成否は判断の状態として読む
+  const onSubmitAction = useCallback(
+    (request: ActionRequest) => submitAction(apiUrl, request),
+    [apiUrl],
+  );
+  const loadDecisions = useCallback(
+    (decisionSubject: string) =>
+      fetchDecisions(apiUrl, { subject: decisionSubject, kinds: ["action"] }),
+    [apiUrl],
   );
 
   // 三源の並置（M8-17）。apiUrl が変わらない限り同じ関数を渡す——子の effect が毎描画で
@@ -192,6 +218,7 @@ export function App(): React.JSX.Element {
           resolvedBy="https://sbp.example/id/person/dev"
           onResolve={(resolution) => void onResolve(resolution)}
           loadEvidence={loadEvidence}
+          actions={{ actionTypes, actionTypesError, onSubmit: onSubmitAction, loadDecisions }}
         />
       ) : null}
       {tab === "beliefs" ? <BeliefView beliefs={beliefs} subject={subject} /> : null}

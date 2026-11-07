@@ -347,7 +347,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [ ] **M8-22** UI からアクションを承認する経路 — API に `/commands/execute_action` が立ったが、**UI に押す場所が無い**。不一致キューから「緊急点検を起票する」を承認する画面と、落ちた理由（前提未達・レート制限）を人に返す経路が要る。ADR-0014 の未決 3 つ（`docs/HITL.md` の **H-06** レート制限の永続化 / **H-07** `ActionEvent` の永続化 / **H-08** 補償の入口）も合わせて検討する。**2026-11-08 に ADR-0021 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-22-1** ADR-0021 と所見 127（文書のみ。契約の要約 `actionTypes` と判断の状態 `decisions` の 2 資源、失敗は理由を見せ新しい判断として再投入、補償は実行しない）→ 完了（2026-11-08）
   - [x] **M8-22-2** API の読み出し資源 — `DecisionQueue.history`、契約の要約、GraphQL `actionTypes` / `decisions` → 完了（2026-11-08。`DecisionQueue.history(subject, kinds, limit)`＋`DecisionStatus.state`（pending / applied / failed）、`sbp.api.actions_view.summarize`（契約の要約。承認の要否は `always` / `if_severity_high` / `never` の条件で返す）、GraphQL `actionTypes` / `decisions`（要求者必須・配線なしはエラー・種類と件数を検証）、`create_app(action_reader, decision_reader)` と `build_app`（起動時に契約を読む）。learning-worker の docstring を実装に合わせた（所見 127）。単体 12 件 + 統合 1 件）
-  - [ ] **M8-22-3** UI — 型・`lib/actions.ts`・承認フォーム・結果の表示
+  - [x] **M8-22-3** UI — 型・`lib/actions.ts`・承認フォーム・結果の表示 → 完了（2026-11-08。`lib/actions.ts`（`checkAction`＝理由必須・上書きは理由を書かせる・契約に無い型を通さない、`approvalNotice`＝契約の条件をそのまま言い要否を再実装しない、`describeDecision`＝失敗の理由を整形せず見せ再投入を促す、`buildActionRequest`＝対象・深刻度・不一致 ID は不一致から）、`api.ts`（`fetchActionTypes` / `fetchDecisions` / `submitAction`＝snake_case・上書きしないとき `override_reason` を送らない）、`views/ActionApproval.tsx`（契約の要約・上書きは閉じた折りたたみ・冪等の鍵はフォームごと・投入した判断の状態を適用待ちの間だけ 5 秒ごとに更新・補償は表示のみ）、不一致キューと App に組み込み。契約や判断を読めない理由は画面に出す（空にしない）。vitest 21 件追加（UI 122 件）、`tsc` と `vite build` 緑）
   - [ ] **M8-22-4** 統合テスト — `execute_action` → learning-worker → `decisions` が `applied` / `failed` を返す
   - [ ] **M8-22-5** レビュー・評価・記録
 

@@ -283,3 +283,57 @@ export interface Resolution {
   readonly note: string;
   readonly resolvedBy: string;
 }
+
+/** 承認の要否（条件。**判定は契約が行う**——UI は再実装しない。ADR-0021）。 */
+export type ApprovalMode = "always" | "if_severity_high" | "never";
+
+/** アクション契約の要約（GraphQL の `actionTypes`。契約が唯一の正で、UI に写しを持たない）。 */
+export interface ActionType {
+  readonly actionType: string;
+  readonly targets: string;
+  readonly riskClass: "low" | "medium" | "high";
+  readonly approval: ApprovalMode;
+  readonly approvalRole: string;
+  readonly preconditions: readonly { readonly face: string; readonly descriptions: readonly string[] }[];
+  readonly effects: readonly {
+    readonly face: string;
+    readonly effects: readonly { readonly description: string; readonly within: string }[];
+  }[];
+  /** 補償アクション型。**表示するだけ**で、実行する入口は無い（H-08 の判断待ち）。 */
+  readonly compensation: string;
+  readonly rateLimit: { readonly window: string; readonly max: number } | null;
+}
+
+/** 人の判断 1 件の状態（GraphQL の `decisions`）。 */
+export interface DecisionStatus {
+  readonly decisionId: string;
+  readonly kind: "resolution" | "curation" | "action" | "answer";
+  readonly subject: string;
+  readonly decidedBy: string;
+  /** `failed` は自動では再試行されない。理由を読み、新しい判断として再投入する。 */
+  readonly state: "pending" | "applied" | "failed";
+  readonly receivedAt: string;
+  readonly appliedAt: string | null;
+  readonly failedAt: string | null;
+  /** 失敗の理由。**整形せずそのまま見せる**（前提未達・レート制限の文言）。 */
+  readonly error: string | null;
+  /** 何を適用したかの要約（JSON 文字列）。 */
+  readonly artifacts: string;
+  readonly attempts: number;
+}
+
+/** アクションの実行要求（`/commands/execute_action`。承認そのもの）。 */
+export interface ActionRequest {
+  /** 冪等の鍵。**フォームごとに 1 つ**で、再送では同じ値を送る。 */
+  readonly decisionId: string;
+  readonly actionType: string;
+  readonly target: string;
+  readonly approvedBy: string;
+  readonly reason: string;
+  /** 起因となった不一致の深刻度（承認の要否の判定に使われる）。 */
+  readonly severity: number;
+  /** 起因となった不一致の ID（来歴で辿れる）。 */
+  readonly correlationId: string | null;
+  /** 前提未達を人が上書きする理由。**既定は `null`**——上書きは安全ガードを外す操作。 */
+  readonly overrideReason: string | null;
+}

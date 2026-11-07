@@ -20,11 +20,15 @@ import {
 import type { EvidenceTarget } from "../lib/evidence";
 import { DISCREPANCY_KIND_LABEL } from "../lib/types";
 import type {
+  ActionRequest,
+  ActionType,
   BeliefEvidence,
+  DecisionStatus,
   Discrepancy,
   Resolution,
   ResolutionOutcome,
 } from "../lib/types";
+import { ActionApproval } from "./ActionApproval";
 import { EvidenceJuxtaposition } from "./EvidenceJuxtaposition";
 
 interface Props {
@@ -34,6 +38,15 @@ interface Props {
   readonly onResolve: (resolution: Resolution) => void;
   /** 三源の並置を読む関数（M8-17。未配線なら並置できない理由を画面に出す）。 */
   readonly loadEvidence?: (target: EvidenceTarget) => Promise<BeliefEvidence>;
+  /** アクション承認（M8-22）。契約の一覧・投入・判断の状態。未配線なら理由を画面に出す。 */
+  readonly actions?: {
+    readonly actionTypes: readonly ActionType[] | undefined;
+    readonly actionTypesError: string | null;
+    readonly onSubmit: (
+      request: ActionRequest,
+    ) => Promise<{ readonly accepted: boolean; readonly detail: string }>;
+    readonly loadDecisions: (subject: string) => Promise<readonly DecisionStatus[]>;
+  };
 }
 
 export function DiscrepancyQueue({
@@ -42,6 +55,7 @@ export function DiscrepancyQueue({
   resolvedBy,
   onResolve,
   loadEvidence,
+  actions,
 }: Props): React.JSX.Element {
   const queue = visibleQueue(discrepancies);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -125,6 +139,21 @@ export function DiscrepancyQueue({
           </table>
 
           <EvidenceJuxtaposition discrepancy={selected} now={now} load={loadEvidence} />
+
+          {actions === undefined ? (
+            <p className="unwired" role="status">
+              <strong>アクションを承認できない</strong>——読み出しが配線されていない
+            </p>
+          ) : (
+            <ActionApproval
+              discrepancy={selected}
+              approvedBy={resolvedBy}
+              actionTypes={actions.actionTypes}
+              actionTypesError={actions.actionTypesError}
+              onSubmit={actions.onSubmit}
+              loadDecisions={actions.loadDecisions}
+            />
+          )}
 
           <ResolutionForm
             discrepancyId={selected.discrepancyId}

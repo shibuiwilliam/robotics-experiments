@@ -598,3 +598,44 @@ code {
 .juxtaposition .none {
   color: var(--empty);
 }
+
+/* アクションの承認（M8-22）。失敗は理由をそのまま、再投入の案内を添える */
+.actions {
+  margin: 1rem 0;
+}
+
+.contract dl {
+  margin: 0.4rem 0;
+}
+
+.contract dt {
+  color: var(--ink-soft);
+}
+
+.contract dd {
+  margin: 0 0 0.3rem 0;
+}
+
+.decisions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.decisions li {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.decision-failed .decision-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.decision-pending {
+  color: var(--ink-soft);
+}
+
+.hint {
+  color: var(--empty);
+}

@@ -10,9 +10,12 @@
  */
 
 import type {
+  ActionRequest,
+  ActionType,
   Belief,
   BeliefEvidence,
   ConceptProposal,
+  DecisionStatus,
   Discrepancy,
   Expectation,
   Modality,
@@ -320,4 +323,75 @@ export async function fetchBeliefEvidence(
     params,
   );
   return data.beliefEvidence;
+}
+
+/** アクション契約の要約を読む（GraphQL の `actionTypes`。ADR-0021）。 */
+export async function fetchActionTypes(apiUrl: string): Promise<readonly ActionType[]> {
+  const data = await graphql<{ actionTypes: ActionType[] }>(
+    apiUrl,
+    `query ActionTypes {
+      actionTypes {
+        actionType targets riskClass approval approvalRole
+        preconditions { face descriptions }
+        effects { face effects { description within } }
+        compensation
+        rateLimit { window max }
+      }
+    }`,
+  );
+  return data.actionTypes;
+}
+
+/** 人の判断の状態を読む（GraphQL の `decisions`。失敗の理由もここで読む。ADR-0021）。 */
+export async function fetchDecisions(
+  apiUrl: string,
+  params: { subject: string; kinds?: readonly string[]; limit?: number },
+): Promise<readonly DecisionStatus[]> {
+  const data = await graphql<{ decisions: DecisionStatus[] }>(
+    apiUrl,
+    `query Decisions($subject: String!, $kinds: [String!], $limit: Int!) {
+      decisions(subject: $subject, kinds: $kinds, limit: $limit) {
+        decisionId kind subject decidedBy state receivedAt appliedAt failedAt
+        error artifacts attempts
+      }
+    }`,
+    { subject: params.subject, kinds: params.kinds ?? null, limit: params.limit ?? 20 },
+  );
+  return data.decisions;
+}
+
+/**
+ * アクションの実行を承認として投入する（`/commands/execute_action`）。
+ *
+ * **受け付けまでである**（ADR-0012）。前提検証とレート制限で落ちることがあり、その理由は
+ * `fetchDecisions` で読む。**引数名は API の契約そのもの**（snake_case）。`override_reason` は
+ * 上書きしないときは**送らない**（空文字は API が弾く）。
+ */
+export async function submitAction(
+  apiUrl: string,
+  request: ActionRequest,
+): Promise<{ readonly accepted: boolean; readonly detail: string }> {
+  const body: Record<string, unknown> = {
+    decision_id: request.decisionId,
+    action_type: request.actionType,
+    target: request.target,
+    approved_by: request.approvedBy,
+    reason: request.reason,
+    severity: request.severity,
+  };
+  if (request.correlationId !== null) body["correlation_id"] = request.correlationId;
+  if (request.overrideReason !== null) body["override_reason"] = request.overrideReason;
+  const response = await fetch(`${apiUrl}/commands/execute_action`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) {
+    return {
+      accepted: false,
+      detail: String(payload["detail"] ?? `HTTP ${response.status}`),
+    };
+  }
+  return { accepted: true, detail: String(payload["detail"] ?? "受け付けた") };
 }
