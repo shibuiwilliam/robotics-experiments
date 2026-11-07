@@ -361,7 +361,7 @@ H-22 の決定次第**である。
   - [x] **M8-29-1** ADR-0018 と H-13 の注記、所見 121（文書のみ。入口は 4 つ目のコマンド `answer_observation`、回答は `observed` の主張イベントにして業務トピックへ、要求の充足は鍵の一致）→ 完了（2026-11-07）
   - [x] **M8-29-2** コマンドと種別 — `AnswerCommand`、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get` → 完了（2026-11-07。`answer_observation` コマンド（`discrepancy_id` は UUID に限らない文字列、`state` は厳密な真偽、確信度は引数にしない）、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get`（満たされた要求も返す）。単体 6 件 + 統合 2 件）
   - [x] **M8-29-3** 回答イベントと適用 — `sbp.integration.human_answer`、`human_answer_confidence`、learning-worker の `_apply_answer` と配線 → 完了（2026-11-07。`sbp.integration.human_answer`（`answer_event` は取込の主張と同形の `observed` イベント、`event_id` は判断から決定的、確信度は 0.5 超 1 未満を強制、FluentType 以外は拒否）、`SBP_REASONING_HUMAN_ANSWER_CONFIDENCE`（0.98）/ `_UNCERTAINTY_S`（300）、learning-worker の `_apply_answer`（送信 → 充足。未知の要求・実体の食い違い・配線なしは失敗）、`AnswerPath`、`aclose()`。**コマンドの型 `AnswerCommand` は `sbp.integration` に置いた**（import-linter が services → api を禁じるため。api が再輸出）。単体 23 件）
-  - [ ] **M8-29-4** 統合テスト — API ハンドラ → キュー → learning-worker → 業務トピック → belief-worker
+  - [x] **M8-29-4** 統合テスト — API ハンドラ → キュー → learning-worker → 業務トピック → belief-worker → 完了（2026-11-07。`tests/integration/test_human_answer_e2e.py` 2 件。テストが置くのは外界（人のコマンド）だけで、learning-worker / belief-worker は production の `build_worker`。「稼働している」の回答が `inferred` の信念を 0.9 超に引き上げ、観測要求が満たされ、再送は 1 回だけ積まれる。存在しない要求への回答は失敗として残りイベントを送らない）
   - [ ] **M8-29-5** レビュー・評価・記録
 
 以下 M8-30 は 2026-10-25 の棚卸しで起票した。10-17 の「この段の入力を誰が書くか」に対し、
