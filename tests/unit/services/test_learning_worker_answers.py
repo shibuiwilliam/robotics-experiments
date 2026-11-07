@@ -84,9 +84,16 @@ class _Queue:
 
 
 class _World:
-    def __init__(self, *, request: ObservationRow | None = None, fail_send: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        request: ObservationRow | None = None,
+        fail_send: bool = False,
+        fail_satisfy: bool = False,
+    ) -> None:
         self.request = request
         self.fail_send = fail_send
+        self.fail_satisfy = fail_satisfy
         self.sent: list[tuple[str, EventEnvelope]] = []
         self.satisfied: list[tuple[str, str]] = []
         self.calls: list[str] = []
@@ -107,6 +114,8 @@ class _World:
     async def satisfy(self, discrepancy_id: str, fluent: str, at: datetime) -> None:
         del at
         self.calls.append("satisfy")
+        if self.fail_satisfy:
+            raise ConnectionError("db down")
         self.satisfied.append((discrepancy_id, fluent))
 
     def path(self) -> AnswerPath:
@@ -164,6 +173,23 @@ class TestFailures:
         assert world.satisfied == []
         assert queue.applied == []
         assert "ConnectionError" in queue.failed[0][1]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_satisfy_after_a_send_is_a_failure_with_a_stable_event_id(self) -> None:
+        """送ったのに要求を満たせなかった判断は失敗として残る（自動では再試行しない）。
+
+        人が同じ ``decision_id`` で再投入すれば、同じ ``event_id`` で送られて消費側が弾く。
+        """
+        first = _World(request=_request(), fail_satisfy=True)
+        worker, queue = _worker([_row()], first)
+        assert await worker.step() == 0
+        assert len(first.sent) == 1
+        assert queue.applied == []
+        assert "ConnectionError" in queue.failed[0][1]
+
+        retry = _World(request=_request())
+        await _worker([_row()], retry)[0].step()
+        assert retry.sent[0][1].event_id == first.sent[0][1].event_id
 
     @pytest.mark.asyncio
     async def test_an_answer_to_an_unknown_request_fails(self) -> None:

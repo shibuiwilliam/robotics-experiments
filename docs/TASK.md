@@ -357,12 +357,12 @@ H-22 の決定次第**である。
   - [x] **M8-27-5** 統合テスト — 期限切れの `Active` 3 本（満たす / 外れる / 観測なし）を production の `build_worker` で検証、2 周目は何も変わらない → 完了（2026-11-07。`tests/integration/test_expectation_verification_e2e.py`。テストが置くのは外界（期待 3 本・信念・記録の存在）だけで、learning-worker は production の `build_worker`。満たす → `Fulfilled`（副作用なし）、記録なし → `Violated` + 類型 1 の不一致、信念なし → `Undetermined` + 観測要求、2 周目は 0。統合 196 件緑）
   - [x] **M8-27-6** レビュー・評価・記録 — 独立レビュー、全件テスト、TASK / STATUS / README / PROGRESS / HITL → 完了（2026-11-07。独立レビュー（別のサブエージェント）が 6 件を指摘し、実コードで確かめて全部直した（所見 120）。最重要は `current_beliefs` が確信度の最大を採っていた件（M8-21 からの不具合）。`make check` 1572 件・統合 196 件緑）
 - [x] **M8-28** Situation の参加関係を `hasParticipant` で読む — `sbp.knowledge.relations.situation_members` は `<実体> sbp:inSituation <Situation>` を読むが、オントロジーの `inSituation` は**定義域が `Assertion`**（文の所属）で、`AssertionStore` は reifier にこれを書く。参加は `sbp:hasParticipant`（Situation → PhysicalEntity、設計書 §3.4。定義済みで未使用）。読み出しと単体テストの fixture を直す（所見 104）。オントロジー変更は不要。書く側（照合・説明）は別タスク → 完了（2026-10-25。`situation_members` を `<Situation> sbp:hasParticipant <実体>` で読むように直し、`SituationLink` の docstring も揃えた。単体テストの fixture を正しい向きにし、**文の所属（reifier の `inSituation`）を参加者として返さない**回帰テストを足した（修正前は reifier が参加者として返り赤）。単体 1 件追加。運用に参加関係を書く者はまだいないので、結合の入力が空であることは変わらない）
-- [ ] **M8-29** 人の確認回答を `observed` で戻す経路 — 設計書 §14 の手順 4（人の回答が最上位の事実性を持ち、記録訂正と信頼性更新に変わる）。スケジューラが選んだ「人への質問」の回答を API コマンドで受け、`observed` のイベントにして観測要求を充足する。**いまは回答の入口が無い**（コマンドは `resolve_discrepancy` / `curate_concept` / `execute_action` の 3 つ）。**H-13**（充足の判定）と合わせて設計する。**2026-11-07 に ADR-0018 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
+- [x] **M8-29** 人の確認回答を `observed` で戻す経路 — 設計書 §14 の手順 4（人の回答が最上位の事実性を持ち、記録訂正と信頼性更新に変わる）。スケジューラが選んだ「人への質問」の回答を API コマンドで受け、`observed` のイベントにして観測要求を充足する。**いまは回答の入口が無い**（コマンドは `resolve_discrepancy` / `curate_concept` / `execute_action` の 3 つ）。**H-13**（充足の判定）と合わせて設計する。**2026-11-07 に ADR-0018 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-29-1** ADR-0018 と H-13 の注記、所見 121（文書のみ。入口は 4 つ目のコマンド `answer_observation`、回答は `observed` の主張イベントにして業務トピックへ、要求の充足は鍵の一致）→ 完了（2026-11-07）
   - [x] **M8-29-2** コマンドと種別 — `AnswerCommand`、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get` → 完了（2026-11-07。`answer_observation` コマンド（`discrepancy_id` は UUID に限らない文字列、`state` は厳密な真偽、確信度は引数にしない）、`DecisionKind.ANSWER`、alembic 0012、`ObservationQueue.get`（満たされた要求も返す）。単体 6 件 + 統合 2 件）
   - [x] **M8-29-3** 回答イベントと適用 — `sbp.integration.human_answer`、`human_answer_confidence`、learning-worker の `_apply_answer` と配線 → 完了（2026-11-07。`sbp.integration.human_answer`（`answer_event` は取込の主張と同形の `observed` イベント、`event_id` は判断から決定的、確信度は 0.5 超 1 未満を強制、FluentType 以外は拒否）、`SBP_REASONING_HUMAN_ANSWER_CONFIDENCE`（0.98）/ `_UNCERTAINTY_S`（300）、learning-worker の `_apply_answer`（送信 → 充足。未知の要求・実体の食い違い・配線なしは失敗）、`AnswerPath`、`aclose()`。**コマンドの型 `AnswerCommand` は `sbp.integration` に置いた**（import-linter が services → api を禁じるため。api が再輸出）。単体 23 件）
   - [x] **M8-29-4** 統合テスト — API ハンドラ → キュー → learning-worker → 業務トピック → belief-worker → 完了（2026-11-07。`tests/integration/test_human_answer_e2e.py` 2 件。テストが置くのは外界（人のコマンド）だけで、learning-worker / belief-worker は production の `build_worker`。「稼働している」の回答が `inferred` の信念を 0.9 超に引き上げ、観測要求が満たされ、再送は 1 回だけ積まれる。存在しない要求への回答は失敗として残りイベントを送らない）
-  - [ ] **M8-29-5** レビュー・評価・記録
+  - [x] **M8-29-5** レビュー・評価・記録 → 完了（2026-11-07。独立レビュー（別のサブエージェント）は重大な不具合なし。指摘 5 件のうち、認証の欠落（コマンド API は他の 3 つと同じく `answered_by` が自称。**H-25 を起票**、ADR-0018 の未決に追記）、組み立て失敗時の producer の取りこぼし、docstring 2 件（再投入は人の操作・`mark_satisfied` の呼び手）、送信後の充足失敗のテストを直した。`make check` 1604 件・統合 200 件緑）
 
 以下 M8-30 は 2026-10-25 の棚卸しで起票した。10-17 の「この段の入力を誰が書くか」に対し、
 「production が組むとき何を渡していないか」を問うて見つかった（`docs/PROGRESS.md` 所見 109）。
@@ -400,7 +400,7 @@ M8-27（期待の周期検証）/ M8-29（人の確認回答）/ M8-11（G8 の�
 X-10（ブランチを main に統合）→ X-11（入れ子の設定が `.env` を読まない）/ X-12（`make up` の
 `$(comma)`）。X-11 / X-12 はバグ修正なので再現テストを先に書く（§1.1、CLAUDE.md）。
 
-**着手順の推奨**（2026-11-07 改訂。M8-26 / M8-27 は完了）: M8-23 → M8-29 → M8-09 →
+**着手順の推奨**（2026-11-07 改訂。M8-26 / M8-27 / M8-29 は完了）: M8-23 → M8-09 →
 M8-17 → M8-22 → M8-15 → M8-24 → M8-11。
 
 - **M8-28 を先頭に置いた**（2026-10-25 完了）のは小さく、Situation の所属を書く側が現れる前に直さないと、書く側が誤った

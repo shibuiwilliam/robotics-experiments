@@ -684,8 +684,10 @@ class LearningWorker:
         """人の確認回答を主張イベントにして送り、観測要求を満たす（M8-29、ADR-0018）。
 
         **順序は 送信 → 充足。** 送信が失敗すれば要求は満たされず、判断は失敗として残る。
-        送信が成功して充足の書き込みが失敗した場合は、再投入で同じ ``decision_id`` から同じ
-        ``event_id`` のイベントが送られ、消費側の冪等記録が弾く。
+        送信が成功して充足の書き込みが失敗した場合も判断は失敗として残り（自動では再試行しない。
+        ADR-0012 の未決）、要求は未充足のままなので、スケジューラが同じ質問を再び選びうる。
+        人が同じ ``decision_id`` で再投入すれば、同じ ``event_id`` のイベントが送られ、消費側の
+        冪等記録が弾く。
 
         **キューに無い要求への回答は失敗させる**（誤送信の可能性が高い）。満たされた要求への
         回答は受ける（訂正の回答がありうる。充足は冪等）。
@@ -1120,18 +1122,23 @@ async def build_worker(
             discrepancy_id=discrepancy_id, fluent=fluent, at=at
         )
 
-    worker = LearningWorker(
-        resolved,
-        decisions=decisions,
-        discrepancies=store.get,
-        observations=observations.enqueue,
-        contracts=contracts,
-        beliefs=read_beliefs,
-        expectations=write_expectation,
-        proposals=curate_proposal,
-        verification=verification,
-        answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
-    )
+    try:
+        worker = LearningWorker(
+            resolved,
+            decisions=decisions,
+            discrepancies=store.get,
+            observations=observations.enqueue,
+            contracts=contracts,
+            beliefs=read_beliefs,
+            expectations=write_expectation,
+            proposals=curate_proposal,
+            verification=verification,
+            answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
+        )
+    except BaseException:
+        # 組み立てに失敗したら producer を残さない（後始末はワーカーが持つので、ここだけ自前）
+        await producer.stop()
+        raise
     worker.add_closer(producer.stop)
     log.info(
         "worker.wired",
