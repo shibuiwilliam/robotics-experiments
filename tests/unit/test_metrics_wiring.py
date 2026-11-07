@@ -35,12 +35,12 @@ WIRED = {
     "probe_auroc": "train-probe ジョブ",
     "probe_ece": "train-probe ジョブ",
     "align_residual": "train-probe ジョブ（評価枠の整合残差）",
+    "regrounding_duration": "reground ジョブ（M9-01）",
 }
 
 UNWIRED = {
     "forecast_coverage": "予測サービスの入口が無い（H-24）",
     "forecast_crps": "予測サービスの入口が無い（H-24）",
-    "regrounding_duration": "再接地の `run(plan)` が無い（H-24）",
     "identity_bind_rate": "同一性束縛の運用経路が無い（H-24）",
     "identity_revoke_rate": "同一性束縛の運用経路が無い（H-24）",
 }

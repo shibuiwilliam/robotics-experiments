@@ -78,15 +78,29 @@ print(plan.estimate.explain())
 
 ## 4. 実行
 
-実行は潜在索引を走査し、新版でプローブを再計算して**新しい `tx_from` でアサーションを追加する**。
-**旧文は `tx_to` を閉じるだけで、削除しない**（不変条件 2）。
+実行は `make reground`（`scripts/reground.py`）。潜在索引から潜在を読み、新しい版のプローブで
+**潜在 → プローブ → 事象昇格 → 信念更新**を最初から再生し、いまの信念と比べる（ADR-0031）。
+**既定は dry-run**（何も書かない）。差分を確認してから `--apply` を付ける。
 
 ```sh
 export SBP_PG_DSN="postgresql://sbp:sbp@localhost:15432/sbp"   # ポート衝突時の例
 export SBP_S3_ENDPOINT="http://localhost:19000"
-# 実行ジョブは M7 で services/ に入る。現時点は統合テストが同じ経路を通る
-uv run pytest tests/integration/test_g7_regrounding.py -m integration
+# 1. dry-run（書かない。レポートを保存して読む）
+make reground ARGS="--entity <実体 IRI> --fluent <フルーエント IRI> \
+  --start 2026-11-01T00:00:00+00:00 --end 2026-11-08T00:00:00+00:00 \
+  --probe-id <新しいプローブの IRI> --from-version probe/1.0.0 --to-version probe/2.0.0 \
+  --reason '理由' --report /tmp/regrounding.md"
+# 2. 差分を確認したら --apply を足して同じコマンドを実行する
 ```
+
+終了コードが 1 のときは**差分が閾値を超えていて人のレビューが要る**（手順 5）。dry-run でも 1 になりうる。
+
+- 旧文は `tx_to` を閉じるだけで、削除しない（不変条件 2）。新文は `valid_from` を過去のまま `tx_from` を実行時刻にして足す。
+- 対象は belief-worker の来歴の文だけ。人の訂正や他の来歴は閉じない。
+- 再生はライブと同じ区切り（`SBP_REASONING_BATCH_SIZE`）で行う。区切りを変えて運用していた場合、差分に偽の変化が出る。
+- **WM 版を上げたとき**は、先に `make encode` で新版の潜在を作り、`SBP_BRIDGE_WM_VERSION` を新版にしてから実行する。
+- 主張（業務記録）は事象ログの業務トピックを最初から読む。保持期間を過ぎて消えている期間は、主張なしで再生される（差分に出る）。
+- 実行記録の代わりに統合テストも同じ経路を通る: `uv run pytest tests/integration/test_reground_e2e.py -m integration`。
 
 ## 5. 差分レポートの確認
 

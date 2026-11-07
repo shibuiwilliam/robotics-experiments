@@ -34,7 +34,7 @@ paths:
 - 来歴はバンドル単位で保存し、証拠は参照で持つ。展開は説明サービスの責務。
 
 ## 再接地（`sbp.knowledge.regrounding`）
-- `plan(scope)` → コスト見積り → `run(plan)` の順。旧アサーションは `tx_to` を閉じるだけで消さない。**`run(plan)` はまだ無い**（公開されているのは `plan` と `summarise` だけ。`docs/PROGRESS.md` 所見 110、扱う里程は `docs/HITL.md` H-24）。
+- `plan(scope)` → コスト見積り → `run(plan)` の順。旧アサーションは `tx_to` を閉じるだけで消さない。実行は `sbp.reasoning.regrounding_run.reground`（`knowledge` は `bridge`/`reasoning` を import できないので層が上）と `make reground`（既定 dry-run、ADR-0031）。
 - 差分レポート（確信度変化 ≥ 閾値、新規 / 消滅した不一致）を `docs/runbooks/regrounding.md` の形式で出力する。
 
 ## SQL

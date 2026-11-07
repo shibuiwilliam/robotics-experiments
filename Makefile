@@ -70,6 +70,11 @@ train-wm: ## スプールから Koopman を学習して置き場に置く（SEED
 train-probe: ## 弱ラベルからプローブを学習し、ゲートを通ったら置き場に置く（FLUENT=… PROBE_ID=… SEED=… 必須）
 	$(UV) python -m scripts.train_probe --fluent $(FLUENT) --probe-id $(PROBE_ID) --seed $(SEED)
 
+# ---- 再接地（ADR-0031）-------------------------------------------------------
+.PHONY: reground
+reground: ## 新しい版で過去の信念を再計算する（既定は dry-run。ARGS='--entity … --apply'。runbooks/regrounding.md）
+	$(UV) python -m scripts.reground $(ARGS)
+
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
 dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ
