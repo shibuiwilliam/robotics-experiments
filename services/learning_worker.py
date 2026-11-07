@@ -24,6 +24,10 @@
 違反は不一致として起票し、判定不能は観測要求を積み、最後に期待の状態を進める。信念・期待の書き込み・
 観測要求のキューが揃わなければ検証しない（``verification_unwired`` に数える）。
 
+**概念発見**（M8-09、ADR-0019）: ``SBP_REASONING_DISCOVERY_PERIOD_S`` ごとに、解決済みの不一致の
+反復（入口 (c)）から概念の提案を作る。signal の指紋で再提案を抑え（H-10）、1 周期の上限まで LLM に
+提案させる。提案は ``proposed`` のまま表に書く（自動採用しない）。LLM プロバイダが無ければ発見しない。
+
 **照合ワーカーに相乗りしない理由。** 照合は窓を回すホットパスで、書き戻しは外部システムへの
 同期呼び出しである。詰まった書き戻しが検出を止める（ADR-0012 の問い 2）。
 
@@ -59,7 +63,9 @@ from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.integration.human_answer import AnswerCommand, answer_event, answer_topic
 from sbp.knowledge.decisions import DecisionKind
+from sbp.reasoning.concept_store import to_record as concept_to_record
 from sbp.reasoning.discovery import ProposalStatus
+from sbp.reasoning.discovery_runner import resolution_signals, run_discovery
 from sbp.reasoning.expectation import ExpectationStatus
 from sbp.reasoning.expectation_runner import verify_if_overdue
 from sbp.reasoning.expectation_store import from_record as expectation_from_record
@@ -84,10 +90,12 @@ if TYPE_CHECKING:
     from sbp.actions import ActionRegistry
     from sbp.core.events import EventEnvelope
     from sbp.integration.writeback import WritebackCommand
+    from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.decisions import DecisionQueue, DecisionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.observations import ObservationRow
+    from sbp.llm.base import Provider
     from sbp.reasoning.expectation import Expectation
     from sbp.reasoning.reconciliation.learning import LearningArtifacts
     from sbp.reasoning.reconciliation.severity import BusinessValueRegistry
@@ -114,11 +122,18 @@ if TYPE_CHECKING:
     """``(トピック, イベント)`` を送る（``KafkaEventProducer.send`` を包む）。"""
     RequestReader = Callable[[str, str], Awaitable["ObservationRow | None"]]
     """``(不一致 ID, フルーエント) -> 観測要求``（``ObservationQueue.get``）。"""
+    ResolvedReader = Callable[[], Awaitable[list["DiscrepancyRecord"]]]
+    """解決済みの不一致を読む（``DiscrepancyStore.resolved``）。"""
+    ProposalLister = Callable[[], Awaitable[list["ConceptProposalRecord"]]]
+    """既存の提案を採否済みも含めて読む（``ConceptProposalStore.queue(include_curated=True)``）。"""
+    ProposalSaver = Callable[["ConceptProposalRecord"], Awaitable[None]]
+    """提案を作業項目表に書く（``ConceptProposalStore.upsert``）。"""
     RequestSatisfier = Callable[[str, str, datetime], Awaitable[object]]
     """``(不一致 ID, フルーエント, 時刻)`` で要求を満たす（``mark_satisfied``）。"""
 
 __all__ = [
     "AnswerPath",
+    "ConceptDiscovery",
     "ExpectationVerification",
     "LearningWorker",
     "build_worker",
@@ -155,6 +170,25 @@ class AnswerPath:
     events: EventSink
     request: RequestReader
     satisfy: RequestSatisfier
+
+
+@dataclass(frozen=True, slots=True)
+class ConceptDiscovery:
+    """概念発見の周期実行に要る依存（ADR-0019）。
+
+    Attributes:
+        resolved: 解決済みの不一致の読み出し（入口 (c) の入力）。
+        existing: 既存の提案の読み出し（再提案の抑制）。
+        save: 提案の書き込み。
+        provider: LLM プロバイダ（replay / live）。
+        fluents: 既存のフルーエント型のローカル名（プロンプトに渡す）。
+    """
+
+    resolved: ResolvedReader
+    existing: ProposalLister
+    save: ProposalSaver
+    provider: Provider
+    fluents: Sequence[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,6 +252,7 @@ class LearningWorker:
         proposals: ProposalCurator | None = None,
         verification: ExpectationVerification | None = None,
         answers: AnswerPath | None = None,
+        discovery: ConceptDiscovery | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -241,6 +276,8 @@ class LearningWorker:
             ``observations`` も要る。
         answers: 人の確認回答の適用（``None`` なら**回答を適用しない**——失敗として記録される。
             送れない回答を適用済みにすると、人の確認が信念に届かないまま消える）。
+        discovery: 概念発見（``None`` なら発見しない。UI の概念 curation は空のまま。
+            ADR-0019）。LLM プロバイダが無ければ ``build_worker`` は ``None`` を渡す。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -259,6 +296,16 @@ class LearningWorker:
         self._proposals = proposals
         self._verification = verification
         self._answers = answers
+        self._discovery = discovery
+        self._last_discover: datetime | None = None
+        self.proposed_total = 0
+        self.discovery_failed_total = 0
+        if discovery is None:
+            log.info(
+                "worker.discovery_not_wired",
+                worker=WORKER_NAME,
+                detail="概念発見をしない（LLM プロバイダが無い、または配線されていない）",
+            )
         self._closers: list[Callable[[], Awaitable[None]]] = []
         self._last_verify: datetime | None = None
         self._verify_failures: dict[UUID, int] = {}
@@ -324,7 +371,75 @@ class LearningWorker:
             適用できた判断の件数と、検証した期待の件数の合計。
         """
         applied = await self._apply_decisions()
-        return applied + await self._verify_overdue()
+        return applied + await self._verify_overdue() + await self._discover()
+
+    def discover_due(self, *, at: datetime) -> bool:
+        """この時点で概念発見を回すべきか。
+
+        Args:
+            at: 判定時刻。
+        """
+        if self._last_discover is None:
+            return True
+        return (at - self._last_discover).total_seconds() >= (
+            self.settings.reasoning.discovery_period_s
+        )
+
+    async def _discover(self) -> int:
+        """解決済みの不一致から概念を発見し、提案を表に書く（M8-09、ADR-0019）。
+
+        入口は (c) 反復する不一致だけ（(a)(b) の入力は運用に無い）。signal を指紋で抑え、上限まで
+        LLM に提案させる。**提案は ``PROPOSED`` のまま**（自動採用しない。不変条件 11）。
+        LLM は同期の呼び出しなので別スレッドで回す。依存の障害・提案 1 件の書き込み失敗で
+        ループを止めない。
+
+        Returns:
+            表に書いた提案の件数。
+        """
+        d = self._discovery
+        if d is None:
+            return 0
+        at = now()
+        if not self.discover_due(at=at):
+            return 0
+        self._last_discover = at
+        reasoning = self.settings.reasoning
+        try:
+            resolved = await d.resolved()
+            signals = resolution_signals(resolved, min_repeats=reasoning.discovery_min_repeats)
+            if not signals:
+                return 0
+            existing = await d.existing()
+            report = await asyncio.to_thread(
+                run_discovery,
+                signals,
+                existing=existing,
+                provider=d.provider,
+                at=at,
+                cooldown=timedelta(days=reasoning.discovery_rejection_cooldown_days),
+                max_proposals=reasoning.discovery_max_proposals_per_cycle,
+                existing_fluents=d.fluents,
+            )
+        except Exception as exc:  # 依存の一時的な障害でワーカーのループを止めない
+            self.discovery_failed_total += 1
+            log.warning("worker.discovery_unavailable", worker=WORKER_NAME, error=str(exc))
+            return 0
+        self.discovery_failed_total += report.failed
+        written = 0
+        for proposal in report.proposals:
+            try:
+                await d.save(concept_to_record(proposal))
+                written += 1
+            except Exception as exc:  # 1 件の失敗で残りを止めない。次の周期で再提案される
+                self.discovery_failed_total += 1
+                log.warning(
+                    "worker.discovery_save_failed",
+                    worker=WORKER_NAME,
+                    correlation_id=str(proposal.proposal_id),
+                    error=str(exc),
+                )
+        self.proposed_total += written
+        return written
 
     def verify_due(self, *, at: datetime) -> bool:
         """この時点で期待の検証を回すべきか。
@@ -1105,6 +1220,7 @@ async def build_worker(
         entity_types=entity_types,
     )
 
+    discovery = _build_discovery(resolved, store=store, proposals=proposals)
     producer = KafkaEventProducer(resolved)
     await producer.start()
 
@@ -1134,6 +1250,7 @@ async def build_worker(
             proposals=curate_proposal,
             verification=verification,
             answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
+            discovery=discovery,
         )
     except BaseException:
         # 組み立てに失敗したら producer を残さない（後始末はワーカーが持つので、ここだけ自前）
@@ -1147,6 +1264,42 @@ async def build_worker(
         action_types=len(contracts.types()),
     )
     return worker, decisions
+
+
+def _build_discovery(settings: Settings, *, store: Any, proposals: Any) -> ConceptDiscovery | None:
+    """概念発見の依存を組む。LLM プロバイダが作れなければ ``None``（発見しない）。
+
+    **replay は fixture が無ければ呼ぶたびに失敗する**（黙って live に落ちない）ので、運用の既定
+    （``SBP_LLM_MODE=replay``）では fixture のある signal だけが提案になる。live / record は
+    各社 SDK のファクトリが要るが、どのプロバイダを使うかは H-04 の判断待ちなので本リポジトリでは
+    組まない（``LlmError`` → 発見しない）。
+
+    Args:
+        settings: 設定。
+        store: 不一致の作業項目表（``DiscrepancyStore``）。
+        proposals: 概念提案の作業項目表（``ConceptProposalStore``）。
+    """
+    from sbp.core.errors import LlmError  # noqa: PLC0415 — 実運用の配線でのみ使う
+    from sbp.llm import LlmMode, resolve_provider  # noqa: PLC0415
+
+    try:
+        provider = resolve_provider(mode=LlmMode(settings.llm_mode.value))
+    except LlmError as exc:
+        log.warning("worker.discovery_no_provider", worker=WORKER_NAME, error=str(exc))
+        return None
+
+    async def existing() -> list[ConceptProposalRecord]:
+        """既存の提案を採否済みも含めて読む（再提案の抑制）。"""
+        return await proposals.queue(limit=1000, include_curated=True)
+
+    fluents = sorted(iri.rsplit("#", 1)[-1] for iri in vocab.FLUENT_TYPES)
+    return ConceptDiscovery(
+        resolved=store.resolved,
+        existing=existing,
+        save=proposals.upsert,
+        provider=provider,
+        fluents=fluents,
+    )
 
 
 def main() -> int:

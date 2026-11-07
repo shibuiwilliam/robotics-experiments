@@ -207,6 +207,18 @@ class ReasoningSettings(_DotenvSettings):
     human_answer_uncertainty_s: float = Field(default=300.0, gt=0.0)
     """人の回答の有効時間の不確実幅（秒）。回答が「いつの状態」かには幅がある。"""
 
+    discovery_period_s: float = Field(default=86_400.0, gt=0.0)
+    """概念発見を回す周期（秒、learning-worker。ADR-0019）。LLM の費用が掛かり、毎秒は要らない。"""
+
+    discovery_rejection_cooldown_days: float = Field(default=30.0, ge=0.0)
+    """却下した提案と同じ signal を再提案しない期間（日。H-10 の暫定決定）。0 なら冷却しない。"""
+
+    discovery_max_proposals_per_cycle: int = Field(default=3, ge=1, le=100)
+    """1 周期に LLM を呼ぶ（=提案を作る）上限。curation の人手を守る。"""
+
+    discovery_min_repeats: int = Field(default=3, ge=2)
+    """同じ実体・同じ類型の解決を「反復」とみなす回数（入口 (c)）。"""
+
     expectation_verify_period_s: float = Field(default=60.0, gt=0.0)
     """期限切れの期待を検証する周期（秒、learning-worker。ADR-0017）。
 
