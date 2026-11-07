@@ -545,7 +545,7 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
   あることを文書に書いた**（取得はネットワークを使い、いま必要としている処理が無い）。**機械検査を 1 つ入れた**:
   `tests/unit/core/test_config.py` が `Settings` の全項目（入れ子を含む）が `.env.example` に載っていることを検査する
   （項目を消すと落ちることを確認済み）。CLAUDE.md は X-15 に分けた）
-- [ ] **X-15** CLAUDE.md を実装に合わせる（**規約の変更なので人が確認する**） — X-13 のうち CLAUDE.md の項目
+- [x] **X-15** CLAUDE.md を実装に合わせる（2026-11-08 完了。人が確認し、ブランチを rebase して main に ff 統合）（**規約の変更なので人が確認する**） — X-13 のうち CLAUDE.md の項目
   （`make up --profile` → `PROFILES=`、`make dev` は API だけ、`make bootstrap` は `brew bundle` を呼ばない、`make check` と
   `make gen` の中身、`make seed` の「MinIO バケット」、「写像（RML）」、モデル族の `gnn`、Oxigraph の「RDF-star」、
   Compose 6 GB の範囲、`ontology/imports/` の「固定版同梱」）。**変更案をブランチ `docs/claude-md-sync` に置いた
