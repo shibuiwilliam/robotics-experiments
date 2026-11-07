@@ -2,7 +2,7 @@
 
 現在地: **M0〜M9 完了（ゲート G0〜G9 通過。G8 / G9 は 2026-11-08、ADR-0025 / ADR-0030）**。
 
-最終更新: 2026-10-25（2 回目の棚卸しと、その後のタスク実行）。2026-10-04 から 10-24 までコードの変更は無く、
+最終更新: 2026-11-08（M8・M9 の完了。以下の表は 2026-10-25 の棚卸し時点の記述を含む）。2026-10-04 から 10-24 までコードの変更は無く、
 2026-10-17 の棚卸しは未コミットのまま残っていた（`docs/PROGRESS.md` 所見 107）。10-25 に棚卸しをコミットし、
 M8 のブランチを main に統合した（X-10）うえで、1 タスク 1 ブランチで次を実施して main に fast-forward した:
 
@@ -20,7 +20,7 @@ M8「配線」は、M7 までで「型と判定は実装済み、供給元と周
 
 | G8 の条件 | 状態 |
 |---|---|
-| G0〜G7 を維持 | ✅ 2026-11-08 に `make check` 1820 件・**統合 220 件（実行）**・UI 126 件が緑 |
+| G0〜G7 を維持 | ✅ 2026-11-08 に `make check` 1892 件・**統合 223 件（実行）**・UI 126 件が緑 |
 | `TODO(question)` が 0 件 | ✅ コードに 0 件（2026-10-25 に再走査。解決先は ADR-0009〜0015） |
 | M8-11（外界だけを模擬し、運用コードの連鎖で 6 ワーカーが非ゼロの `step()` を返す） | ✅ `tests/integration/test_g8_workers.py`（ADR-0025）。連鎖の契約 6 件を修正（ADR-0026） |
 
@@ -70,7 +70,7 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | DB マイグレーション | 10（`0001_initial_projections` … `0010_ingest_cursors`） |
 | 指標 | 6 領域 25 指標。**書き込み配線済みは 23**（2026-11-08。M8-15 で 20、M9 で `regrounding_duration` / `forecast_crps` / `forecast_coverage`）。残り 2（`identity_bind_rate` / `identity_revoke_rate`）は同一性束縛の運用経路が無いため未配線（H-27）。`suppression_rate` は運用では構造的に 0（所見 113） |
 | Compose サービス | 4（+ 任意 profile: ui / console / observability）。イメージは seaweedfs 3.80 / oxigraph 0.5.11 ほか固定版 |
-| API | GraphQL の Query 5（beliefs / discrepancies / expectations / proposals / health）、Mutation 0、コマンド 3（resolve_discrepancy / curate_concept / execute_action）。`/stream/{topic}` は 503（H-03） |
+| API | GraphQL の Query 6（beliefs / discrepancies / expectations / proposals / forecasts / health）、Mutation 0、コマンド 3（resolve_discrepancy / curate_concept / execute_action）。`/stream/{topic}` は 503（H-03） |
 | リポジトリ | main に 1 タスク 1 ブランチで fast-forward している（X-10）。**リモート無し → CI は一度も実行されていない**（H-23） |
 
 ## 次にやること（推奨順）

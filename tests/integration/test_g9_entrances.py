@@ -170,7 +170,10 @@ class TestG9:
         # ---- 3. 実物の API から予測を読む（ABAC）。コマンドは要求者に結びつく（H-25）----
         dev = forecasting.model_copy(update={"env": "dev"})
         with TestClient(build_app(dev)) as client:
-            query = {"query": "{ forecasts { entity scored points { leadTimeS mean } } }"}
+            query = {
+                "query": "{ forecasts { entity fluent wmVersion scored "
+                "points { leadTimeS mean sampleCount } } }"
+            }
             denied = client.post("/graphql", json=query).json()
             assert denied.get("errors"), "要求者の無い呼び出しは拒否"
             body = client.post("/graphql", json=query, headers={"X-SBP-Principal": OPERATOR}).json()
@@ -178,7 +181,13 @@ class TestG9:
             row = body["data"]["forecasts"][0]
             assert row["entity"] == entity
             assert row["scored"] is True
+            assert row["fluent"] == FLUENT
+            assert row["wmVersion"] == forecasting.bridge.wm_version
             assert row["points"]
+            assert all(
+                p["sampleCount"] == forecasting.reasoning.forecast_samples for p in row["points"]
+            )
+            assert all(0.0 <= p["mean"] <= 1.0 for p in row["points"])
 
             spoof = client.post(
                 "/commands/answer_observation",

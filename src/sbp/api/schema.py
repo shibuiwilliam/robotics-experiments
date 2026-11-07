@@ -1138,13 +1138,15 @@ class Query:
                 "予測の読み出しが設定されていない（create_app に forecast_reader を渡す）"
             )
         site = info.context["settings"].site_id
+        # **許可で絞ってから件数を切る。** 先に切ると、新しい起点が許可の無いフルーエントで
+        # 埋まっているとき、許可された予測が古くても 1 件も届かず、「見えない」が「無い」に化ける
         records = [
             record
-            for record in reader(entity=entity, fluent=fluent, limit=limit)
+            for record in reader(entity=entity, fluent=fluent, limit=_MAX_QUEUE_LIMIT)
             if authorize(
                 principal, concept_type=record.fluent, modality=Modality.PREDICTED, site=site
             ).allowed
-        ]
+        ][:limit]
         log.info(
             "api.forecasts_queried", principal=principal.subject, entity=entity, rows=len(records)
         )

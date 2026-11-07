@@ -67,12 +67,11 @@ def _reader(records: list[ForecastRecord]):  # type: ignore[no-untyped-def]
     def read(
         *, entity: str | None = None, fluent: str | None = None, limit: int = 50
     ) -> list[ForecastRecord]:
-        del limit
         return [
             r
             for r in records
             if (entity is None or r.entity == entity) and (fluent is None or r.fluent == fluent)
-        ]
+        ][:limit]
 
     return read
 
@@ -170,4 +169,34 @@ def test_the_reader_is_passed_keyword_arguments_only(fluent: str) -> None:
         return []
 
     _post(_client(read, _allow_all), fluent=fluent)
-    assert calls == [{"entity": None, "fluent": fluent, "limit": 50}]
+    assert calls == [{"entity": None, "fluent": fluent, "limit": 500}]
+
+
+class TestLimitAfterAuthorization:
+    def test_a_newer_forbidden_forecast_does_not_hide_an_older_permitted_one(self) -> None:
+        newest_first = [_record(FAULTED) for _ in range(3)] + [_record(RUNNING)]
+        body = _post(_client(_reader(newest_first), _running_only))
+        assert [r["fluent"] for r in body["data"]["forecasts"]] == [RUNNING]
+
+    def test_the_requested_limit_is_applied_after_the_filter(self) -> None:
+        records = [_record(RUNNING) for _ in range(5)]
+        client = _client(_reader(records), _allow_all)
+        rows = client.post(
+            "/graphql", json={"query": "{ forecasts(limit: 2) { forecastId } }"}
+        ).json()["data"]["forecasts"]
+        assert len(rows) == 2
+
+    @pytest.mark.parametrize("limit", [1, 500])
+    def test_the_limit_boundaries_are_accepted(self, limit: int) -> None:
+        client = _client(_reader([]), _allow_all)
+        body = client.post(
+            "/graphql", json={"query": f"{{ forecasts(limit: {limit}) {{ forecastId }} }}"}
+        ).json()
+        assert "errors" not in body
+
+    def test_above_the_maximum_is_refused(self) -> None:
+        client = _client(_reader([]), _allow_all)
+        body = client.post(
+            "/graphql", json={"query": "{ forecasts(limit: 501) { forecastId } }"}
+        ).json()
+        assert body["errors"]

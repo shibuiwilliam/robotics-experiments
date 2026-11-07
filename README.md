@@ -24,11 +24,12 @@ UI（`apps/ui`、Node 20+）を触るときは `make ui-install` → `make check
 コマンド一覧と開発規約は `CLAUDE.md`、詳細は `docs/development-rules.md` を参照。
 
 > 現在地: **M0〜M9 完了**（ゲート G0〜G9 通過）/ **M9「運用の入口」4 / 4**（2026-11-08）。
-> ゲート G8（ADR-0025）: G0〜G7 維持、`TODO(question)` 0 件、外界だけを模擬して 6 ワーカーを運用コードで通す統合テスト（`test_g8_workers.py`）が緑。
+> ゲート G8（ADR-0025）: 外界だけを模擬して 6 ワーカーを運用コードで通す統合テスト（`test_g8_workers.py`）が緑。
+> ゲート G9（ADR-0030）: 再接地の実行・予測と採点・API の予測を運用の入口で通す統合テスト（`test_g9_entrances.py`）が緑。
 > 記録パス（業務システム → 取込ワーカー → イベントログ・知識グラフ）は 2026-10-25 に運用に乗った（ADR-0016）。
-> 残るのは、**人の判断を待つ 26 件**
+> 残るのは、**人の判断を待つ（決定済みを除く）23 件**
 > （`docs/HITL.md`）、「実データに当てるまで確かめられない」種類の制約である（`docs/STATUS.md`、
-> `docs/PROGRESS.md` の既知の制約）。CLAUDE.md の記述の更新案はブランチ `docs/claude-md-sync` で確認待ち（X-15）。
+> `docs/PROGRESS.md` の既知の制約）。
 
 CI は `.github/workflows/ci.yml`。4 ジョブ（`check` / `integration` / `audit` / `ui`）に分かれ、`check`（Compose 不要）が
 落ちたら `integration`（Compose 必須）は走らない——型が通らないのに 5 分待っても情報は増えない。
