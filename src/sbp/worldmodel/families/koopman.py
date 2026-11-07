@@ -138,6 +138,93 @@ class KoopmanModel:
             channels=tuple(channels),
         )
 
+    def export_state(self) -> dict[str, NDArray[np.float64]]:
+        """学習済みの状態を配列の辞書で返す（直列化用。M8-24、ADR-0023）。
+
+        返す配列はコピーで、モデルの内部を共有しない。制御項（``control``）は介入つきで学習した
+        ときだけ含まれる。
+
+        Raises:
+            WorldModelError: 未学習の場合（空の状態を保存させない）。
+        """
+        self._require_trained()
+        assert self._mean is not None
+        assert self._scale is not None
+        assert self._operator is not None
+        assert self._noise is not None
+        assert self._reference is not None
+        state = {
+            "mean": self._mean.copy(),
+            "scale": self._scale.copy(),
+            "operator": self._operator.copy(),
+            "noise": self._noise.copy(),
+            "reference": self._reference.copy(),
+            "pred_error": np.array(self._pred_error, dtype=np.float64),
+        }
+        if self._control is not None:
+            state["control"] = self._control.copy()
+        return state
+
+    @classmethod
+    def from_state(
+        cls,
+        *,
+        meta: WorldModelMeta,
+        config: KoopmanConfig,
+        channels: Sequence[str],
+        state: dict[str, NDArray[np.float64]],
+    ) -> KoopmanModel:
+        """直列化した状態から学習済みのモデルを復元する。
+
+        配列の形が設定（チャンネル数 × 遅れ段数）と合わなければ失敗する——合わない重みを黙って
+        受け入れると、潜在が別の空間になる（次元が合うときほど気付けない）。
+
+        Args:
+            meta: メタデータ。
+            config: 設定。
+            channels: 入力チャンネル名。
+            state: :meth:`export_state` の辞書。
+
+        Raises:
+            WorldModelError: 配列が欠けている、形が合わない、有限でない値がある場合。
+        """
+        model = cls(meta=meta, config=config, channels=tuple(channels))
+        dim = model.latent_dim
+        count = len(model.channels)
+        expected = {
+            "mean": (count,),
+            "scale": (count,),
+            "operator": (dim, dim),
+            "noise": (dim, dim),
+        }
+        for name in ("mean", "scale", "operator", "noise", "reference", "pred_error"):
+            if name not in state:
+                raise WorldModelError(f"koopman state is missing '{name}'")
+        for name, shape in expected.items():
+            if state[name].shape != shape:
+                raise WorldModelError(
+                    f"koopman state '{name}' has shape {state[name].shape}, expected {shape} "
+                    f"for {count} channels × {config.delays} delays"
+                )
+        reference = state["reference"]
+        if reference.ndim != 2 or reference.shape[1] != dim:
+            raise WorldModelError(
+                f"koopman state 'reference' has shape {reference.shape}, expected (N, {dim})"
+            )
+        control = state.get("control")
+        if control is not None and (control.ndim != 2 or control.shape[0] != dim):
+            raise WorldModelError(f"koopman state 'control' has shape {control.shape}")
+        if any(not np.all(np.isfinite(array)) for array in state.values()):
+            raise WorldModelError("koopman state contains non-finite values")
+        model._mean = state["mean"].astype(np.float64, copy=True)
+        model._scale = state["scale"].astype(np.float64, copy=True)
+        model._operator = state["operator"].astype(np.float64, copy=True)
+        model._noise = state["noise"].astype(np.float64, copy=True)
+        model._reference = reference.astype(np.float64, copy=True)
+        model._control = None if control is None else control.astype(np.float64, copy=True)
+        model._pred_error = float(state["pred_error"])
+        return model
+
     @property
     def is_trained(self) -> bool:
         """作用素が同定済みか。"""
