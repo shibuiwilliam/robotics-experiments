@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
@@ -52,6 +52,8 @@ __all__ = [
 ]
 
 log = get_logger(__name__)
+
+_EPOCH = datetime.min.replace(tzinfo=UTC)
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +234,14 @@ class EncodeRunner:
         self._watermarks = watermarks
         self._level = level
 
+    def _health(self, window: ObservationWindow) -> ModelHealth | None:
+        """健全性を測る。測れなくても書き込みは止めない（警告に残す）。"""
+        try:
+            return self.model.health(window.values, list(window.timestamps))
+        except WorldModelError as exc:
+            log.warning("encoding.health_failed", entity=window.entity, error=str(exc))
+            return None
+
     async def run(self, source: ObservationSource) -> EncodeReport:
         """入口の窓をすべて処理する。
 
@@ -247,7 +257,11 @@ class EncodeRunner:
         delays = self.model.config.delays
         report = EncodeReport()
         longest = 0
-        for window in source.windows():
+        # 同じ実体の窓が前後して届いても取りこぼさない: 始端の順に処理する（ウォーターマークは単調）
+        ordered = sorted(
+            source.windows(), key=lambda w: w.timestamps[0] if w.timestamps else _EPOCH
+        )
+        for window in ordered:
             report.windows += 1
             if window.channels != self.model.channels:
                 report.skipped_mismatch += 1
@@ -265,6 +279,9 @@ class EncodeRunner:
             vectors = self.model.embed_series(window.values)
             report.latency_s.append(time.perf_counter() - started)
             stamps = window.timestamps[delays - 1 :]
+            if len(window.timestamps) > longest and len(window.timestamps) > delays:
+                longest = len(window.timestamps)
+                report.health = self._health(window)
             mark = processed.get(window.entity)
             keep = [i for i, at in enumerate(stamps) if mark is None or at > mark]
             if not keep:
@@ -281,9 +298,6 @@ class EncodeRunner:
             await self._watermarks.save(window.entity, stamps[keep[-1]])
             processed[window.entity] = stamps[keep[-1]]
             report.rows_written += written
-            if len(window.timestamps) > longest and len(window.timestamps) > delays:
-                longest = len(window.timestamps)
-                report.health = self.model.health(window.values, list(window.timestamps))
         report.rejected = len(source.rejected)
         log.info(
             "encoding.run",

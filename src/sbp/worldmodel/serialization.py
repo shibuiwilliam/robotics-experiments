@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import zipfile
 from typing import TYPE_CHECKING, Any, Final
 
 import numpy as np
@@ -132,11 +133,14 @@ def loads(data: bytes) -> KoopmanModel:
             }
     except WorldModelError:
         raise
-    except (ValueError, OSError, UnicodeDecodeError, TypeError) as exc:
+    except (ValueError, OSError, UnicodeDecodeError, TypeError, zipfile.BadZipFile) as exc:
         # pickle を含む配列（allow_pickle=False で拒否される）・壊れた zip・JSON でないメタ
         raise WorldModelError(f"cannot read the world model weights: {exc}") from exc
     _check_meta(meta)
-    config = KoopmanConfig(**meta["config"])
+    try:
+        config = KoopmanConfig(**meta["config"])
+    except (TypeError, ValueError) as exc:
+        raise WorldModelError(f"world model config is invalid: {exc}") from exc
     channels = tuple(str(name) for name in meta["channels"])
     model_meta = WorldModelMeta(
         model_id=str(meta["model_id"]),

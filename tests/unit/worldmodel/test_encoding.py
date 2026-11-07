@@ -181,6 +181,21 @@ class TestEncodeRunner:
         assert stamps[0] == world.timestamps[40]
 
     @pytest.mark.asyncio
+    async def test_windows_of_one_entity_arriving_out_of_order_lose_nothing(
+        self, model: KoopmanModel, world: SynthWorld
+    ) -> None:
+        """後の窓が先に届いても、先の窓の行を取りこぼさない（レビュー指摘）。"""
+        index = _Index()
+        runner = EncodeRunner(model, index=index, watermarks=_Watermarks())
+        later, earlier = _window(world, 20, 60), _window(world, 0, 40)
+        report = await runner.run(_Source(later, earlier))
+        written = sorted(at for _entity, stamps, _vec in index.written for at in stamps)
+        assert report.rows_written == 60 - (DELAYS - 1)
+        assert written == sorted(set(written)), "同じ時刻を二度書かない"
+        assert written[0] == world.timestamps[DELAYS - 1]
+        assert written[-1] == world.timestamps[59]
+
+    @pytest.mark.asyncio
     async def test_a_failed_write_does_not_advance_the_watermark(
         self, model: KoopmanModel, world: SynthWorld
     ) -> None:

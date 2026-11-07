@@ -135,6 +135,14 @@ class TestUntrustedInput:
         with pytest.raises(WorldModelError):
             loads(b"not an npz")
 
+    def test_truncated_archives_are_refused_as_world_model_errors(
+        self, trained: KoopmanModel
+    ) -> None:
+        data = dumps(trained)
+        for broken in (data[: len(data) // 2], b"PK\x03\x04garbage"):
+            with pytest.raises(WorldModelError):
+                loads(broken)
+
     def test_a_missing_meta_is_refused(self, trained: KoopmanModel) -> None:
         archive = np.load(io.BytesIO(dumps(trained)), allow_pickle=False)
         arrays = {name: archive[name] for name in archive.files if name != "__meta__"}
