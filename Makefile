@@ -56,6 +56,15 @@ nuke: ## Compose 停止 + ボリューム削除（データが消える。唯一
 seed: ## オントロジー投入・トピック作成・DB マイグレーション・バケット作成
 	$(UV) python -m scripts.seed
 
+# ---- 推定パスの先頭（ADR-0023）------------------------------------------------
+.PHONY: encode
+encode: ## スプール（SBP_WM_SPOOL_DIR）の観測窓を潜在にして索引に書く（WM は SBP_BRIDGE_WM_VERSION）
+	$(UV) python -m scripts.encode
+
+.PHONY: train-wm
+train-wm: ## スプールから Koopman を学習して置き場に置く（SEED=… 必須）
+	$(UV) python -m scripts.train_koopman --seed $(SEED)
+
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
 dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ

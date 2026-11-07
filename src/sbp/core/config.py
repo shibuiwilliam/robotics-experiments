@@ -250,6 +250,13 @@ class WorldModelSettings(_DotenvSettings):
     torch_device: Literal["mps", "cpu"] = "mps"
     """PyTorch のデバイス。CUDA は使わない（CLAUDE.md）。"""
 
+    spool_dir: str = ""
+    """観測窓のスプール（JSONL）の置き場。現場のエッジが窓を置き、エンコードジョブが読む（ADR-0023）。
+
+    **既定値を置かない。** 空ならジョブは失敗する——適当なパスを既定にすると、空の置き場を読んで
+    「窓が 0 件」を正常に見せる。
+    """
+
 
 class ActionsSettings(_DotenvSettings):
     """アクション層の閾値（設計書 §9）。"""
