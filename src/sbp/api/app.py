@@ -347,6 +347,8 @@ def _bind_command(name: str, payload: dict[str, Any], principal: Principal) -> d
     """
     try:
         return bind_principal(name, payload, principal.subject)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except PermissionError as exc:
         log.info("api.command_refused", command=name, principal=principal.subject)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -369,7 +371,12 @@ async def _command_payload(
             本文の主体が要求者と食い違う場合。
     """
     principal = _command_principal(resolver, request)
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="引数は JSON オブジェクト"
+        ) from exc
     if not isinstance(payload, dict):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="引数は JSON オブジェクト"

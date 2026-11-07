@@ -22,19 +22,23 @@ import type {
   Resolution,
 } from "./types";
 
+/** 既定の開発用要求者（`VITE_SBP_DEV_PRINCIPAL` で上書きできる）。 */
+const DEFAULT_DEV_PRINCIPAL = "https://sbp.example/id/person/dev";
+
 /**
- * 要求者のヘッダ（開発用。`SBP_ENV=dev` の API だけが読む、H-02 / H-25）。
+ * 開発用の要求者。ヘッダと、コマンド本文の `*_by` の**両方がこの値を使う**（食い違うと 403、H-25）。
  *
- * コマンドの「誰が」は本文ではなくここから決まる。本文の `*_by` はこの値と一致しなければ 403 になる。
- * 本番の認証方式が決まるまでは、`VITE_SBP_DEV_PRINCIPAL` を設定した開発ビルドだけが送る。
+ * `VITE_` 変数はビルドに埋め込まれる。本番ビルドに設定すると全利用者が同じ主体になるので、
+ * 本番の認証方式（H-02）が決まるまで本番ビルドには使わない。
  */
+export function devPrincipal(): string {
+  const configured = import.meta.env.VITE_SBP_DEV_PRINCIPAL as string | undefined;
+  return configured !== undefined && configured !== "" ? configured : DEFAULT_DEV_PRINCIPAL;
+}
+
+/** 要求者のヘッダ（`SBP_ENV=dev` の API だけが読む。GraphQL とコマンドの両方に付く）。 */
 function requestHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const principal = import.meta.env.VITE_SBP_DEV_PRINCIPAL as string | undefined;
-  if (principal !== undefined && principal !== "") {
-    headers["X-SBP-Principal"] = principal;
-  }
-  return headers;
+  return { "content-type": "application/json", "X-SBP-Principal": devPrincipal() };
 }
 
 /** 設定の誤り（起動時に落とす）。 */

@@ -56,7 +56,7 @@ def bind_principal(name: str, payload: dict[str, Any], subject: str) -> dict[str
     """コマンドの主体の欄を、認証済みの要求者に結びつける。
 
     本文に主体の欄が無ければ要求者を入れ、あれば要求者と一致することを要求する（UI が送って
-    くる値は許すが、他人の名は受けない）。コマンド名が未知ならそのまま返す（検証は後段）。
+    くる値は許すが、他人の名は受けない）。コマンド名が未知なら拒否する。
 
     Args:
         name: コマンド名。
@@ -68,10 +68,11 @@ def bind_principal(name: str, payload: dict[str, Any], subject: str) -> dict[str
 
     Raises:
         PermissionError: 本文の主体が要求者と食い違う場合。
+        ValueError: 未知のコマンド名（主体の欄を知らないコマンドを自称のまま通さない）。
     """
     fieldname = IDENTITY_FIELDS.get(name)
     if fieldname is None:
-        return dict(payload)
+        raise ValueError(f"unknown command {name!r}; known commands: {', '.join(IDENTITY_FIELDS)}")
     claimed = payload.get(fieldname)
     if claimed is not None and claimed != subject:
         raise PermissionError(
@@ -246,7 +247,4 @@ def _to_row(name: str, payload: dict[str, Any]) -> DecisionRow:
             decided_by=answer.answered_by,
             payload=answer.model_dump(mode="json"),
         )
-    raise ValueError(
-        f"unknown command {name!r}; known commands: resolve_discrepancy, "
-        "curate_concept, execute_action, answer_observation"
-    )
+    raise ValueError(f"unknown command {name!r}; known commands: {', '.join(IDENTITY_FIELDS)}")

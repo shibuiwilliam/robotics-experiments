@@ -17,6 +17,7 @@ import {
   fetchDecisions,
   fetchDiscrepancies,
   fetchExpectations,
+  devPrincipal,
   fetchProposals,
   resolveApiUrl,
   submitAction,
@@ -215,7 +216,7 @@ export function App(): React.JSX.Element {
         <DiscrepancyQueue
           discrepancies={discrepancies}
           now={now}
-          resolvedBy="https://sbp.example/id/person/dev"
+          resolvedBy={devPrincipal()}
           onResolve={(resolution) => void onResolve(resolution)}
           loadEvidence={loadEvidence}
           actions={{ actionTypes, actionTypesError, onSubmit: onSubmitAction, loadDecisions }}
@@ -234,7 +235,7 @@ export function App(): React.JSX.Element {
           )}
           <ConceptCuration
             proposals={proposals}
-            decidedBy="https://sbp.example/id/person/dev"
+            decidedBy={devPrincipal()}
             onDecide={(decision) => void onDecide(decision)}
           />
         </>

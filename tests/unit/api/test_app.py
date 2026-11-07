@@ -19,6 +19,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 
 from sbp.api import Permission, Principal, build_schema, create_app, is_read_only_sparql
+from sbp.api.commands import IDENTITY_FIELDS, _to_row  # pyright: ignore[reportPrivateUsage]
 from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.metrics import MetricSample, metric
@@ -364,6 +365,51 @@ class TestCommandIdentity:
         no_resolver, seen2 = self._client(resolver=None)
         assert no_resolver.post("/commands/answer_observation", json={}).status_code == 401
         assert seen == seen2 == []
+
+    def test_every_known_command_has_an_actor_field(self) -> None:
+        """`_to_row` が知るコマンドと `IDENTITY_FIELDS` が一致する（足し忘れで自称が通らない）。"""
+        for name in IDENTITY_FIELDS:
+            with pytest.raises(ValueError) as caught:
+                _to_row(name, {})  # pyright: ignore[reportPrivateUsage]
+            assert "unknown command" not in str(caught.value), name
+
+    def test_an_unknown_command_is_refused_even_for_a_known_principal(self) -> None:
+        client, seen = self._client()
+        assert client.post("/commands/brand_new", json={"x": 1}).status_code == 409
+        assert seen == []
+
+    @pytest.mark.parametrize("claimed", ["", [], ["x"], 0, "  "])
+    def test_ill_typed_claims_are_refused(self, claimed: Any) -> None:
+        client, seen = self._client()
+        response = client.post("/commands/answer_observation", json={"answered_by": claimed})
+        assert response.status_code == 403
+        assert seen == []
+
+    def test_a_null_claim_is_treated_as_absent(self) -> None:
+        client, seen = self._client()
+        client.post("/commands/answer_observation", json={"answered_by": None})
+        assert seen[0]["answered_by"] == self.OP
+
+    def test_an_alias_field_does_not_reach_the_handler_as_the_actor(self) -> None:
+        """別名は主体の欄ではない。ハンドラ（`_to_row`）が `extra=forbid` で弾く。"""
+        client, seen = self._client()
+        client.post("/commands/answer_observation", json={"answeredBy": "https://x/boss"})
+        assert seen[0]["answered_by"] == self.OP
+
+    def test_unauthenticated_requests_are_refused_before_the_body_is_read(self) -> None:
+        client, _seen = self._client(resolver=_nobody)
+        response = client.post(
+            "/commands/answer_observation", content=b"not json", headers={"content-type": "x/y"}
+        )
+        assert response.status_code == 401
+
+    def test_a_malformed_body_is_a_400(self) -> None:
+        client, _seen = self._client()
+        response = client.post(
+            "/commands/answer_observation", content=b"not json", headers={"content-type": "x/y"}
+        )
+        assert response.status_code == 400
+        assert client.post("/commands/answer_observation", json=[1]).status_code == 400
 
     def test_an_agent_cannot_make_a_human_decision(self) -> None:
         client, seen = self._client(resolver=_an_agent)
