@@ -364,6 +364,29 @@ class KoopmanModel:
             covariance=self._noise.copy(),
         )
 
+    def embed_series(self, observations: NDArray[np.float64]) -> NDArray[np.float64]:
+        """観測列の各時刻の潜在を返す（前詰めしない。M8-24、ADR-0023）。
+
+        行 ``j`` は観測の ``j + delays - 1`` 行目までを埋め込んだ潜在。先頭の ``delays - 1`` 行の
+        観測は潜在を持たない。**運用のエンコードはこちらを使う**——前詰めは学習ラベルとの長さ合わせ
+        （:meth:`encode_series`）のためで、運用で書くと「実際には観測されていない時刻の潜在」を
+        索引に入れてしまう。
+
+        Args:
+            observations: 観測列（``(時刻, チャンネル)``）。``delays`` 行以上。
+
+        Raises:
+            WorldModelError: 未学習、形が合わない、または行が足りない場合。
+        """
+        self._require_trained()
+        self._check_observation_shape(observations)
+        if observations.shape[0] < self.config.delays:
+            raise WorldModelError(
+                f"embedding needs at least {self.config.delays} observations, "
+                f"got {observations.shape[0]}"
+            )
+        return self._lift_series(observations)
+
     def encode_series(
         self,
         observations: NDArray[np.float64],

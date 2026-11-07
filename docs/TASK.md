@@ -364,7 +364,7 @@ H-22 の決定次第**である。
 - [ ] **M8-24** 推定パスの先頭（**ADR 先行**） — 観測窓 → `WorldModel.encode` → `LatentIndex.write` を運用で回す。**いまは潜在索引に書くコードがテストにしか無い**（`test_bridge_worker_e2e` / `test_g4_worldmodel`）。エンコーダをどこで動かすか（6 番目のワーカー / bridge-worker の前段 / 本リポジトリ外のエッジ。設計書 §12.1 はエッジにエンコーダを置く）を ADR で決める。前提として WM 本体の重みの直列化（PROGRESS 既知の制約）と観測の入口の契約が要る。1 日を超えるなら分割する。**2026-11-08 に ADR-0023 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-24-1** ADR-0023（文書のみ。推定パスの先頭は「エンコードジョブ」＝スクリプト + ライブラリ、観測の入口はスプール（JSONL）の Protocol、WM の重みは `.npz` で `ArtifactStore` に直列化）→ 完了（2026-11-08）
   - [x] **M8-24-2** WM 重みの直列化（Koopman）— `sbp.worldmodel.serialization` → 完了（2026-11-08。`KoopmanModel.export_state` / `from_state`（形・有限性を検証）、`sbp.worldmodel.serialization`（`.npz`・`allow_pickle=False`・メタ同梱。pickle・欠けたメタ・形式の MAJOR 違い・形の食い違い・非有限・`latest` を拒否、MINOR は読む）、`save_model`（上書きしない）/ `load_model`（鍵の版と中身の食い違いを拒否）、鍵は `models/<モデル>/<版>/koopman.npz`。単体 19 件）
-  - [ ] **M8-24-3** 観測の入口とエンコードの実行 — `ObservationSource`・`JsonlObservationSource`・`EncodeRunner`・ウォーターマーク
+  - [x] **M8-24-3** 観測の入口とエンコードの実行 — `ObservationSource`・`JsonlObservationSource`・`EncodeRunner`・ウォーターマーク → 完了（2026-11-08。`KoopmanModel.embed_series`（前詰めしない）、`sbp.worldmodel.encoding`（`ObservationSource` Protocol・`JsonlObservationSource`＝読み取り専用で不正な行は位置つきで数える・`EncodeRunner`＝潜在は観測された時刻にだけ作り、実体ごとのウォーターマークで冪等、書いた後に進める、チャンネルの食い違い・短い窓は数えて続行、`health()` と窓ごとの推論時間を `EncodeReport` に出す）。単体 20 件）
   - [ ] **M8-24-4** スクリプト — `scripts/encode.py` / `scripts/train_koopman.py`、設定、runbook
   - [ ] **M8-24-5** 統合テスト — スプール → 学習 → 直列化 → エンコード → 潜在索引 → bridge-worker が読める
   - [ ] **M8-24-6** レビュー・評価・記録
