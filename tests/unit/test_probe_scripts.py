@@ -88,7 +88,7 @@ def test_a_promoted_bundle_is_stored_under_its_versioned_key(
     )
     assert outcome.bundle is not None
     assert loads(store.get(artifact_key(outcome.spec))).spec.probe_id == PROBE
-    assert {s.name.key for s in samples} == {"probe_auroc", "probe_ece"}
+    assert {s.name.key for s in samples} == {"probe_auroc", "probe_ece", "align_residual"}
 
 
 def test_a_probe_that_fails_the_gate_stores_nothing_but_still_records_metrics(
@@ -108,7 +108,7 @@ def test_a_probe_that_fails_the_gate_stores_nothing_but_still_records_metrics(
     )
     assert outcome.bundle is None
     assert not list(tmp_path.rglob("*.json")), "ゲートを通らないものを置き場に入れない"
-    assert len(samples) == 2, "落ちた理由が見えるよう、指標は残す"
+    assert len(samples) == 3, "落ちた理由が見えるよう、指標は残す"
 
 
 def test_the_same_version_is_never_overwritten(

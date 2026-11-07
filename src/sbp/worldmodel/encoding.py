@@ -33,6 +33,7 @@ import numpy as np
 
 from sbp.core.errors import WorldModelError
 from sbp.core.logging import get_logger
+from sbp.core.metrics import MetricSample, metric
 from sbp.core.time import ensure_utc
 
 if TYPE_CHECKING:
@@ -49,6 +50,7 @@ __all__ = [
     "JsonlObservationSource",
     "ObservationSource",
     "ObservationWindow",
+    "metric_samples",
 ]
 
 log = get_logger(__name__)
@@ -201,6 +203,7 @@ class EncodeReport:
     rejected: int = 0
     latency_s: list[float] = field(default_factory=list)
     health: ModelHealth | None = None
+    wm_version: str = ""
 
 
 class EncodeRunner:
@@ -255,7 +258,7 @@ class EncodeRunner:
         await self._index.register(wm_version=wm_version, dim=self.model.latent_dim)
         processed = await self._watermarks.load()
         delays = self.model.config.delays
-        report = EncodeReport()
+        report = EncodeReport(wm_version=wm_version)
         longest = 0
         # 同じ実体の窓が前後して届いても取りこぼさない: 始端の順に処理する（ウォーターマークは単調）
         ordered = sorted(
@@ -281,7 +284,9 @@ class EncodeRunner:
             stamps = window.timestamps[delays - 1 :]
             if len(window.timestamps) > longest and len(window.timestamps) > delays:
                 longest = len(window.timestamps)
-                report.health = self._health(window)
+                health = self._health(window)
+                if health is not None:
+                    report.health = health
             mark = processed.get(window.entity)
             keep = [i for i, at in enumerate(stamps) if mark is None or at > mark]
             if not keep:
@@ -310,3 +315,29 @@ class EncodeRunner:
             rejected=report.rejected,
         )
         return report
+
+
+def metric_samples(report: EncodeReport, *, at: datetime) -> list[MetricSample]:
+    """エンコードの結果を指標にする（M8-15）。
+
+    ``latent_shift`` / ``pred_error`` は比率の指標なので 1 で頭打ちにする（MMD は 1 を超えうる。
+    超過は「大きくずれた」であって別の値ではない）。``inference_latency`` は窓ごとの平均。
+    測れなかったものは出さない（0 を入れない）。
+
+    Args:
+        report: 実行の結果。
+        at: 測定時刻。
+    """
+    labels = {"wm_version": report.wm_version}
+    samples: list[MetricSample] = []
+    if report.health is not None:
+        samples.append(
+            MetricSample(metric("latent_shift"), min(report.health.latent_shift, 1.0), at, labels)
+        )
+        samples.append(
+            MetricSample(metric("pred_error"), min(report.health.pred_error, 1.0), at, labels)
+        )
+    if report.latency_s:
+        mean = float(np.mean(report.latency_s))
+        samples.append(MetricSample(metric("inference_latency"), mean, at, labels))
+    return samples

@@ -24,7 +24,7 @@ from scripts.train_koopman import train_from_spool
 
 from sbp.core.config import BridgeSettings, Settings
 from sbp.core.time import now
-from sbp.knowledge import LatentIndex
+from sbp.knowledge import LatentIndex, MetricStore
 from sbp.knowledge.artifacts import LocalArtifactStore
 from sbp.testing import SynthConfig, SynthWorld
 
@@ -87,6 +87,12 @@ async def test_spool_to_latent_index(settings: Settings, tmp_path: Path) -> None
         stamps = [at for at, _vec in rows]
         assert stamps == sorted(stamps)
         assert rows[0][1].shape == (model.latent_dim,)
+
+        latest = await MetricStore(connection, site=configured.site_id).latest()
+        measured = {
+            m.name.key for m in latest if m.labels.get("wm_version") == model.meta.version_iri
+        }
+        assert {"inference_latency", "latent_shift", "pred_error"} <= measured, "M8-15"
 
         again = await encode_once(configured, spool, store=store, connection=connection)
         assert again.rows_written == 0, "処理済みの窓を書き直さない"

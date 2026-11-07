@@ -21,8 +21,14 @@ import psycopg
 
 from sbp.core.config import Settings, get_settings
 from sbp.core.logging import configure_logging, get_logger
-from sbp.knowledge import LatentIndex, S3ArtifactStore, WatermarkStore
-from sbp.worldmodel.encoding import EncodeReport, EncodeRunner, JsonlObservationSource
+from sbp.core.time import now
+from sbp.knowledge import LatentIndex, MetricStore, S3ArtifactStore, WatermarkStore
+from sbp.worldmodel.encoding import (
+    EncodeReport,
+    EncodeRunner,
+    JsonlObservationSource,
+    metric_samples,
+)
 from sbp.worldmodel.serialization import load_model
 from scripts._wm import split_wm_version, spool_path
 
@@ -72,7 +78,14 @@ async def encode_once(
                 conn, worker=WORKER_NAME, wm_version=model.meta.version_iri, level="mid"
             ),
         )
-        return await runner.run(JsonlObservationSource(spool))
+        report = await runner.run(JsonlObservationSource(spool))
+        samples = metric_samples(report, at=now())
+        if samples:
+            try:
+                await MetricStore(conn, site=settings.site_id).write(samples)
+            except Exception:  # 指標の不調でエンコードを止めない（潜在は書けている）
+                log.exception("encode.metrics_failed", samples=len(samples))
+        return report
     finally:
         if owns:
             await conn.close()

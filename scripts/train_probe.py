@@ -96,6 +96,9 @@ def train_outcome(
         samples = [
             MetricSample(metric("probe_auroc"), outcome.metrics.auroc, at, labels),
             MetricSample(metric("probe_ece"), outcome.metrics.ece, at, labels),
+            MetricSample(
+                metric("align_residual"), min(outcome.metrics.alignment_residual, 1.0), at, labels
+            ),
         ]
     return outcome, samples
 

@@ -82,6 +82,7 @@ from sbp.reasoning.reconciliation import (
     from_record,
 )
 from sbp.reasoning.reconciliation.persistence import to_record as discrepancy_to_record
+from services.metrics import MetricRecorder
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -260,6 +261,7 @@ class LearningWorker:
         verification: ExpectationVerification | None = None,
         answers: AnswerPath | None = None,
         discovery: ConceptDiscovery | None = None,
+        metrics: MetricRecorder | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -285,6 +287,8 @@ class LearningWorker:
             送れない回答を適用済みにすると、人の確認が信念に届かないまま消える）。
         discovery: 概念発見（``None`` なら発見しない。UI の概念 curation は空のまま。
             ADR-0019）。LLM プロバイダが無ければ ``build_worker`` は ``None`` を渡す。
+        metrics: 指標の記録（``None`` なら測らない）。解決の適用で ``resolution_time`` /
+            ``reliability_updates`` / ``learning_yield`` を書く（M8-15）。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -304,6 +308,9 @@ class LearningWorker:
         self._verification = verification
         self._answers = answers
         self._discovery = discovery
+        self._metrics = metrics
+        self.resolved_total = 0
+        self.productive_total = 0
         self._last_discover: datetime | None = None
         self._unproductive: dict[str, int] = {}
         self.proposed_total = 0
@@ -379,7 +386,10 @@ class LearningWorker:
             適用できた判断の件数と、検証した期待の件数の合計。
         """
         applied = await self._apply_decisions()
-        return applied + await self._verify_overdue() + await self._discover()
+        total = applied + await self._verify_overdue() + await self._discover()
+        if self._metrics is not None:
+            await self._metrics.flush(at=now())
+        return total
 
     @property
     def unproductive_signals(self) -> dict[str, int]:
@@ -709,6 +719,7 @@ class LearningWorker:
             "concept_candidates_recorded": len(artifacts.concept_candidates),
             "writeback_mode": self.settings.writeback_mode.value,
         }
+        self._measure_resolution(discrepancy, resolution, artifacts, enqueued)
         log.info(
             "worker.resolution_applied",
             worker=WORKER_NAME,
@@ -717,6 +728,58 @@ class LearningWorker:
             **summary,
         )
         return summary
+
+    def _measure_resolution(
+        self,
+        discrepancy: Discrepancy,
+        resolution: Resolution,
+        artifacts: LearningArtifacts,
+        enqueued: int,
+    ) -> None:
+        """解決の適用を指標にする（M8-15）。``learning_yield`` は累計の割合。
+
+        **測定の失敗で判断を失敗にしない。** ここは副作用（観測要求・書き戻し）の後なので、
+        例外が出ると判断が再試行されて副作用が重複する。測定時刻は判断ごとに取る——同じ周期の
+        標本が同じ ``(名前, 時刻, ラベル)`` で上書きし合わないように。
+
+        学習信号にならなかった解決（記録訂正も負例も概念候補も観測要求も出なかったもの）が
+        分母に入るので、「解決しても何も学ばない」運用が割合に出る。
+        """
+        try:
+            self._record_resolution(discrepancy, resolution, artifacts, enqueued, at=now())
+        except Exception:
+            log.exception("worker.resolution_metrics_failed", worker=WORKER_NAME)
+
+    def _record_resolution(
+        self,
+        discrepancy: Discrepancy,
+        resolution: Resolution,
+        artifacts: LearningArtifacts,
+        enqueued: int,
+        *,
+        at: datetime,
+    ) -> None:
+        self.resolved_total += 1
+        productive = bool(
+            artifacts.reliability_updates
+            or artifacts.bags
+            or artifacts.concept_candidates
+            or enqueued
+        )
+        self.productive_total += int(productive)
+        if self._metrics is None:
+            return
+        labels = {"kind": str(int(discrepancy.kind))}
+        self._metrics.record(
+            "resolution_time",
+            max((resolution.resolved_at - discrepancy.detected_at).total_seconds(), 0.0),
+            at=at,
+            labels=labels,
+        )
+        self._metrics.record(
+            "reliability_updates", float(len(artifacts.reliability_updates)), at=at, labels=labels
+        )
+        self._metrics.record("learning_yield", self.productive_total / self.resolved_total, at=at)
 
     async def _load_discrepancy(
         self, row: DecisionRow, *, resolution: Resolution, at: datetime
@@ -1193,6 +1256,7 @@ async def build_worker(
         DiscrepancyStore,
         ExpectationStore,
         HttpGraphStore,
+        MetricStore,
         ObservationQueue,
         RecordIndex,
         current_beliefs,
@@ -1297,6 +1361,7 @@ async def build_worker(
             verification=verification,
             answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
             discovery=discovery,
+            metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
         )
     except BaseException:
         # 組み立てに失敗したら producer を残さない（後始末はワーカーが持つので、ここだけ自前）
