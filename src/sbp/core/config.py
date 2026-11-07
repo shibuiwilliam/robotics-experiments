@@ -197,6 +197,13 @@ class ReasoningSettings(_DotenvSettings):
     バッチの境界で効く）。
     """
 
+    expectation_verify_period_s: float = Field(default=60.0, gt=0.0)
+    """期限切れの期待を検証する周期（秒、learning-worker。ADR-0017）。
+
+    検証するのは期限を過ぎた ``Active`` だけなので、短くしても早く判定されるわけではない
+    （期限が来てから、最大この秒数遅れて判定される）。
+    """
+
 
 class WorldModelSettings(_DotenvSettings):
     """WM 層の閾値（設計書 §4.8）。"""

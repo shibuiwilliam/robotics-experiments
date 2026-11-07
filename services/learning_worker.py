@@ -19,6 +19,11 @@
 いないので、何も実行できない（失敗として記録される）——業務システムを変える経路は運用者が
 明示する、という書き戻しと同じ扱いである。
 
+**期限切れの期待の検証**（M8-27、ADR-0017）: 判断を適用する周期とは別の周期
+（``SBP_REASONING_EXPECTATION_VERIFY_PERIOD_S``）で、期限を過ぎた ``Active`` の期待を検証する。
+違反は不一致として起票し、判定不能は観測要求を積み、最後に期待の状態を進める。信念・期待の書き込み・
+観測要求のキューが揃わなければ検証しない（``verification_unwired`` に数える）。
+
 **照合ワーカーに相乗りしない理由。** 照合は窓を回すホットパスで、書き戻しは外部システムへの
 同期呼び出しである。詰まった書き戻しが検出を止める（ADR-0012 の問い 2）。
 
@@ -31,6 +36,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -53,6 +59,9 @@ from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.knowledge.decisions import DecisionKind
 from sbp.reasoning.discovery import ProposalStatus
+from sbp.reasoning.expectation import ExpectationStatus
+from sbp.reasoning.expectation_runner import verify_if_overdue
+from sbp.reasoning.expectation_store import from_record as expectation_from_record
 from sbp.reasoning.expectation_store import to_record as expectation_to_record
 from sbp.reasoning.reconciliation import (
     Discrepancy,
@@ -64,6 +73,7 @@ from sbp.reasoning.reconciliation import (
     convert_resolution,
     from_record,
 )
+from sbp.reasoning.reconciliation.persistence import to_record as discrepancy_to_record
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -76,7 +86,9 @@ if TYPE_CHECKING:
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.observations import ObservationRow
+    from sbp.reasoning.expectation import Expectation
     from sbp.reasoning.reconciliation.learning import LearningArtifacts
+    from sbp.reasoning.reconciliation.severity import BusinessValueRegistry
 
     DiscrepancyReader = Callable[[str], Awaitable["DiscrepancyRecord | None"]]
     """``不一致 ID -> 作業項目レコード``（``DiscrepancyStore.get`` を包む）。"""
@@ -90,6 +102,12 @@ if TYPE_CHECKING:
     """期待を作業項目表に書く（``ExpectationStore.upsert``）。"""
     ProposalCurator = Callable[[str, str, int, str], Awaitable[bool]]
     """``(提案 ID, 採否, rank, 理由) -> 更新できたか``（``ConceptProposalStore.curate``）。"""
+    OverdueReader = Callable[[datetime, int], Awaitable[list["ExpectationRecord"]]]
+    """``(時刻, 件数) -> 期限切れの Active``（``ExpectationStore.overdue_active``）。"""
+    RecordReader = Callable[[str, datetime], Awaitable[frozenset[str]]]
+    """``(実体, 時刻) -> その時刻以降に記録のある記録型``（``RecordIndex.present_types``）。"""
+    DiscrepancySink = Callable[["DiscrepancyRecord"], Awaitable[None]]
+    """不一致を作業項目表に書く（``DiscrepancyStore.upsert``）。"""
 
 __all__ = [
     "LearningWorker",
@@ -105,6 +123,28 @@ WORKER_NAME = "learning-worker"
 
 _DEFAULT_PERIOD_S = 30.0
 """キューを引く周期（秒）。人の判断は毎秒来るものではない。"""
+
+
+@dataclass(frozen=True, slots=True)
+class ExpectationVerification:
+    """期待の周期検証に要る依存（ADR-0017）。
+
+    期待の書き込み・信念の読み出し・観測要求のキューはワーカーが別に持っている（アクションの
+    実行と共有）。ここに束ねるのは検証だけが使うもの。
+
+    Attributes:
+        overdue: 期限切れの ``Active`` の読み出し。
+        records: 記録の存在の読み出し（記号側の検証）。
+        discrepancies: 違反の起票先。
+        values: 業務価値のレジストリ（起票する不一致の深刻度）。
+        entity_types: 実体 → ObjectType の対応を引く（同期。周期ごとに 1 回、別スレッドで呼ぶ）。
+    """
+
+    overdue: OverdueReader
+    records: RecordReader
+    discrepancies: DiscrepancySink
+    values: BusinessValueRegistry
+    entity_types: Callable[[], dict[str, str]]
 
 
 def readiness_checks(settings: Settings) -> tuple[ReadinessCheck, ...]:
@@ -144,6 +184,7 @@ class LearningWorker:
         beliefs: BeliefReader | None = None,
         expectations: ExpectationSink | None = None,
         proposals: ProposalCurator | None = None,
+        verification: ExpectationVerification | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -162,6 +203,9 @@ class LearningWorker:
             書けないと、効果の検証が永久にできず学習が止まる）。
         proposals: 概念提案の採否の反映（``None`` なら**提案が画面に残り続ける**。採否は
             記録されるが、提案は ``proposed`` のまま）。
+        verification: 期限切れの期待の検証（``None`` なら検証しない。期待は ``Active`` のまま
+            期限を過ぎてもボードに残る。所見 103）。``beliefs`` / ``expectations`` /
+            ``observations`` も要る。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -178,6 +222,9 @@ class LearningWorker:
         self._beliefs = beliefs
         self._expectations = expectations
         self._proposals = proposals
+        self._verification = verification
+        self._last_verify: datetime | None = None
+        self.verified_total = 0
         # **プロセス内にしか無い。** 再起動で消えるので、冪等の鍵が防ぐのは「同じ判断の
         # 二度適用」だけで、「別の判断で短時間に 2 回」は再起動後に通る（ADR-0014 の未決 1）
         self._rate_limits = RateLimitState()
@@ -185,6 +232,23 @@ class LearningWorker:
         self._last_poll: datetime | None = None
         self.applied_total = 0
         self.failed_total = 0
+        self.verification_unwired: tuple[str, ...] = tuple(
+            name
+            for name, given in (
+                ("verification", verification),
+                ("beliefs", beliefs),
+                ("expectations", expectations),
+                ("observations", observations),
+            )
+            if given is None
+        )
+        if self.verification_unwired:
+            log.info(
+                "worker.expectation_verification_not_wired",
+                worker=WORKER_NAME,
+                missing=list(self.verification_unwired),
+                detail="期限切れの期待を検証しない（Active のまま期限を過ぎてボードに残る）",
+            )
         if decisions is None:
             log.warning(
                 "worker.no_decision_queue",
@@ -215,7 +279,125 @@ class LearningWorker:
         return at - self._last_poll >= self.period
 
     async def step(self) -> int:
-        """1 ループ。未適用の判断を適用する。
+        """1 ループ。未適用の判断を適用し、期限切れの期待を検証する。
+
+        Returns:
+            適用できた判断の件数と、検証した期待の件数の合計。
+        """
+        applied = await self._apply_decisions()
+        return applied + await self._verify_overdue()
+
+    def verify_due(self, *, at: datetime) -> bool:
+        """この時点で期待の検証を回すべきか。
+
+        Args:
+            at: 判定時刻。
+        """
+        if self._last_verify is None:
+            return True
+        period = self.settings.reasoning.expectation_verify_period_s
+        return (at - self._last_verify).total_seconds() >= period
+
+    async def _verify_overdue(self) -> int:
+        """期限切れの ``Active`` を検証して状態を進める（M8-27、ADR-0017）。
+
+        **書く順序**: 不一致・観測要求を先に、期待の状態を最後に書く。状態を先に進めると、
+        副作用の書き込みに失敗したとき期待が ``Active`` でなくなり、再試行の対象から外れて
+        違反が学習信号に出ない。副作用は冪等（不一致の ID は期待から決まり、観測要求は
+        ``(不一致, フルーエント)`` で 1 行）なので、状態の書き込みが失敗しても再実行できる。
+
+        1 件の失敗で残りを止めない（ログに残して次へ）。
+
+        Returns:
+            検証して状態を進めた期待の件数。
+        """
+        v = self._verification
+        if (
+            v is None
+            or self._beliefs is None
+            or self._expectations is None
+            or self._observations is None
+        ):
+            # 観測要求を積めないと、判定不能の期待が要求を残さず終わる。配線漏れは起動時に数える
+            return 0
+        at = now()
+        if not self.verify_due(at=at):
+            return 0
+        self._last_verify = at
+
+        rows = await v.overdue(at, self.settings.reasoning.batch_size)
+        if not rows:
+            return 0
+        types = await asyncio.to_thread(v.entity_types)
+        verified = 0
+        for row in rows:
+            try:
+                expectation = expectation_from_record(row)
+                beliefs = await self._beliefs(expectation.target)
+                present = await v.records(expectation.target, expectation.created_at)
+                verdict = verify_if_overdue(
+                    expectation,
+                    beliefs=beliefs,
+                    present_records=present,
+                    at=at,
+                    severity_for=lambda item: self._severity_of(item, types=types, at=at),
+                )
+                if verdict is None:
+                    continue
+                if verdict.discrepancy is not None:
+                    await v.discrepancies(discrepancy_to_record(verdict.discrepancy))
+                if verdict.observation_requests and self._observations is not None:
+                    await self._observations(verdict.observation_requests)
+                await self._expectations(expectation_to_record(verdict.expectation))
+                verified += 1
+                log.info(
+                    "worker.expectation_verified",
+                    worker=WORKER_NAME,
+                    correlation_id=str(expectation.expectation_id),
+                    entity=expectation.target,
+                    status=verdict.expectation.status.value,
+                    discrepancy=str(verdict.discrepancy.discrepancy_id)
+                    if verdict.discrepancy
+                    else None,
+                    observation_requests=len(verdict.observation_requests),
+                )
+            except Exception as exc:  # 1 件の失敗で残りを止めない。次の周期で再試行する
+                self.failed_total += 1
+                log.warning(
+                    "worker.expectation_verify_failed",
+                    worker=WORKER_NAME,
+                    correlation_id=str(row.expectation_id),
+                    error=str(exc),
+                )
+        self.verified_total += verified
+        return verified
+
+    def _severity_of(
+        self, expectation: Expectation, *, types: dict[str, str], at: datetime
+    ) -> Severity:
+        """期待の対象の型の業務価値から深刻度を作る（起票する不一致・観測要求の効用）。
+
+        確信度は判定の種類による: 違反は期待区間の外という明確な判定（1.0）、判定不能は
+        中間（0.5）。持続は期待の作成から検証までの長さ。型が引けなければ、照合の文脈と同じく
+        実体自身を型とみなし、登録の無い型の既定（基準額の半分）に落ちる。
+        """
+        from sbp.reasoning.reconciliation.severity import compute_severity  # noqa: PLC0415
+
+        assert self._verification is not None
+        values = self._verification.values
+        confidence = 1.0 if expectation.status is ExpectationStatus.VIOLATED else 0.5
+        return compute_severity(
+            value=values.get(types.get(expectation.target, expectation.target)),
+            confidence=confidence,
+            persistence=at - expectation.created_at,
+            value_scale=values.scale,
+            persistence_scale=timedelta(
+                seconds=self.settings.reasoning.severity_persistence_scale_s
+            ),
+        )
+
+    async def _apply_decisions(self) -> int:
+        """未適用の判断を適用する。
 
         Returns:
             適用できた判断の件数。
@@ -703,8 +885,11 @@ async def build_worker(
         ExpectationStore,
         HttpGraphStore,
         ObservationQueue,
+        RecordIndex,
         current_beliefs,
+        most_specific_types,
     )
+    from sbp.reasoning.reconciliation.severity import BusinessValueRegistry  # noqa: PLC0415
 
     resolved = settings or Settings()
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
@@ -714,7 +899,12 @@ async def build_worker(
     expectations = ExpectationStore(connection, site=site_id)
     proposals = ConceptProposalStore(connection, site=site_id)
     contracts = ActionRegistry.from_directory(Path("actions"))
-    assertions = AssertionStore(HttpGraphStore(resolved), site_id=site_id)
+    graph = HttpGraphStore(resolved)
+    assertions = AssertionStore(graph, site_id=site_id)
+    values = BusinessValueRegistry.from_directory(
+        Path("value"), default_scale=resolved.reasoning.severity_value_scale
+    )
+    records = RecordIndex(connection, site=site_id)
 
     async def read_beliefs(entity: str) -> dict[str, float]:
         """実体の信念を読む（前提の物理面）。
@@ -745,6 +935,26 @@ async def build_worker(
         """
         await expectations.upsert(record)
 
+    async def overdue(at: datetime, limit: int) -> list[ExpectationRecord]:
+        """期限切れの ``Active`` を引く。"""
+        return await expectations.overdue_active(at=at, limit=limit)
+
+    async def present_records(entity: str, since: datetime) -> frozenset[str]:
+        """期待の作成後に対象へ記録のある記録型を引く（記号側の検証）。"""
+        return await records.present_types(entity, since=since)
+
+    def entity_types() -> dict[str, str]:
+        """実体の型を知識グラフから引く（深刻度の業務価値）。"""
+        return most_specific_types(graph, types=values.object_types, site=site_id)
+
+    verification = ExpectationVerification(
+        overdue=overdue,
+        records=present_records,
+        discrepancies=store.upsert,
+        values=values,
+        entity_types=entity_types,
+    )
+
     worker = LearningWorker(
         resolved,
         decisions=decisions,
@@ -754,6 +964,7 @@ async def build_worker(
         beliefs=read_beliefs,
         expectations=write_expectation,
         proposals=curate_proposal,
+        verification=verification,
     )
     log.info(
         "worker.wired",
