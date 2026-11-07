@@ -903,7 +903,9 @@ class LearningWorker:
 
         Raises:
             ActionError: 配線が無い、契約が無い、前提が満たせない、レート制限に当たる場合。
-                キューの ``error`` に残り、再試行の対象になる（前提は後で満たされうる）。
+                キューの ``error`` に残り、``failed_at`` が立つ。**自動では再試行されない**
+                （``pending`` は ``failed_at IS NULL`` の行だけを引く）。前提は後で満たされうるが、
+                人が理由を読んで新しい判断として再投入する（ADR-0021）。
         """
         command = ExecutionCommand.model_validate(row.payload)
         if self._contracts is None or self._expectations is None:

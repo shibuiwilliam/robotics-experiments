@@ -19,17 +19,20 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 
 import strawberry
 
+from sbp.api.actions_view import summarize
 from sbp.api.authorization import AuthorizationError, visible_rows
 from sbp.api.evidence import build_evidence
 from sbp.core import vocab
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.knowledge.contributions import SERIES_LIMIT
+from sbp.knowledge.decisions import DecisionKind
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -531,8 +534,240 @@ class BeliefEvidenceType:
 
 
 @strawberry.type
+class ActionTypeType:
+    """アクション契約の要約（UI の承認フォームが読む。M8-22、ADR-0021）。
+
+    Attributes:
+        actionType: アクション型 IRI。
+        targets: 対象の型 IRI。
+        riskClass: リスク級（``low`` / ``medium`` / ``high``）。
+        approval: 承認の要否（``always`` / ``if_severity_high`` / ``never``）。
+        approvalRole: 承認者のロール IRI。
+        preconditions: 面ごとの前提の説明（``symbolic`` / ``physical`` / ``normative``）。
+        effects: 面ごとの期待する効果（説明と期限）。
+        compensation: 補償アクション型 IRI（**表示するだけ**。実行の入口は無い。H-08）。
+        rateLimit: 同一対象への反復の制限（無ければ ``None``）。
+    """
+
+    actionType: str  # noqa: N815 — GraphQL は camelCase
+    targets: str
+    riskClass: str  # noqa: N815
+    approval: str
+    approvalRole: str  # noqa: N815
+    preconditions: list[PreconditionFaceType]
+    effects: list[EffectFaceType]
+    compensation: str
+    rateLimit: RateLimitType | None  # noqa: N815
+
+
+@strawberry.type
+class PreconditionFaceType:
+    """面ごとの前提。
+
+    Attributes:
+        face: 面（``symbolic`` / ``physical`` / ``normative``）。
+        descriptions: 前提の説明。
+    """
+
+    face: str
+    descriptions: list[str]
+
+
+@strawberry.type
+class EffectType:
+    """期待する効果 1 件。
+
+    Attributes:
+        description: 効果の説明。
+        within: 期限（ISO 8601 の期間）。
+    """
+
+    description: str
+    within: str
+
+
+@strawberry.type
+class EffectFaceType:
+    """面ごとの効果。
+
+    Attributes:
+        face: 面（``business`` / ``physical``）。
+        effects: 期待する効果。
+    """
+
+    face: str
+    effects: list[EffectType]
+
+
+@strawberry.type
+class RateLimitType:
+    """同一対象への反復の制限。
+
+    Attributes:
+        window: 時間窓（ISO 8601 の期間）。
+        max: 窓内に許す実行回数。
+    """
+
+    window: str
+    max: int
+
+
+@strawberry.type
+class DecisionStatusType:
+    """人の判断 1 件の状態（M8-22、ADR-0021）。
+
+    **失敗した判断は自動では再試行されない。** 理由を読み、新しい判断として再投入する。
+
+    Attributes:
+        decisionId: 判断の識別子。
+        kind: 種類（``resolution`` / ``curation`` / ``action`` / ``answer``）。
+        subject: 対象（不一致 ID・提案 ID・実体 IRI）。
+        decidedBy: 判断した主体の IRI。
+        state: ``pending`` / ``applied`` / ``failed``。
+        receivedAt: 受け付けた時刻。
+        appliedAt: 適用できた時刻。
+        failedAt: 失敗した時刻。
+        error: 失敗の理由（人が読む。整形しない）。
+        artifacts: 何を適用したかの要約（JSON 文字列）。
+        attempts: 適用を試みた回数。
+    """
+
+    decisionId: str  # noqa: N815
+    kind: str
+    subject: str
+    decidedBy: str  # noqa: N815
+    state: str
+    receivedAt: datetime  # noqa: N815
+    appliedAt: datetime | None  # noqa: N815
+    failedAt: datetime | None  # noqa: N815
+    error: str | None
+    artifacts: str
+    attempts: int
+
+
+@strawberry.type
 class Query:
     """読み取り専用のクエリ根（設計書 §10.1）。"""
+
+    @strawberry.field(description="アクション契約の要約（承認フォームが読む）")
+    def actionTypes(  # noqa: N802 — GraphQL は camelCase
+        self, info: strawberry.Info
+    ) -> list[ActionTypeType]:
+        """アクション契約の要約を返す（M8-22、ADR-0021）。
+
+        契約が唯一の正で、UI に写しを持たせない。**要求者を必須にする**（既定は拒否）。
+
+        Args:
+            info: strawberry の文脈（``actions`` に読み出し関数を持つ）。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合。
+            ValueError: 読み出しが設定されていない場合（空を返さない。所見 32）。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        reader = info.context.get("actions")
+        if reader is None:
+            raise ValueError(
+                "アクション契約の読み出しが設定されていない（create_app に action_reader を渡す）"
+            )
+        summaries = summarize(reader())
+        log.info("api.action_types_queried", principal=principal.subject, rows=len(summaries))
+        return [
+            ActionTypeType(
+                actionType=item.action_type,
+                targets=item.targets,
+                riskClass=item.risk_class,
+                approval=item.approval,
+                approvalRole=item.approval_role,
+                preconditions=[
+                    PreconditionFaceType(face=face, descriptions=list(descriptions))
+                    for face, descriptions in item.preconditions.items()
+                ],
+                effects=[
+                    EffectFaceType(
+                        face=face,
+                        effects=[
+                            EffectType(description=description, within=within)
+                            for description, within in effects
+                        ],
+                    )
+                    for face, effects in item.effects.items()
+                ],
+                compensation=item.compensation,
+                rateLimit=(
+                    None
+                    if item.rate_limit is None
+                    else RateLimitType(window=item.rate_limit[0], max=item.rate_limit[1])
+                ),
+            )
+            for item in summaries
+        ]
+
+    @strawberry.field(description="人の判断の状態（適用済み・失敗と理由・待ち）を主語で引く")
+    def decisions(
+        self,
+        info: strawberry.Info,
+        subject: str,
+        kinds: list[str] | None = None,
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[DecisionStatusType]:
+        """判断の状態を返す（M8-22、ADR-0021）。
+
+        Args:
+            info: strawberry の文脈（``decisions`` に読み出し関数を持つ）。
+            subject: 主語（不一致 ID・提案 ID・実体 IRI）。
+            kinds: 種類で絞る（``resolution`` / ``curation`` / ``action`` / ``answer``）。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合。
+            ValueError: ``limit`` が範囲外、未知の種類、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        reader = info.context.get("decisions")
+        if reader is None:
+            raise ValueError(
+                "判断の読み出しが設定されていない（create_app に decision_reader を渡す）"
+            )
+        try:
+            parsed = tuple(DecisionKind(kind) for kind in (kinds or ()))
+        except ValueError as exc:
+            raise ValueError(f"未知の判断の種類: {exc}") from exc
+        rows = reader(subject=subject, kinds=parsed, limit=limit)
+        log.info(
+            "api.decisions_queried",
+            principal=principal.subject,
+            subject=subject,
+            rows=len(rows),
+        )
+        return [
+            DecisionStatusType(
+                decisionId=row.decision_id,
+                kind=row.kind.value,
+                subject=row.subject,
+                decidedBy=row.decided_by,
+                state=row.state,
+                receivedAt=row.received_at,
+                appliedAt=row.applied_at,
+                failedAt=row.failed_at,
+                error=row.error,
+                artifacts=json.dumps(row.artifacts, ensure_ascii=False, sort_keys=True),
+                attempts=row.attempts,
+            )
+            for row in rows
+        ]
 
     @strawberry.field(description="証拠の三源並置（観測・記録・計画の寄与の時系列と計画）")
     def beliefEvidence(  # noqa: N802 — GraphQL は camelCase

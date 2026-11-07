@@ -19,7 +19,7 @@ from sbp.knowledge.assertions import AssertionRow, AssertionStore, current_belie
 from sbp.knowledge.concepts import ConceptProposalRecord, ConceptProposalStore
 from sbp.knowledge.contributions import ContributionRecord, ContributionStore
 from sbp.knowledge.cursors import IngestCursorStore
-from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow
+from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow, DecisionStatus
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
 from sbp.knowledge.expectations import ExpectationRecord, ExpectationStore
@@ -72,6 +72,7 @@ __all__ = [
     "DecisionKind",
     "DecisionQueue",
     "DecisionRow",
+    "DecisionStatus",
     "DiffEntry",
     "DiscrepancyRecord",
     "DiscrepancyStore",

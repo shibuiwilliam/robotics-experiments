@@ -113,6 +113,50 @@ class TestQueueSemantics:
             await _cleanup(connection)
 
     @pytest.mark.asyncio
+    async def test_history_returns_every_state_for_a_subject_newest_first(
+        self, settings: Settings
+    ) -> None:
+        """適用済み・失敗（理由付き）・待ちを主語で引く（M8-22、ADR-0021）。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            queue = DecisionQueue(connection, site=SITE)
+            for decision_id in ("h-applied", "h-failed", "h-pending"):
+                await queue.enqueue(
+                    DecisionRow(
+                        decision_id=decision_id,
+                        kind=DecisionKind.ACTION,
+                        subject=PUMP,
+                        decided_by=OPERATOR,
+                        payload={},
+                    )
+                )
+            await queue.enqueue(
+                DecisionRow(
+                    decision_id="h-other",
+                    kind=DecisionKind.ACTION,
+                    subject=PUMP + "-2",
+                    decided_by=OPERATOR,
+                    payload={},
+                )
+            )
+            await queue.mark_applied("h-applied", at=now(), artifacts={"expectation_id": "e-1"})
+            await queue.mark_failed("h-failed", at=now(), error="ActionError: rate limit")
+
+            found = await queue.history(subject=PUMP)
+            by_id = {row.decision_id: row for row in found}
+            assert set(by_id) == {"h-applied", "h-failed", "h-pending"}
+            assert by_id["h-applied"].state == "applied"
+            assert by_id["h-applied"].artifacts == {"expectation_id": "e-1"}
+            assert by_id["h-failed"].state == "failed"
+            assert by_id["h-failed"].error == "ActionError: rate limit"
+            assert by_id["h-pending"].state == "pending"
+            received = [row.received_at for row in found]
+            assert received == sorted(received, reverse=True)
+
+            only_actions = await queue.history(subject=PUMP, kinds=[DecisionKind.CURATION])
+            assert only_actions == []
+            await _cleanup(connection)
+
+    @pytest.mark.asyncio
     async def test_pending_is_ordered_oldest_first(self, settings: Settings) -> None:
         """古い順に返る（後の判断が前の判断を前提にしうる）。"""
         async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:

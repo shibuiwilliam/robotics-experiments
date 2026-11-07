@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from sbp.api.app import create_app
@@ -31,14 +32,14 @@ from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Coroutine
+    from collections.abc import AsyncGenerator, Coroutine, Sequence
     from datetime import datetime
 
     from fastapi import FastAPI, Request
 
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.contributions import ContributionRecord
-    from sbp.knowledge.decisions import DecisionRow
+    from sbp.knowledge.decisions import DecisionKind, DecisionRow, DecisionStatus
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 
@@ -146,6 +147,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     Returns:
         FastAPI アプリ。
     """
+    from sbp.actions import ActionRegistry  # noqa: PLC0415
     from sbp.api.commands import build_command_handler  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
@@ -160,6 +162,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     )
 
     resolved = settings or Settings()
+    # 契約は起動時に読む（YAML が壊れていれば起動で落とす。リクエストのたびに読み直さない）
+    registry = ActionRegistry.from_directory(Path("actions"))
+    contracts = [registry.get(action_type) for action_type in registry.types()]
     store = HttpGraphStore(resolved)
     beliefs = AssertionStore(store, site_id=resolved.site_id)
 
@@ -241,6 +246,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = ContributionStore(_connection(), site=resolved.site_id)
         return _run_sync(store.series(entity=entity, fluent=fluent, start=start, end=end))
 
+    def read_decisions(
+        *, subject: str, kinds: Sequence[DecisionKind] = (), limit: int = 50
+    ) -> list[DecisionStatus]:
+        """人の判断の状態を同期の形で返す（M8-22、ADR-0021）。
+
+        Args:
+            subject: 主語（不一致 ID・提案 ID・実体 IRI）。
+            kinds: 種類で絞る。
+            limit: 返す件数の上限。
+        """
+        queue = DecisionQueue(_connection(), site=resolved.site_id)
+        return _run_sync(queue.history(subject=subject, kinds=kinds, limit=limit))
+
     async def read_metrics() -> list[MetricSample]:
         """系列ごとの最新値を返す。"""
         return await MetricStore(_connection(), site=resolved.site_id).latest()
@@ -274,6 +292,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         expectation_reader=read_expectations,
         proposal_reader=read_proposals,
         evidence_reader=read_evidence,
+        action_reader=lambda: contracts,
+        decision_reader=read_decisions,
     )
     app.router.lifespan_context = lifespan
     return app

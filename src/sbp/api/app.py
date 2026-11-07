@@ -37,12 +37,14 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
     from datetime import datetime
 
+    from sbp.actions.contracts import ActionContract
     from sbp.api.authorization import Principal
     from sbp.api.schema import BeliefReader
     from sbp.core.config import Settings
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.contributions import ContributionRecord
+    from sbp.knowledge.decisions import DecisionStatus
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 
@@ -50,6 +52,10 @@ if TYPE_CHECKING:
     """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
     ExpectationReader = Callable[..., Sequence["ExpectationRecord"]]
     ProposalReader = Callable[..., Sequence["ConceptProposalRecord"]]
+    ActionReader = Callable[[], Sequence["ActionContract"]]
+    """契約の一覧を返す（``ActionRegistry`` の契約。同期）。"""
+    DecisionReader = Callable[..., Sequence["DecisionStatus"]]
+    """判断の状態を返す（``DecisionQueue.history`` を包む。同期）。"""
     EvidenceReader = Callable[[str, str, datetime, datetime], Sequence["ContributionRecord"]]
     """``(実体, フルーエント, 始端, 終端) -> 寄与の列``（``ContributionStore.series`` を包む）。"""
     """curation 待ちの概念提案を返す（``ConceptProposalStore.queue`` を包む）。"""
@@ -104,6 +110,8 @@ def create_app(
     expectation_reader: ExpectationReader | None = None,
     proposal_reader: ProposalReader | None = None,
     evidence_reader: EvidenceReader | None = None,
+    action_reader: ActionReader | None = None,
+    decision_reader: DecisionReader | None = None,
 ) -> FastAPI:
     """アプリを組み立てる。
 
@@ -129,6 +137,10 @@ def create_app(
         expectation_reader: 期待ボードを返すもの（``ExpectationStore.board`` を包む。
             M8-18）。``None`` だと GraphQL の ``expectations`` が**エラーを返す**
             （空の列を返すと「期待が無い」と「配線していない」が区別できない）。
+        action_reader: アクション契約を返すもの（M8-22）。``None`` だと ``actionTypes`` が
+            **エラーを返す**（空を返すと「アクションが無い」と「配線していない」が区別できない）。
+        decision_reader: 判断の状態を返すもの（``DecisionQueue.history`` を包む。M8-22）。
+            ``None`` だと ``decisions`` が**エラーを返す**。
         evidence_reader: 信念の三源の寄与を返すもの（``ContributionStore.series`` を包む。
             M8-17）。``None`` だと ``beliefEvidence`` が**エラーを返す**（空を返すと「寄与が
             無い」と「配線していない」が区別できない）。
@@ -156,6 +168,8 @@ def create_app(
             "expectations": expectation_reader,
             "proposals": proposal_reader,
             "evidence": evidence_reader,
+            "actions": action_reader,
+            "decisions": decision_reader,
         }
 
     app = FastAPI(

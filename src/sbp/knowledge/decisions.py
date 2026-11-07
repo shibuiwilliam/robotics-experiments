@@ -26,11 +26,12 @@ from sbp.core.logging import get_logger
 from sbp.core.time import ensure_utc
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     from psycopg import AsyncConnection
 
-__all__ = ["DecisionKind", "DecisionQueue", "DecisionRow"]
+__all__ = ["DecisionKind", "DecisionQueue", "DecisionRow", "DecisionStatus"]
 
 log = get_logger(__name__)
 
@@ -75,6 +76,48 @@ class DecisionRow:
     payload: dict[str, Any] = field(default_factory=dict)
     received_at: datetime | None = None
     attempts: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionStatus:
+    """判断 1 件の状態（UI が「この判断はどうなったか」を読む。M8-22、ADR-0021）。
+
+    Attributes:
+        decision_id: 判断の識別子。
+        kind: 判断の種類。
+        subject: 対象（不一致 ID・提案 ID・実体 IRI）。
+        decided_by: 判断した主体の IRI。
+        received_at: 受け付けた時刻。
+        applied_at: 適用できた時刻（未適用は ``None``）。
+        failed_at: 適用に失敗した時刻（失敗していなければ ``None``）。
+        error: 失敗の理由（人が読む。切り詰めない）。
+        artifacts: 何を適用したかの要約（適用済みのとき）。
+        attempts: 適用を試みた回数。
+    """
+
+    decision_id: str
+    kind: DecisionKind
+    subject: str
+    decided_by: str
+    received_at: datetime
+    applied_at: datetime | None
+    failed_at: datetime | None
+    error: str | None
+    artifacts: dict[str, Any]
+    attempts: int
+
+    @property
+    def state(self) -> str:
+        """``pending`` / ``applied`` / ``failed``。
+
+        **失敗した判断は自動では再試行されない**（``pending`` は ``failed_at IS NULL`` の行だけを
+        引く）。人が理由を読み、新しい判断として再投入する。
+        """
+        if self.failed_at is not None:
+            return "failed"
+        if self.applied_at is not None:
+            return "applied"
+        return "pending"
 
 
 class DecisionQueue:
@@ -163,6 +206,49 @@ class DecisionQueue:
                 payload=dict(row[4] or {}),
                 received_at=ensure_utc(row[5]),
                 attempts=int(row[6]),
+            )
+            for row in rows
+        ]
+
+    async def history(
+        self, *, subject: str, kinds: Sequence[DecisionKind] = (), limit: int = 50
+    ) -> list[DecisionStatus]:
+        """主語に対する判断の状態を新しい順に返す（適用済み・失敗・待ちのすべて）。
+
+        Args:
+            subject: 主語（不一致 ID・提案 ID・実体 IRI）。
+            kinds: 種類で絞る（空なら絞らない）。
+            limit: 返す件数の上限。
+
+        Returns:
+            判断の状態（受け付けの新しい順）。
+        """
+        conditions = "site = %s AND subject = %s"
+        params: list[object] = [self.site, subject]
+        if kinds:
+            conditions += " AND kind = ANY(%s)"
+            params.append([kind.value for kind in kinds])
+        params.append(limit)
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT decision_id, kind, subject, decided_by, received_at, applied_at, "
+                f"failed_at, error, artifacts, attempts FROM {_TABLE} WHERE {conditions} "
+                "ORDER BY received_at DESC, decision_id LIMIT %s",
+                tuple(params),
+            )
+            rows = await cursor.fetchall()
+        return [
+            DecisionStatus(
+                decision_id=str(row[0]),
+                kind=DecisionKind(str(row[1])),
+                subject=str(row[2]),
+                decided_by=str(row[3]),
+                received_at=ensure_utc(row[4]),
+                applied_at=None if row[5] is None else ensure_utc(row[5]),
+                failed_at=None if row[6] is None else ensure_utc(row[6]),
+                error=None if row[7] is None else str(row[7]),
+                artifacts=dict(row[8] or {}),
+                attempts=int(row[9]),
             )
             for row in rows
         ]
