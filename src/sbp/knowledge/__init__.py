@@ -23,6 +23,7 @@ from sbp.knowledge.decisions import DecisionKind, DecisionQueue, DecisionRow, De
 from sbp.knowledge.discrepancies import DiscrepancyRecord, DiscrepancyStore
 from sbp.knowledge.entities import entities_of_type, most_specific_types, site_prefix
 from sbp.knowledge.expectations import ExpectationRecord, ExpectationStore
+from sbp.knowledge.forecasts import ForecastRecord, ForecastStore
 from sbp.knowledge.graphs import (
     belief_graph,
     is_scenario_graph,
@@ -79,6 +80,8 @@ __all__ = [
     "EmbeddedGraphStore",
     "ExpectationRecord",
     "ExpectationStore",
+    "ForecastRecord",
+    "ForecastStore",
     "GraphStore",
     "HttpGraphStore",
     "HybridPlan",

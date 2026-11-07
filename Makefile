@@ -75,6 +75,11 @@ train-probe: ## 弱ラベルからプローブを学習し、ゲートを通っ�
 reground: ## 新しい版で過去の信念を再計算する（既定は dry-run。ARGS='--entity … --apply'。runbooks/regrounding.md）
 	$(UV) python -m scripts.reground $(ARGS)
 
+# ---- 予測（ADR-0032）---------------------------------------------------------
+.PHONY: forecast
+forecast: ## 予測を作って書き、期限の来た予測を採点する（ARGS='--entity … --fluent … --probe-id … --seed N [--watch 300]'）
+	$(UV) python -m scripts.forecast $(ARGS)
+
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
 dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ

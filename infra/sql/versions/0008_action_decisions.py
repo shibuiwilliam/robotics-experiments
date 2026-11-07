@@ -31,7 +31,9 @@ _NEW = "kind IN ('resolution', 'curation', 'action')"
 def upgrade() -> None:
     """``kind`` の CHECK に ``action`` を加える。"""
     op.execute("ALTER TABLE learning_decisions DROP CONSTRAINT learning_decisions_kind_check")
-    op.execute(f"ALTER TABLE learning_decisions ADD CONSTRAINT learning_decisions_kind_check CHECK ({_NEW})")
+    op.execute(
+        f"ALTER TABLE learning_decisions ADD CONSTRAINT learning_decisions_kind_check CHECK ({_NEW})"
+    )
 
 
 def downgrade() -> None:
@@ -41,4 +43,6 @@ def downgrade() -> None:
     失敗させて運用者に判断させる。
     """
     op.execute("ALTER TABLE learning_decisions DROP CONSTRAINT learning_decisions_kind_check")
-    op.execute(f"ALTER TABLE learning_decisions ADD CONSTRAINT learning_decisions_kind_check CHECK ({_OLD})")
+    op.execute(
+        f"ALTER TABLE learning_decisions ADD CONSTRAINT learning_decisions_kind_check CHECK ({_OLD})"
+    )

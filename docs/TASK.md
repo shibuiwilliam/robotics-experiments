@@ -463,7 +463,7 @@ import しない）、SHACL 検証・同一性束縛・空間束縛の運用経�
 M8 の目的と G8 は変えない。ADR-0030。
 
 - [x] **M9-01** 再接地の実行（2026-11-08 完了。ADR-0031） — `scripts/reground.py`（既定 dry-run、`--apply`）、潜在 → プローブ → 昇格 → 信念更新の再生。旧文は `tx_to` を閉じるだけ。差分レポートと `regrounding_duration`
-- [ ] **M9-02** 予測の周期ジョブ — WM のロールアウト → `predicted` の予測 → 後から来る観測で採点（`forecast_coverage` / `forecast_crps`）
+- [x] **M9-02** 予測の周期ジョブ（2026-11-08 完了。ADR-0032） — WM のロールアウト → `predicted` の予測 → 後から来る観測で採点（`forecast_coverage` / `forecast_crps`）
 - [ ] **M9-03** 問い合わせの入口 — GraphQL で予測・説明を読む。What-if はコマンド（`hypothetical` を主信念に入れない）
 - [ ] **M9-04** ゲート G9 の統合テスト — M9-01〜03 を外界だけの模擬で通す。`test_metrics_wiring` の分類を更新
 

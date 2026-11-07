@@ -226,6 +226,27 @@ class ReasoningSettings(_DotenvSettings):
     human_answer_uncertainty_s: float = Field(default=300.0, gt=0.0)
     """人の回答の有効時間の不確実幅（秒）。回答が「いつの状態」かには幅がある。"""
 
+    forecast_horizon_steps: int = Field(default=30, ge=1, le=10_000)
+    """予測の地平（WM の刻み数。M9-02、ADR-0032）。刻み幅は WM の階層が決める。"""
+
+    forecast_stride: int = Field(default=5, ge=1, le=1_000)
+    """予測を採点する先行時間の間隔（刻み数）。地平の末端は必ず含める。"""
+
+    forecast_samples: int = Field(default=30, ge=2, le=1_000)
+    """ロールアウトの本数（区間と CRPS の標本）。"""
+
+    forecast_interval_level: float = Field(default=0.9, gt=0.0, lt=1.0)
+    """予測区間の名目被覆（0.9 なら中央 90%）。"""
+
+    forecast_state_std: float = Field(default=0.05, gt=0.0)
+    """起点の潜在の不確実性（各次元の標準偏差）。索引は平均しか持たないので等方で置く。"""
+
+    forecast_period_s: float = Field(default=300.0, gt=0.0)
+    """予測を出す周期（秒、`make forecast --watch`）。"""
+
+    forecast_grace_s: float = Field(default=60.0, ge=0.0)
+    """予測の地平の終端からこの時間が過ぎたら採点する（信念の到着を待つ猶予）。"""
+
     discovery_period_s: float = Field(default=86_400.0, gt=0.0)
     """概念発見を回す周期（秒、learning-worker。ADR-0019）。LLM の費用が掛かり、毎秒は要らない。"""
 

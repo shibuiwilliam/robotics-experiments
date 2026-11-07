@@ -275,6 +275,30 @@ class LatentIndex:
         )
         return out
 
+    async def latest(
+        self, *, entity: str, wm_version: str, level: str
+    ) -> tuple[datetime, NDArray[np.float64]] | None:
+        """実体の最も新しい潜在 1 件（予測の起点）。無ければ ``None``。
+
+        Args:
+            entity: 実体 IRI。
+            wm_version: モデル版 IRI。
+            level: 階層。
+
+        Raises:
+            KnowledgeError: 未登録の版の場合。
+        """
+        registration = await self.registration(wm_version)
+        statement = sql.SQL(
+            "SELECT ts, vec FROM {table} "
+            "WHERE entity = %s AND level = %s AND wm_version = %s "
+            "ORDER BY ts DESC LIMIT 1"
+        ).format(table=sql.Identifier(registration.table_name))
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(statement, (entity, level, wm_version))
+            row = await cursor.fetchone()
+        return None if row is None else (ensure_utc(row[0]), _from_pgvector(row[1]))
+
     async def neighbours(
         self,
         *,
