@@ -218,6 +218,29 @@ class DiscrepancyStore:
         )
         return found
 
+    async def resolved(self, *, limit: int = 1000) -> list[DiscrepancyRecord]:
+        """人が解決した不一致（``Resolved`` / ``Learned``）を新しい順に返す（M8-09、ADR-0019）。
+
+        概念発見の入口 (c)「反復する不一致」の入力である。**``Suppressed`` を含めない**——
+        抑制は信頼性モデルで説明できた系統誤差で、人が語彙の不足を埋めた記録ではない。
+
+        Args:
+            limit: 返す件数の上限（発見は直近の傾向を見る）。
+
+        Returns:
+            行の列（検出の新しい順）。
+        """
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT discrepancy_id, kind, status, status_rank, subjects, severity_score, "
+                f"detected_at, payload FROM {_TABLE} "
+                "WHERE site = %s AND status IN ('Resolved', 'Learned') "
+                "ORDER BY detected_at DESC LIMIT %s",
+                (self.site, limit),
+            )
+            rows = await cursor.fetchall()
+        return [_to_record(row) for row in rows]
+
     async def count_by_status(self) -> dict[str, int]:
         """状態ごとの件数（運用の棚卸しと指標に使う）。
 

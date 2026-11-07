@@ -153,6 +153,50 @@ class TestStatusTransitions:
             await _cleanup(connection)
 
     @pytest.mark.asyncio
+    async def test_resolved_returns_only_human_resolutions(self, settings: Settings) -> None:
+        """``Resolved`` / ``Learned`` だけを返す（概念発見の入力。ADR-0019）。
+
+        抑制は信頼性モデルで説明できた系統誤差で、語彙の不足を人が埋めた記録ではない。
+        """
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = DiscrepancyStore(connection, site=SITE)
+            at = now()
+            open_ = _discrepancy()
+            await store.upsert(to_record(open_))
+            assigned = (
+                _discrepancy()
+                .transition(DiscrepancyStatus.TRIAGED, at=at)
+                .transition(DiscrepancyStatus.ASSIGNED, at=at, assignee_role=ROLE)
+            )
+            resolved = assigned.transition(
+                DiscrepancyStatus.RESOLVED,
+                at=at,
+                resolution=Resolution(
+                    outcome=ResolutionOutcome.BOTH_WRONG,
+                    note="人が確認した",
+                    resolved_by=ROLE,
+                    resolved_at=at,
+                ),
+            )
+            await store.upsert(to_record(resolved))
+            suppressed = _discrepancy().transition(
+                DiscrepancyStatus.SUPPRESSED,
+                at=at,
+                suppression=Suppression(
+                    bias_kind="shift_boundary",
+                    reliability_key="mes|operation_log",
+                    reason="系統誤差",
+                    suppressed_at=at,
+                ),
+            )
+            await store.upsert(to_record(suppressed))
+
+            found = await store.resolved()
+            assert [row.discrepancy_id for row in found] == [resolved.discrepancy_id]
+            assert found[0].payload["resolution"]["outcome"] == "both_wrong"
+            await _cleanup(connection)
+
+    @pytest.mark.asyncio
     async def test_a_terminal_discrepancy_leaves_the_queue(self, settings: Settings) -> None:
         """終端状態はキューから外れる（履歴でキューが埋まらない）。"""
         async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:

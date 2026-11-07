@@ -322,7 +322,7 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 - [x] **M8-08** 学習信号の適用ワーカー — UI/API に入った人の判断を受けて、書き戻し・プローブ再学習・概念採択を実行する。**人の承認が前提**（自動適用しない） → 完了（ADR-0012。判断は作業キュー（alembic 0005 `learning_decisions`）で受け、**5 番目のワーカー** `learning-worker` が適用する。API の `command_handler` を配線（受け付けるだけ）。**自動適用は観測要求と既定 dry の書き戻しだけ**——信頼性更新・負例バッグ・概念候補は記録するだけ。単体 26 件 + 統合 8 件。**M8-05 のキューに書く側がこれで埋まった**）
 - [ ] **M8-09** 発見ループの周期実行 — 概念発見（検出 → 提案 → curation）を周期ジョブにする。**M8-19 で作った `concept_proposals` 表に書く側**がこれである。採用後のオントロジー MINOR 起票は人の手作業のまま（意図的）。**H-10（却下した提案の再提案を抑えるか）を先に決めると手戻りが減る**——周期実行を入れると実際に繰り返しが起こる。**2026-11-07 に ADR-0019 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-09-1** ADR-0019 と H-10 の暫定決定、所見 123（文書のみ。置き場は learning-worker の周期処理、運用の入口は (c) 反復する不一致だけ、再提案は signal の指紋で抑える）→ 完了（2026-11-07）
-  - [ ] **M8-09-2** 解決済み不一致の読み出しと signal 源 — `DiscrepancyStore.resolved`、`resolution_signals`、`signal_fingerprint`
+  - [x] **M8-09-2** 解決済み不一致の読み出しと signal 源 — `DiscrepancyStore.resolved`、`resolution_signals`、`signal_fingerprint` → 完了（2026-11-07。`DiscrepancyStore.resolved`（`Resolved` / `Learned` のみ。抑制は含めない）、`sbp.reasoning.discovery_runner`（`resolution_signals` / `signal_fingerprint`（件数・強さを含めない）/ `suppressed_fingerprints`（H-10: 判断待ち・採択済みは常に、却下は却下時刻から冷却の間。読めない行は飛ばす））、`ConceptProposalRecord.updated_at`（冷却の起点）。単体 14 件 + 統合 2 件）
   - [ ] **M8-09-3** 抑制と提案の生成 — プロンプト・スキーマを運用コードへ移す、`suppressed_fingerprints`、`run_discovery`（provider 注入）
   - [ ] **M8-09-4** learning-worker の発見パス — 設定 3 件、`step()`、`build_worker` の provider 配線と `unwired`
   - [ ] **M8-09-5** 統合テスト — 解決済みの不一致 → 提案、2 周目は増えない、却下の冷却

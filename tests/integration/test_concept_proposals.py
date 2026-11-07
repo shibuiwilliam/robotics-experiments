@@ -153,6 +153,28 @@ class TestCuration:
             await _cleanup(connection)
 
     @pytest.mark.asyncio
+    async def test_curating_moves_updated_at_forward(self, settings: Settings) -> None:
+        """却下の冷却の起点（ADR-0019）。採否を入れると ``updated_at`` が進む。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = ConceptProposalStore(connection, site=SITE)
+            original = _proposal()
+            await store.upsert(to_record(original))
+            before = await store.get(original.proposal_id)
+            assert before is not None
+            assert before.updated_at is not None
+            await store.curate(
+                original.proposal_id,
+                status=ProposalStatus.REJECTED.value,
+                rank=ProposalStatus.REJECTED.rank,
+                note="既存概念で足りる",
+            )
+            after = await store.get(original.proposal_id)
+            assert after is not None
+            assert after.updated_at is not None
+            assert after.updated_at >= before.updated_at
+            await _cleanup(connection)
+
+    @pytest.mark.asyncio
     async def test_a_curated_proposal_leaves_the_queue(self, settings: Settings) -> None:
         """採否が入ると待ち行列から外れる（履歴には残る）。
 

@@ -58,6 +58,8 @@ class ConceptProposalRecord:
         coverage: 既存概念での被覆率（**書き込み時に導出**。同上）。
         proposed_at: 提案時刻（``None`` なら未記録）。
         payload: 本体（重心を落とした提案の dict）。
+        updated_at: 最後に行を更新した時刻（採否を入れた時刻。読み出し専用で、``upsert`` は
+            使わない。却下の冷却期間の起点。ADR-0019）。
     """
 
     proposal_id: UUID
@@ -69,6 +71,7 @@ class ConceptProposalRecord:
     coverage: float = 0.0
     proposed_at: datetime | None = None
     payload: dict[str, Any] = field(default_factory=dict)
+    updated_at: datetime | None = None
 
     @property
     def is_pending(self) -> bool:
@@ -266,7 +269,7 @@ class ConceptProposalStore:
 
 _COLUMNS = (
     "proposal_id, name, status, status_rank, superclass, support_count, coverage, "
-    "proposed_at, payload"
+    "proposed_at, payload, updated_at"
 )
 """読み出す列（並び順を :func:`_to_record` と一致させる）。"""
 
@@ -308,4 +311,5 @@ def _to_record(row: tuple[Any, ...]) -> ConceptProposalRecord:
         coverage=float(row[6]),
         proposed_at=row[7],
         payload=payload,
+        updated_at=row[9],
     )
