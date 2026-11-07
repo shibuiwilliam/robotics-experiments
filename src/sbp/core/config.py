@@ -197,6 +197,16 @@ class ReasoningSettings(_DotenvSettings):
     バッチの境界で効く）。
     """
 
+    human_answer_confidence: float = Field(default=0.98, gt=0.5, lt=1.0)
+    """人の確認回答が信念に入るときの確信度（ADR-0018）。成立なら ``c``、不成立なら ``1 − c``。
+
+    1.0 にしない（人も誤る。信念が飽和して後から覆せなくなる）。回答者ごとに変えることは
+    していない（ADR-0018 の未決）。
+    """
+
+    human_answer_uncertainty_s: float = Field(default=300.0, gt=0.0)
+    """人の回答の有効時間の不確実幅（秒）。回答が「いつの状態」かには幅がある。"""
+
     expectation_verify_period_s: float = Field(default=60.0, gt=0.0)
     """期限切れの期待を検証する周期（秒、learning-worker。ADR-0017）。
 

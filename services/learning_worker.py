@@ -57,6 +57,7 @@ from sbp.core.config import Settings, WritebackMode
 from sbp.core.errors import ActionError, KnowledgeError
 from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
+from sbp.integration.human_answer import AnswerCommand, answer_event, answer_topic
 from sbp.knowledge.decisions import DecisionKind
 from sbp.reasoning.discovery import ProposalStatus
 from sbp.reasoning.expectation import ExpectationStatus
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sbp.actions import ActionRegistry
+    from sbp.core.events import EventEnvelope
     from sbp.integration.writeback import WritebackCommand
     from sbp.knowledge.decisions import DecisionQueue, DecisionRow
     from sbp.knowledge.discrepancies import DiscrepancyRecord
@@ -108,8 +110,16 @@ if TYPE_CHECKING:
     """``(実体, 時刻) -> 記録型ごとの最初の計上時刻``（``RecordIndex.first_seen``）。"""
     DiscrepancySink = Callable[["DiscrepancyRecord"], Awaitable[None]]
     """不一致を作業項目表に書く（``DiscrepancyStore.upsert``）。"""
+    EventSink = Callable[[str, "EventEnvelope"], Awaitable[object]]
+    """``(トピック, イベント)`` を送る（``KafkaEventProducer.send`` を包む）。"""
+    RequestReader = Callable[[str, str], Awaitable["ObservationRow | None"]]
+    """``(不一致 ID, フルーエント) -> 観測要求``（``ObservationQueue.get``）。"""
+    RequestSatisfier = Callable[[str, str, datetime], Awaitable[object]]
+    """``(不一致 ID, フルーエント, 時刻)`` で要求を満たす（``mark_satisfied``）。"""
 
 __all__ = [
+    "AnswerPath",
+    "ExpectationVerification",
     "LearningWorker",
     "build_worker",
     "command_id_for",
@@ -130,6 +140,21 @@ _VERIFY_MAX_FAILURES = 3
 
 _DEFAULT_PERIOD_S = 30.0
 """キューを引く周期（秒）。人の判断は毎秒来るものではない。"""
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerPath:
+    """人の確認回答の適用に要る依存（ADR-0018）。
+
+    Attributes:
+        events: 主張イベントの送信先。
+        request: 回答が名指す観測要求の読み出し（存在の確認）。
+        satisfy: 観測要求を満たす。
+    """
+
+    events: EventSink
+    request: RequestReader
+    satisfy: RequestSatisfier
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +217,7 @@ class LearningWorker:
         expectations: ExpectationSink | None = None,
         proposals: ProposalCurator | None = None,
         verification: ExpectationVerification | None = None,
+        answers: AnswerPath | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
     ) -> None:
         """Args:
@@ -213,6 +239,8 @@ class LearningWorker:
         verification: 期限切れの期待の検証（``None`` なら検証しない。期待は ``Active`` のまま
             期限を過ぎてもボードに残る。所見 103）。``beliefs`` / ``expectations`` /
             ``observations`` も要る。
+        answers: 人の確認回答の適用（``None`` なら**回答を適用しない**——失敗として記録される。
+            送れない回答を適用済みにすると、人の確認が信念に届かないまま消える）。
         period_s: キューを引く周期（秒）。
         """
         self.settings = settings or Settings()
@@ -230,6 +258,8 @@ class LearningWorker:
         self._expectations = expectations
         self._proposals = proposals
         self._verification = verification
+        self._answers = answers
+        self._closers: list[Callable[[], Awaitable[None]]] = []
         self._last_verify: datetime | None = None
         self._verify_failures: dict[UUID, int] = {}
         self.verified_total = 0
@@ -501,6 +531,8 @@ class LearningWorker:
             return await self._apply_curation(row)
         if row.kind is DecisionKind.ACTION:
             return await self._apply_action(row, at=at)
+        if row.kind is DecisionKind.ANSWER:
+            return await self._apply_answer(row)
         raise ValueError(f"unknown decision kind {row.kind!r}")
 
     async def _apply_resolution(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
@@ -631,6 +663,89 @@ class LearningWorker:
             **summary,
         )
         return summary
+
+    def add_closer(self, closer: Callable[[], Awaitable[None]]) -> None:
+        """終了時に呼ぶ後始末を足す（``build_worker`` が持つ producer の停止など）。
+
+        Args:
+            closer: 非同期の後始末。
+        """
+        self._closers.append(closer)
+
+    async def aclose(self) -> None:
+        """後始末を呼ぶ（失敗しても残りを呼ぶ）。"""
+        for closer in reversed(self._closers):
+            try:
+                await closer()
+            except Exception as exc:  # 停止処理の失敗で他の後始末を止めない
+                log.warning("worker.close_failed", worker=WORKER_NAME, error=str(exc))
+
+    async def _apply_answer(self, row: DecisionRow) -> dict[str, Any]:
+        """人の確認回答を主張イベントにして送り、観測要求を満たす（M8-29、ADR-0018）。
+
+        **順序は 送信 → 充足。** 送信が失敗すれば要求は満たされず、判断は失敗として残る。
+        送信が成功して充足の書き込みが失敗した場合は、再投入で同じ ``decision_id`` から同じ
+        ``event_id`` のイベントが送られ、消費側の冪等記録が弾く。
+
+        **キューに無い要求への回答は失敗させる**（誤送信の可能性が高い）。満たされた要求への
+        回答は受ける（訂正の回答がありうる。充足は冪等）。
+
+        Args:
+            row: 回答の判断。
+
+        Returns:
+            何を適用したかの要約。
+
+        Raises:
+            ValueError: 回答を送る依存が無い、要求がキューに無い、実体が要求と食い違う場合。
+        """
+
+        if self._answers is None:
+            raise ValueError(
+                "cannot apply an answer: the answer path is not wired (no event sink); "
+                "applying it would mark the answer done while it never reached the belief"
+            )
+        command = AnswerCommand.model_validate(row.payload)
+        request = await self._answers.request(command.discrepancy_id, command.fluent)
+        if request is None:
+            raise ValueError(
+                f"no observation request ({command.discrepancy_id}, {command.fluent}); "
+                "an answer to an unknown request is likely misdirected"
+            )
+        if request.entity != command.entity:
+            raise ValueError(
+                f"answer entity {command.entity} differs from the request's {request.entity}"
+            )
+        reasoning = self.settings.reasoning
+        received = row.received_at or now()
+        event = answer_event(
+            site_id=self.settings.site_id,
+            decision_id=command.decision_id,
+            entity=command.entity,
+            fluent=command.fluent,
+            state=command.state,
+            answered_by=command.answered_by,
+            at=received,
+            confidence=reasoning.human_answer_confidence,
+            uncertainty_s=reasoning.human_answer_uncertainty_s,
+            ontology_version=vocab.ONTOLOGY_VERSION,
+        )
+        await self._answers.events(answer_topic(self.settings.site_id), event)
+        await self._answers.satisfy(command.discrepancy_id, command.fluent, received)
+        log.info(
+            "worker.answer_applied",
+            worker=WORKER_NAME,
+            correlation_id=command.decision_id,
+            entity=command.entity,
+            fluent=command.fluent,
+            state=command.state,
+            event_id=str(event.event_id),
+        )
+        return {
+            "event_id": str(event.event_id),
+            "state": command.state,
+            "request": f"{command.discrepancy_id}:{command.fluent}",
+        }
 
     async def _apply_action(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
         """承認されたアクションを実行する（設計書 §9.2、ADR-0014）。
@@ -907,6 +1022,7 @@ async def build_worker(
     import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
 
     from sbp.actions import ActionRegistry  # noqa: PLC0415
+    from sbp.eventlog.producer import KafkaEventProducer  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
         ConceptProposalStore,
@@ -987,6 +1103,23 @@ async def build_worker(
         entity_types=entity_types,
     )
 
+    producer = KafkaEventProducer(resolved)
+    await producer.start()
+
+    async def send_event(topic: str, event: EventEnvelope) -> object:
+        """主張イベントを送ってから戻る（送信の後に要求を満たすため、待つ）。"""
+        return await producer.send(topic, event)
+
+    async def get_request(discrepancy_id: str, fluent: str) -> ObservationRow | None:
+        """回答が名指す観測要求を引く。"""
+        return await observations.get(discrepancy_id=discrepancy_id, fluent=fluent)
+
+    async def satisfy_request(discrepancy_id: str, fluent: str, at: datetime) -> object:
+        """観測要求を満たす。"""
+        return await observations.mark_satisfied(
+            discrepancy_id=discrepancy_id, fluent=fluent, at=at
+        )
+
     worker = LearningWorker(
         resolved,
         decisions=decisions,
@@ -997,7 +1130,9 @@ async def build_worker(
         expectations=write_expectation,
         proposals=curate_proposal,
         verification=verification,
+        answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
     )
+    worker.add_closer(producer.stop)
     log.info(
         "worker.wired",
         worker=WORKER_NAME,
@@ -1017,7 +1152,10 @@ def main() -> int:
     async def _run() -> None:
         settings = Settings()
         worker, _queue = await build_worker(settings, site_id=settings.site_id)
-        await worker.run()
+        try:
+            await worker.run()
+        finally:
+            await worker.aclose()
 
     asyncio.run(_run())
     return 0

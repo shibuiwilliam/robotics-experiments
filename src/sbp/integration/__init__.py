@@ -16,6 +16,7 @@ from sbp.integration.extraction import (
     NormExtraction,
     verify_spans,
 )
+from sbp.integration.human_answer import answer_event, answer_record_iri, answer_topic
 from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected
 from sbp.integration.mappings import Claim, Mapping, MappingRegistry, MappingResult
 from sbp.integration.master import MasterDataSync, MasterSyncReport
@@ -80,6 +81,9 @@ __all__ = [
     "WritebackOutcome",
     "WritebackResult",
     "WritebackTarget",
+    "answer_event",
+    "answer_record_iri",
+    "answer_topic",
     "intended_fluent_for",
     "plan_item_from_record",
     "plan_provenance",
