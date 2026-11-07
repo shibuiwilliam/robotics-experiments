@@ -4,14 +4,18 @@
 それである: WM のロールアウト（潜在の標本軌道）にプローブを通し、フルーエントの成立確率の
 分布を先行時間ごとに作る。
 
-- **確率はプローブの較正済み出力**（不変条件 7）。軌道の標本ごとに確率を出し、その標本が
-  分布になる。区間は標本の分位点、平均は標本平均。
+- **確率はプローブの較正済み出力**（不変条件 7）。軌道の標本ごとに確率を出す。平均が予測確率、
+  標本の分位点が**確率の認識的な幅**（区間）。
 - **予測は ``predicted``**（不変条件 3）。主信念には入らない。起点（``horizon_origin``）違いで
   共存する。
-- **採点の「実測」は信念の事後**（belief-worker の最新の推定が 0.5 以上なら 1）。真値ではない
-  ——運用には真値が無い。信念が誤っていれば採点も誤る。これは予測の「物理に対する精度」
-  ではなく「基盤の信念との整合」である（ADR-0032 の限界。真値は ``sbp.testing`` 以外から
-  読めない: 不変条件 10）。
+- **採点は二値事象の作法で行う。** 実測は 0 / 1 で、予測は確率 p。CRPS は Bernoulli(p) に対する
+  ``(p − y)²``（Brier と一致する適正スコア）。被覆率は**予測集合**で測る: 名目 ``level`` に対して
+  「確率が level 以上の側だけ」「どちらも届かなければ両方」を集合とし、実測が集合に入った割合。
+  較正されていれば名目以上になる。標本の分布そのものを CRPS に渡すと、認識的な広がりが
+  「鋭さ」として報われ、区間は 0 / 1 に届かず被覆率が 0 に張り付く。
+- **採点の「実測」は belief-worker の信念の事後**（0.5 以上なら 1）。真値ではない——運用には
+  真値が無い。信念が誤っていれば採点も誤る。物理に対する精度ではなく、基盤の信念との整合である
+  （ADR-0032 の限界。真値は ``sbp.testing`` 以外から読めない: 不変条件 10）。
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import timedelta
 from typing import TYPE_CHECKING, Protocol
+from uuid import uuid4
 
 import numpy as np
 
@@ -29,11 +34,12 @@ from sbp.core.errors import ReasoningError
 from sbp.core.logging import get_logger
 from sbp.core.metrics import MetricSample, metric
 from sbp.core.modality import Modality
-from sbp.reasoning.prediction import Forecast, ForecastPoint, score_forecasts
+from sbp.reasoning.prediction import Forecast, ForecastPoint
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from datetime import datetime
+    from uuid import UUID
 
     from numpy.typing import NDArray
 
@@ -45,6 +51,8 @@ __all__ = [
     "Rollouter",
     "forecast_assertions",
     "make_forecast",
+    "missing_assertions",
+    "prediction_set",
     "realised_outcome",
     "score_due",
 ]
@@ -75,6 +83,7 @@ def make_forecast(
     interval_level: float,
     seed: int,
     ontology_version: str,
+    forecast_id: UUID | None = None,
 ) -> Forecast:
     """起点の潜在から、フルーエントの成立確率の予測を作る。
 
@@ -90,6 +99,7 @@ def make_forecast(
         interval_level: 予測区間の名目被覆。
         seed: 乱数シード。
         ontology_version: オントロジー版。
+        forecast_id: 識別子（再実行で同じ予測が同じ ID になるよう、呼び出し側が決定的に決める）。
 
     Returns:
         予測。
@@ -124,6 +134,7 @@ def make_forecast(
             )
         )
     return Forecast(
+        forecast_id=forecast_id or uuid4(),
         entity=entity,
         fluent=fluent,
         horizon_origin=state.at,
@@ -159,42 +170,113 @@ def forecast_assertions(forecast: Forecast, *, tx_from: datetime) -> list[Assert
     ]
 
 
+def missing_assertions(
+    forecast: Forecast, *, store: AssertionStore, tx_from: datetime
+) -> list[Assertion]:
+    """まだ書かれていない ``predicted`` のアサーション（再実行・中断後の補完）。
+
+    予測の識別子が決定的なら来歴も決定的なので、来歴と ``valid_from`` で書き済みの点を除ける。
+
+    Args:
+        forecast: 予測。
+        store: アサーションストア。
+        tx_from: 記録時刻。
+    """
+    existing = {
+        row.valid_from
+        for row in store.query(
+            subject=forecast.entity, predicate=forecast.fluent, modality=Modality.PREDICTED
+        )
+        if row.provenance == f"urn:sbp:prov:forecast/{forecast.forecast_id}"
+    }
+    return [
+        assertion
+        for assertion in forecast_assertions(forecast, tx_from=tx_from)
+        if assertion.valid_from not in existing
+    ]
+
+
 def realised_outcome(
-    store: AssertionStore, *, entity: str, fluent: str, at: datetime
+    store: AssertionStore,
+    *,
+    entity: str,
+    fluent: str,
+    at: datetime,
+    belief_provenance: str = "urn:sbp:prov:belief-worker",
 ) -> float | None:
-    """その時刻の信念（最新の推定）から 0 / 1 の実測を作る。信念がまだ無ければ ``None``。
+    """その時刻の信念（belief-worker の最新の事後）から 0 / 1 の実測を作る。無ければ ``None``。
+
+    **belief-worker が書いた文だけを見る**（プローブ・規則・LLM の ``inferred`` や結合の文を
+    実測にしない）。現在の ``tx`` で引くので、後から訂正された信念で過去の予測を採点しうる
+    （訂正を反映するほうが実測として正しい、と判断している。ADR-0032）。
 
     Args:
         store: アサーションストア。
         entity: 実体 IRI。
         fluent: フルーエント型 IRI。
         at: 対象の時刻。
+        belief_provenance: 信念更新の来歴の接頭辞。
     """
-    rows = store.query(subject=entity, predicate=fluent, valid_at=at, modality=Modality.INFERRED)
+    rows = [
+        row
+        for row in store.query(
+            subject=entity, predicate=fluent, valid_at=at, modality=Modality.INFERRED
+        )
+        if _is_belief(row.provenance, belief_provenance)
+    ]
     if not rows:
         return None
-    latest = max(rows, key=lambda row: row.valid_from)
+    latest = max(rows, key=lambda row: (row.valid_from, row.tx_from, row.assertion_id.int))
     return 1.0 if latest.confidence >= 0.5 else 0.0
 
 
+def _is_belief(provenance: str, prefix: str) -> bool:
+    rest = provenance[len(prefix) :]
+    return (
+        provenance.startswith(prefix) and rest.startswith("/") and not rest.startswith("/coupling/")
+    )
+
+
+def prediction_set(probability: float, level: float) -> frozenset[int]:
+    """名目 ``level`` の予測集合（確率が level 以上になる最小の集合）。
+
+    Args:
+        probability: 成立確率 p。
+        level: 名目被覆。
+    """
+    if probability >= level:
+        return frozenset({1})
+    if 1.0 - probability >= level:
+        return frozenset({0})
+    return frozenset({0, 1})
+
+
 def score_due(
-    records: Sequence[ForecastRecord], *, store: AssertionStore, at: datetime
+    records: Sequence[ForecastRecord],
+    *,
+    store: AssertionStore,
+    at: datetime,
+    complete_wait: timedelta = timedelta(0),
 ) -> tuple[list[MetricSample], list[ForecastRecord]]:
     """期限が来た予測を採点して指標にする。
 
-    実体・フルーエント・WM 版ごとに、先行時間別の CRPS と被覆率を出す。実測が 1 点も得られない予測は
-    採点せず、戻りの「採点した予測」に含めない（次の周期で再び試す）。
+    全先行時間の実測（信念）が揃った予測だけを採点する。揃わない予測は、地平の終端から
+    ``complete_wait`` を過ぎるまで次の周期に回す（遅れた信念の到着を待つ。過ぎたら揃った点だけ
+    で採点する）。実体・フルーエント・WM 版・先行時間ごとに、この周期で採点した予測から
+    CRPS（Brier）と予測集合の被覆率を出す。
 
     Args:
         records: 採点待ちの予測。
         store: アサーションストア（実測を引く）。
         at: 測定時刻。
+        complete_wait: 全点が揃うのを待つ上限。
 
     Returns:
         ``(指標, 採点した予測)``。
     """
-    groups: dict[tuple[str, str, str], list[tuple[Forecast, dict[float, float], ForecastRecord]]]
-    groups = defaultdict(list)
+    crps: dict[tuple[str, str, str, float], list[float]] = defaultdict(list)
+    covered: dict[tuple[str, str, str, float], list[float]] = defaultdict(list)
+    scored: list[ForecastRecord] = []
     for record in records:
         forecast = Forecast.model_validate(record.payload)
         actual: dict[float, float] = {}
@@ -207,27 +289,35 @@ def score_due(
             )
             if outcome is not None:
                 actual[point.lead_time_s] = outcome
-        if actual:
-            groups[(forecast.entity, forecast.fluent, forecast.wm_version)].append(
-                (forecast, actual, record)
+        complete = len(actual) == len(forecast.points)
+        if not actual or not (complete or at - record.horizon_end >= complete_wait):
+            continue
+        for point in forecast.points:
+            if point.lead_time_s not in actual:
+                continue
+            outcome = actual[point.lead_time_s]
+            key = (forecast.entity, forecast.fluent, forecast.wm_version, point.lead_time_s)
+            crps[key].append((point.mean - outcome) ** 2)
+            covered[key].append(
+                1.0 if int(outcome) in prediction_set(point.mean, forecast.interval_level) else 0.0
             )
+        scored.append(record)
     samples: list[MetricSample] = []
-    scored: list[ForecastRecord] = []
-    for (entity, fluent, wm_version), members in groups.items():
-        report = score_forecasts([m[0] for m in members], observations=[m[1] for m in members])
-        for lead in report.leads():
-            labels = {
-                "entity": entity,
-                "fluent": fluent_name(fluent),
-                "wm_version": wm_version,
-                "lead_time_s": f"{lead:g}",
-            }
-            samples.append(
-                MetricSample(metric("forecast_crps"), report.crps_by_lead[lead], at, labels)
+    for (entity, fluent, wm_version, lead), values in crps.items():
+        labels = {
+            "entity": entity,
+            "fluent": fluent_name(fluent),
+            "wm_version": wm_version,
+            "lead_time_s": repr(lead),
+        }
+        samples.append(MetricSample(metric("forecast_crps"), float(np.mean(values)), at, labels))
+        samples.append(
+            MetricSample(
+                metric("forecast_coverage"),
+                float(np.mean(covered[(entity, fluent, wm_version, lead)])),
+                at,
+                labels,
             )
-            samples.append(
-                MetricSample(metric("forecast_coverage"), report.coverage_by_lead[lead], at, labels)
-            )
-        scored.extend(m[2] for m in members)
+        )
     log.info("reasoning.forecasts_scored_due", due=len(records), scored=len(scored))
     return samples, scored

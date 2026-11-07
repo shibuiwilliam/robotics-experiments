@@ -16,6 +16,7 @@ import argparse
 import asyncio
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 import psycopg
@@ -34,7 +35,7 @@ from sbp.knowledge import (
     MetricStore,
     S3ArtifactStore,
 )
-from sbp.reasoning.forecasting import forecast_assertions, make_forecast, score_due
+from sbp.reasoning.forecasting import make_forecast, missing_assertions, score_due
 from sbp.worldmodel.base import LatentLevel, LatentState
 from sbp.worldmodel.serialization import load_model
 from scripts._wm import split_wm_version
@@ -90,15 +91,20 @@ async def forecast_once(
             log.warning("forecast.no_latent", entity=entity)
             continue
         at, vector = latest
-        dim = vector.size
+        if now() - at > timedelta(seconds=reasoning.forecast_max_origin_age_s):
+            # 潜在が古いと、起点より後の信念が既にある（それは「予測」ではない）
+            log.warning("forecast.origin_too_old", entity=entity, origin=at.isoformat())
+            continue
         state = LatentState(
             z=vector,
             level=_LEVEL,
             at=at,
             wm_version=model.meta.version_iri,
-            covariance=np.eye(dim) * reasoning.forecast_state_std**2,
+            covariance=np.eye(vector.size) * reasoning.forecast_state_std**2,
         )
         for fluent in fluents:
+            # 識別子と乱数シードは起点から決める（再実行・中断後の補完で同じ予測になる）
+            key = f"{settings.site_id}|{entity}|{fluent}|{model.meta.version_iri}|{at.isoformat()}"
             forecast = make_forecast(
                 model=model,
                 probe=probes,
@@ -109,9 +115,13 @@ async def forecast_once(
                 stride=reasoning.forecast_stride,
                 samples=reasoning.forecast_samples,
                 interval_level=reasoning.forecast_interval_level,
-                seed=seed,
+                seed=(seed + int(at.timestamp())) % 2**31,
                 ontology_version=vocab.ONTOLOGY_VERSION,
+                forecast_id=uuid5(NAMESPACE_URL, key),
             )
+            # アサーションを先に（欠けた点だけ）。表の書き込みが失敗しても、再実行で補完される
+            for assertion in missing_assertions(forecast, store=store, tx_from=now()):
+                store.assert_(assertion)
             saved = await forecasts.save(
                 forecast_id=forecast.forecast_id,
                 entity=entity,
@@ -122,15 +132,16 @@ async def forecast_once(
                 interval_level=forecast.interval_level,
                 payload=forecast.model_dump(mode="json"),
             )
-            if not saved:
-                continue  # 同じ起点は書いた
-            for assertion in forecast_assertions(forecast, tx_from=now()):
-                store.assert_(assertion)
-            written += 1
+            written += int(saved)
 
     current = now()
     due = await forecasts.due(before=current - timedelta(seconds=reasoning.forecast_grace_s))
-    samples, scored = score_due(due, store=store, at=current)
+    samples, scored = score_due(
+        due,
+        store=store,
+        at=current,
+        complete_wait=timedelta(seconds=reasoning.forecast_complete_wait_s),
+    )
     if samples:
         await MetricStore(connection, site=settings.site_id).write(samples)
     await forecasts.mark_scored([r.forecast_id for r in scored], at=current)

@@ -65,6 +65,7 @@ class TestForecastEndToEnd:
                         "forecast_horizon_steps": 6,
                         "forecast_stride": 3,
                         "forecast_grace_s": 0.0,
+                        "forecast_max_origin_age_s": 86_400.0,
                     }
                 )
             }

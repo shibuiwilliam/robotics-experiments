@@ -247,6 +247,12 @@ class ReasoningSettings(_DotenvSettings):
     forecast_grace_s: float = Field(default=60.0, ge=0.0)
     """予測の地平の終端からこの時間が過ぎたら採点する（信念の到着を待つ猶予）。"""
 
+    forecast_max_origin_age_s: float = Field(default=3_600.0, gt=0.0)
+    """予測の起点にしてよい潜在の古さの上限（秒）。超えたら予測を出さない（起点より後の信念が既にある）。"""
+
+    forecast_complete_wait_s: float = Field(default=86_400.0, ge=0.0)
+    """全先行時間の信念が揃うのを待つ上限（秒）。過ぎたら揃った点だけで採点する。"""
+
     discovery_period_s: float = Field(default=86_400.0, gt=0.0)
     """概念発見を回す周期（秒、learning-worker。ADR-0019）。LLM の費用が掛かり、毎秒は要らない。"""
 

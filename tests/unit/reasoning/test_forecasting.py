@@ -27,6 +27,8 @@ from sbp.knowledge.forecasts import ForecastRecord
 from sbp.reasoning.forecasting import (
     forecast_assertions,
     make_forecast,
+    missing_assertions,
+    prediction_set,
     realised_outcome,
     score_due,
 )
@@ -157,7 +159,9 @@ class TestAssertions:
         assert inferred == []
 
 
-def _belief(store: AssertionStore, at: datetime, p: float) -> None:
+def _belief(
+    store: AssertionStore, at: datetime, p: float, provenance: str = "urn:sbp:prov:belief-worker/x"
+) -> None:
     store.assert_(
         Assertion(
             subject=ENTITY,
@@ -167,7 +171,7 @@ def _belief(store: AssertionStore, at: datetime, p: float) -> None:
             tx_from=at,
             modality=Modality.INFERRED,
             belief=BooleanBelief(p=p),
-            provenance="urn:sbp:prov:belief-worker/x",
+            provenance=provenance,
             ontology_version=vocab.ONTOLOGY_VERSION,
         )
     )
@@ -229,3 +233,90 @@ class TestScoring:
             return float(np.mean([m.value for m in samples if m.name.key == "forecast_crps"]))
 
         assert mean_crps(good) < mean_crps(bad)
+
+    def test_crps_is_the_brier_score_of_the_mean_not_of_the_spread(self) -> None:
+        """確率を 0 / 1 に割った予測（平均は同じ）が、認識的な広がりで有利にならない。"""
+        store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+        _belief(store, T0 - STEP, 0.99)  # 実測は「成立」
+
+        def spread(latents: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
+            return {"Running": np.where(np.arange(latents.shape[0]) % 2 == 0, 0.0, 1.0)}
+
+        def at_half(latents: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
+            return {"Running": np.full(latents.shape[0], 0.5)}
+
+        def crps(forecast: Forecast) -> float:
+            samples, _ = score_due([_record(forecast)], store=store, at=T0 + timedelta(hours=1))
+            return float(np.mean([m.value for m in samples if m.name.key == "forecast_crps"]))
+
+        assert crps(_forecast(probe=spread)) == pytest.approx(crps(_forecast(probe=at_half)))
+        assert crps(_forecast(probe=at_half)) == pytest.approx(0.25)
+
+    @pytest.mark.parametrize(
+        ("p", "expected"),
+        [(0.95, {1}), (0.05, {0}), (0.5, {0, 1}), (0.9, {1}), (0.1, {0})],
+    )
+    def test_the_prediction_set_at_nominal_ninety_percent(
+        self, p: float, expected: set[int]
+    ) -> None:
+        assert prediction_set(p, 0.9) == frozenset(expected)
+
+    def test_coverage_is_one_when_the_confident_side_is_right_and_zero_when_wrong(self) -> None:
+        store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+        _belief(store, T0 - STEP, 0.99)  # 実測は「成立」
+
+        def coverage(
+            probe: Callable[[NDArray[np.float64]], Mapping[str, NDArray[np.float64]]],
+        ) -> float:
+            samples, _ = score_due(
+                [_record(_forecast(probe=probe))], store=store, at=T0 + timedelta(hours=1)
+            )
+            return float(np.mean([m.value for m in samples if m.name.key == "forecast_coverage"]))
+
+        assert coverage(_constant(0.95)) == 1.0
+        assert coverage(_constant(0.05)) == 0.0
+        assert coverage(_constant(0.5)) == 1.0
+
+    def test_beliefs_from_other_provenance_are_not_the_realised_outcome(self) -> None:
+        store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+        _belief(store, T0, 0.9)
+        _belief(store, T0 + timedelta(seconds=30), 0.1, provenance="urn:sbp:prov:probe/raw")
+        _belief(
+            store,
+            T0 + timedelta(seconds=40),
+            0.1,
+            provenance="urn:sbp:prov:belief-worker/coupling/2026-11-08T09:00:00+00:00",
+        )
+        at = T0 + timedelta(seconds=60)
+        assert realised_outcome(store, entity=ENTITY, fluent=FLUENT, at=at) == 1.0
+
+    def test_a_partial_forecast_waits_for_late_beliefs_then_scores_what_exists(self) -> None:
+        store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+        forecast = _forecast()
+        # 最初の点の時刻より後に信念が 1 件だけ（それ以前の信念は無い）→ どの点も揃わない
+        _belief(store, forecast.points[-1].at(T0), 0.9)
+        late = T0 + timedelta(hours=1)
+        _, scored = score_due(
+            [_record(forecast)], store=store, at=late, complete_wait=timedelta(days=1)
+        )
+        assert scored == [], "全点が揃うまで待つ"
+        # 待つ上限を過ぎたら揃った点だけで採点する
+        samples, scored = score_due(
+            [_record(forecast)], store=store, at=late, complete_wait=timedelta(0)
+        )
+        assert len(scored) == 1
+        assert {m.labels["lead_time_s"] for m in samples} == {repr(forecast.points[-1].lead_time_s)}
+
+
+class TestIdempotentAssertions:
+    def test_missing_points_are_filled_after_an_interruption(self) -> None:
+        store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+        forecast = _forecast()
+        written = missing_assertions(forecast, store=store, tx_from=T0)
+        assert len(written) == len(forecast.points)
+        store.assert_(written[0])  # 1 件目だけ書いて落ちた
+        rest = missing_assertions(forecast, store=store, tx_from=T0)
+        assert [a.valid_from for a in rest] == [a.valid_from for a in written[1:]]
+        for assertion in rest:
+            store.assert_(assertion)
+        assert missing_assertions(forecast, store=store, tx_from=T0) == []
