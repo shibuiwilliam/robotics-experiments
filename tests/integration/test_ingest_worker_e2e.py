@@ -24,6 +24,7 @@ import psycopg
 import pytest
 from confluent_kafka.admin import AdminClient
 from confluent_kafka.cimpl import NewTopic
+from services.belief_worker import build_worker as build_belief_worker
 from services.ingest_worker import TABLES
 from services.ingest_worker import build_worker as build_ingest_worker
 from services.reconcile_worker import build_worker as build_reconcile_worker
@@ -231,6 +232,39 @@ class TestRecordPath:
         finally:
             await consumer.stop()
             await reconcile_producer.stop()
+
+    @pytest.mark.usefixtures("topics")
+    async def test_the_belief_worker_takes_the_claim_as_record_evidence(
+        self,
+        ingest_settings: Settings,
+        graph_store: HttpGraphStore,
+    ) -> None:
+        """取込の主張を、production の信念ワーカーが記録尤度に入れる（M8-26、所見 102）。
+
+        業務トピックには記録の存在イベント（型が記録型）も載る。信念ワーカーが業務トピックを購読すると
+        それらを読むので、**フルーエントと誤読して落ちない**こと（所見 116）も同時に確かめる。
+        """
+        site = ingest_settings.site_id
+        pump = site_iri(site, "asset", "P-101")
+
+        ingest, ingest_producer = await build_ingest_worker(ingest_settings, site_id=site)
+        try:
+            await ingest.step()
+        finally:
+            await ingest_producer.stop()
+
+        belief, consumer = await build_belief_worker(ingest_settings, site_id=site)
+        try:
+            assert await _until(lambda: belief.applied_total >= 1, belief.step)
+        finally:
+            await consumer.stop()
+
+        rows = AssertionStore(graph_store, site_id=site).query(
+            subject=pump, predicate=str(vocab.ent.Running), modality=Modality.INFERRED
+        )
+        assert rows, "主張が信念になっていない"
+        assert all(row.confidence > 0.5 for row in rows)  # MES は稼働と言っている
+        assert belief.ingest.skipped, "記録の存在イベントは読み飛ばしたことが数えられている"
 
 
 def _physical(pump: str, *, at: datetime) -> EventEnvelope:

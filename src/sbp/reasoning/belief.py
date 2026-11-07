@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Protocol
 
 import numpy as np
 
@@ -35,19 +35,21 @@ from sbp.core.belief import BooleanBelief
 from sbp.core.errors import ReasoningError
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
-from sbp.core.time import ensure_utc
+from sbp.core.time import Interval, ensure_utc
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sbp.core.audit import AuditMask
-    from sbp.core.records import PlanItem, Record
+    from sbp.core.records import Record
     from sbp.integration.reliability import ReliabilityModel
 
 __all__ = [
     "BeliefFilter",
     "BeliefUpdate",
     "DwellTime",
+    "PlanView",
+    "PlannedSpan",
     "SourceContribution",
     "TransitionPrior",
     "update_belief",
@@ -57,6 +59,38 @@ log = get_logger(__name__)
 
 _LOG_ODDS_CLAMP: Final = 20.0
 """対数オッズの上限（確率で約 1 - 2e-9）。断定を避けるための飽和。"""
+
+
+class PlanView(Protocol):
+    """信念更新が計画から読む 2 つの値（``PlanItem`` も ``planned`` の文由来の値も満たす）。
+
+    **計画項目の全体を要求しない。** 運用の信念ワーカーが持っているのは知識グラフの ``planned``
+    アサーション（区間と遵守率だけ）で、``PlanItem`` の他の項目（計画種・外部 ID）は信念の計算に
+    要らない。
+    """
+
+    @property
+    def planned_interval(self) -> Interval:
+        """計画区間（右開）。"""
+        ...
+
+    @property
+    def adherence_prior(self) -> float:
+        """遵守率の事前（0〜1）。"""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedSpan:
+    """``planned`` の文から取り出した計画（:class:`PlanView` の最小の実装）。
+
+    Attributes:
+        planned_interval: 計画区間（文の有効時間。終端が無ければ継続中の計画）。
+        adherence_prior: 遵守率の事前（文の確信度）。
+    """
+
+    planned_interval: Interval
+    adherence_prior: float
 
 
 def _log_odds(probability: float) -> float:
@@ -148,7 +182,7 @@ class TransitionPrior:
         fluent: str,
         previous: float | None,
         elapsed: timedelta,
-        plan: PlanItem | None,
+        plan: PlanView | None,
         at: datetime,
     ) -> tuple[float, float]:
         """事前の対数オッズと、そのうち計画が占める分を返す。
@@ -284,8 +318,9 @@ def update_belief(
     transition: TransitionPrior,
     probe_probabilities: Sequence[float] = (),
     records: Sequence[tuple[Record, bool]] = (),
+    claim_probabilities: Sequence[float] = (),
     reliability: dict[tuple[str, str], ReliabilityModel] | None = None,
-    plan: PlanItem | None = None,
+    plan: PlanView | None = None,
     mask: AuditMask,
     weak_evidence_threshold: float = 0.3,
 ) -> BeliefUpdate:
@@ -311,6 +346,9 @@ def update_belief(
         transition: 遷移事前分布。
         probe_probabilities: プローブの較正済み出力（複数プローブなら複数）。
         records: ``(記録, 記録が主張する真偽)`` の列。
+        claim_probabilities: 取込が信頼性モデルを通して確率にした記録の主張（主張イベントの
+            ``p``。一様事前の下の ``σ(対数尤度比)``）。対数オッズがそのまま記録尤度になる。
+            **呼び出し側が監査隔離を先に適用する**（イベント側のマスクは ``BeliefIngest``）。
         reliability: ``(情報源, 記録型)`` → 信頼性モデル。
         plan: 当該時刻に有効な計画項目。
         mask: 監査隔離マスク（必須）。
@@ -357,6 +395,9 @@ def update_belief(
                 # 真偽を主張しない記録型（計画など）は尤度に効かせない
                 continue
             record_log_odds += model.confusion.log_likelihood_ratio(record_says=claims_true)
+
+    for claim in claim_probabilities:
+        record_log_odds += _log_odds(claim)
 
     posterior_log_odds = prior_log_odds + observed_log_odds + record_log_odds
     posterior = _probability(posterior_log_odds)
@@ -439,8 +480,9 @@ class BeliefFilter:
         at: datetime,
         probe_probabilities: Sequence[float] = (),
         records: Sequence[tuple[Record, bool]] = (),
+        claim_probabilities: Sequence[float] = (),
         reliability: dict[tuple[str, str], ReliabilityModel] | None = None,
-        plan: PlanItem | None = None,
+        plan: PlanView | None = None,
         mask: AuditMask,
     ) -> BeliefUpdate:
         """1 刻み進める。
@@ -452,6 +494,7 @@ class BeliefFilter:
             at: この刻みの時刻。
             probe_probabilities: プローブの較正済み出力。
             records: ``(記録, 記録が主張する真偽)`` の列。
+            claim_probabilities: 記録の主張の確率（:func:`update_belief` を参照）。
             reliability: 信頼性モデル。
             plan: 当該時刻に有効な計画項目。
             mask: 監査隔離マスク。
@@ -468,6 +511,7 @@ class BeliefFilter:
             transition=self.transition,
             probe_probabilities=probe_probabilities,
             records=records,
+            claim_probabilities=claim_probabilities,
             reliability=reliability,
             plan=plan,
             mask=mask,
@@ -487,7 +531,7 @@ class BeliefFilter:
         probe_series: Sequence[Sequence[float]] = (),
         records: Sequence[tuple[Record, bool]] = (),
         reliability: dict[tuple[str, str], ReliabilityModel] | None = None,
-        plan: PlanItem | None = None,
+        plan: PlanView | None = None,
         mask: AuditMask,
     ) -> list[BeliefUpdate]:
         """系列を通して回す。

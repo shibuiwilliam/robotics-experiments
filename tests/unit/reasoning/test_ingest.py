@@ -22,11 +22,14 @@ from sbp.core.errors import ReasoningError
 from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, RecordEvidence, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
+from sbp.core.time import Interval
+from sbp.reasoning.belief import PlannedSpan
 from sbp.reasoning.ingest import (
     BeliefIngest,
     SkipReason,
     default_transition,
     fluent_of_event,
+    is_record_claim,
 )
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
@@ -347,3 +350,122 @@ class TestPrune:
     def test_pruning_nothing_returns_zero(self) -> None:
         """捨てるものが無ければ 0。"""
         assert _ingest().prune(before=T0) == 0
+
+
+def _claim_event(*, at: datetime = T0, p: float = 0.79, entity: str = PUMP_A) -> EventEnvelope:
+    """取込の主張イベント（``BusinessEvent/<fluent>``、observed、``RecordEvidence``）。"""
+    return _event(entity=entity, at=at, p=p).model_copy(
+        update={
+            "type": f"{vocab.core.BusinessEvent}/{vocab.ent.Running}",
+            "modality": Modality.OBSERVED,
+            "evidence": (
+                RecordEvidence(record="https://sbp.example/site/siteA/record/r-2", source=MES),
+            ),
+        }
+    )
+
+
+class TestThreeSources:
+    """信念更新が観測・記録・計画の三源を入力にする（M8-26、所見 102）。"""
+
+    @pytest.mark.parametrize(
+        ("event_type", "expected"),
+        [
+            (f"{vocab.core.BusinessEvent}/{vocab.ent.Running}", True),
+            ("sbp-core:BusinessEvent/ent:Running", True),
+            (f"{vocab.core.PhysicalEvent}/{vocab.ent.Running}", False),
+            (str(vocab.ent.OperationLog), False),
+        ],
+    )
+    def test_only_business_event_types_are_claims(self, event_type: str, expected: bool) -> None:
+        assert is_record_claim(event_type) is expected
+
+    def test_a_claim_feeds_the_record_term_not_the_probe_term(self) -> None:
+        outcome = _ingest().handle(_claim_event())
+        assert outcome.applied
+        assert outcome.is_claim
+        assert outcome.update is not None
+        contribution = outcome.update.contribution
+        assert contribution.record > 0.0
+        assert contribution.observed == 0.0
+        assert contribution.dominant == "record"
+
+    def test_a_probe_still_feeds_the_probe_term(self) -> None:
+        outcome = _ingest().handle(_event())
+        assert outcome.update is not None
+        assert not outcome.is_claim
+        assert outcome.update.contribution.observed > 0.0
+        assert outcome.update.contribution.record == 0.0
+
+    def test_a_claim_moves_the_posterior_the_way_it_says(self) -> None:
+        said_running = _ingest()
+        said_stopped = _ingest()
+        up = said_running.handle(_claim_event(p=0.79))
+        down = said_stopped.handle(_claim_event(p=0.21))
+        assert up.update is not None
+        assert down.update is not None
+        assert up.update.posterior > 0.5 > down.update.posterior
+
+    def test_the_three_sources_combine_in_one_posterior(self) -> None:
+        """設計書 §14 の形: 計画と記録は稼働、観測は停止 → 観測が優位でも記録と計画が効く。"""
+        ingest = _ingest()
+        ingest.plan_provider = lambda _e, _f, _at: PlannedSpan(
+            Interval(T0 - timedelta(hours=1), T0 + timedelta(hours=1)), adherence_prior=0.9
+        )
+        ingest.handle(_claim_event(p=0.79))
+        stopped = ingest.handle(_event(p=0.05, at=T0 + timedelta(seconds=10)))
+        assert stopped.update is not None
+        contribution = stopped.update.contribution
+        assert contribution.observed > 0.0
+        assert contribution.plan >= 0.0
+        alone = _ingest().handle(_event(p=0.05, at=T0 + timedelta(seconds=10)))
+        assert alone.update is not None
+        assert stopped.update.posterior > alone.update.posterior
+
+    def test_a_plan_in_force_moves_the_prior(self) -> None:
+        calls: list[tuple[str, str, datetime]] = []
+
+        def provider(entity: str, fluent: str, at: datetime) -> PlannedSpan:
+            calls.append((entity, fluent, at))
+            return PlannedSpan(Interval(T0 - timedelta(hours=1), None), adherence_prior=0.9)
+
+        ingest = _ingest()
+        ingest.plan_provider = provider
+        planned = ingest.handle(_event(p=0.5))
+        plain = _ingest().handle(_event(p=0.5))
+        assert planned.update is not None
+        assert plain.update is not None
+        assert planned.update.posterior > plain.update.posterior
+        assert planned.update.contribution.plan > 0.0
+        assert calls == [(PUMP_A, str(vocab.ent.Running), T0)]
+
+    def test_no_plan_provider_means_no_plan_contribution(self) -> None:
+        outcome = _ingest().handle(_event())
+        assert outcome.update is not None
+        assert outcome.update.contribution.plan == 0.0
+
+    def test_a_late_claim_does_not_block_later_observations(self) -> None:
+        """業務記録は計上が遅れて届く。主張の時刻で観測の順序検査を進めない。"""
+        ingest = _ingest()
+        assert ingest.handle(_claim_event(at=T0 + timedelta(minutes=5))).applied
+        assert ingest.handle(_event(at=T0 + timedelta(seconds=10))).applied
+        assert ingest.skipped == {}
+
+    def test_observations_still_cannot_go_back_in_time(self) -> None:
+        ingest = _ingest()
+        ingest.handle(_event(at=T0 + timedelta(seconds=10)))
+        assert ingest.handle(_event(at=T0)).skipped == SkipReason.OUT_OF_ORDER
+
+    def test_a_claim_from_an_audited_source_is_excluded(self) -> None:
+        """不変条件 6: 監査対象の情報源の主張は信念更新に入れない。"""
+        ingest = _ingest()
+        mask = AuditMask.auditing_source(MES, reason="discrepancy:d-1 の監査")
+        assert ingest.handle(_claim_event(), mask=mask).skipped == SkipReason.AUDIT_EXCLUDED
+        assert ingest.handle(_event(), mask=mask).applied
+
+    def test_claim_only_filters_are_pruned(self) -> None:
+        ingest = _ingest()
+        ingest.handle(_claim_event())
+        assert ingest.tracked_entities == 1
+        assert ingest.prune(before=T0 + timedelta(hours=1)) == 1
+        assert ingest.tracked_entities == 0

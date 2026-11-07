@@ -31,7 +31,7 @@ from sbp.core.logging import bind_event, get_logger
 from sbp.reasoning.belief import BeliefFilter, TransitionPrior
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from datetime import datetime
 
     from structlog.stdlib import BoundLogger
@@ -39,7 +39,10 @@ if TYPE_CHECKING:
     from sbp.core.assertion import Assertion
     from sbp.core.events import EventEnvelope
     from sbp.integration.reliability import ReliabilityModel
-    from sbp.reasoning.belief import BeliefUpdate
+    from sbp.reasoning.belief import BeliefUpdate, PlanView
+
+    PlanProvider = Callable[[str, str, datetime], PlanView | None]
+    """``(実体, フルーエント型の IRI, 時刻) -> その時刻に有効な計画``（無ければ ``None``）。"""
 
 __all__ = [
     "BeliefIngest",
@@ -47,6 +50,7 @@ __all__ = [
     "SkipReason",
     "default_transition",
     "fluent_of_event",
+    "is_record_claim",
 ]
 
 log = get_logger(__name__)
@@ -112,6 +116,21 @@ def fluent_of_event(event_type: str) -> str | None:
     return None
 
 
+def is_record_claim(event_type: str) -> bool:
+    """業務記録の主張イベント（``BusinessEvent/<fluent>``）か。
+
+    主張イベントは記録尤度に、物理イベント（``PhysicalEvent/<fluent>``）は観測尤度に入る。
+    **どちらの源に入るかは型だけで決める**——``modality`` や証拠の種類で決めると、取込が
+    ``observed`` で出す主張と、接地が ``inferred`` で出す観測の区別が証拠の書き方に依存する。
+
+    Args:
+        event_type: イベント型の IRI。
+    """
+    return fluent_of_event(event_type) is not None and event_type.startswith(
+        (f"{vocab.core.BusinessEvent}/", "sbp-core:BusinessEvent/")
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class IngestOutcome:
     """イベント 1 件を処理した結果。
@@ -123,6 +142,7 @@ class IngestOutcome:
         update: 信念更新の結果（入れなかった場合は ``None``）。
         assertion: 書くべきアサーション（入れなかった場合は ``None``）。
         skipped: 入れなかった理由（入れた場合は ``None``）。
+        is_claim: 業務記録の主張だったか（偽なら物理観測）。
     """
 
     event_id: str
@@ -131,6 +151,7 @@ class IngestOutcome:
     update: BeliefUpdate | None
     assertion: Assertion | None
     skipped: str | None
+    is_claim: bool = False
 
     @property
     def applied(self) -> bool:
@@ -148,7 +169,9 @@ class BeliefIngest:
         ontology_version: アサーションに刻むオントロジー版。
         predicate_of: フルーエント名 → 述語 IRI の解決（``vocab`` から渡す。
             **IRI をここに直書きしない**、不変条件 5）。
-        reliability: 情報源の信頼性モデル。
+        reliability: 情報源の信頼性モデル（記録そのものを渡す経路用。主張イベントは取込が
+            信頼性を通した確率にして運んでくるので、ここには要らない）。
+        plan_provider: 計画の引き当て（``None`` なら計画源は使わない）。
         filters: 実体 × フルーエントごとのフィルタ。
         skipped: 入れなかったイベントの理由別の件数。
     """
@@ -158,9 +181,11 @@ class BeliefIngest:
     predicate_of: dict[str, str]
     transition: TransitionPrior = field(default_factory=TransitionPrior)
     reliability: dict[tuple[str, str], ReliabilityModel] | None = None
+    plan_provider: PlanProvider | None = None
     filters: dict[tuple[str, str], BeliefFilter] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
     _last_seen: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    _touched: dict[tuple[str, str], datetime] = field(default_factory=dict)
 
     def filter_for(self, *, entity: str, fluent: str) -> BeliefFilter:
         """実体 × フルーエントのフィルタを得る（無ければ作る）。
@@ -205,10 +230,13 @@ class BeliefIngest:
             # 不変条件 6: 監査対象の記録と派生信念を入力にしない
             return self._skip(bound, event, entity, fluent, SkipReason.AUDIT_EXCLUDED)
 
+        claim = is_record_claim(str(event.type))
         key = (entity, fluent)
         previous_at = self._last_seen.get(key)
-        if previous_at is not None and event.tx_time < previous_at:
-            # 実体内で時刻が戻った。入れると滞在時間が負になる
+        if not claim and previous_at is not None and event.tx_time < previous_at:
+            # 実体内で観測の時刻が戻った。入れると滞在時間が負になる。**主張は数えない**——
+            # 業務記録は計上が遅れて届くのが普通で（``tx_time`` は記録時刻）、観測の列とは
+            # 別の時間軸を進む
             return self._skip(bound, event, entity, fluent, SkipReason.OUT_OF_ORDER)
 
         predicate = self.predicate_of.get(fluent)
@@ -219,13 +247,22 @@ class BeliefIngest:
             )
 
         probe_filter = self.filter_for(entity=entity, fluent=fluent)
+        plan = (
+            self.plan_provider(entity, predicate, event.tx_time)
+            if self.plan_provider is not None
+            else None
+        )
         update = probe_filter.step(
             at=event.tx_time,
-            probe_probabilities=(event.belief.p,),
+            probe_probabilities=() if claim else (event.belief.p,),
+            claim_probabilities=(event.belief.p,) if claim else (),
             reliability=self.reliability,
+            plan=plan,
             mask=applied_mask,
         )
-        self._last_seen[key] = event.tx_time
+        if not claim:
+            self._last_seen[key] = event.tx_time
+        self._touched[key] = max(event.tx_time, self._touched.get(key, event.tx_time))
 
         assertion = update.to_assertion(
             predicate=predicate,
@@ -247,6 +284,7 @@ class BeliefIngest:
             update=update,
             assertion=assertion,
             skipped=None,
+            is_claim=claim,
         )
 
     def handle_batch(
@@ -300,7 +338,7 @@ class BeliefIngest:
         return len(self.filters)
 
     def prune(self, *, before: datetime) -> int:
-        """最後の観測が ``before`` より古いフィルタを捨てる。
+        """最後に更新した時刻が ``before`` より古いフィルタを捨てる（観測も主張も数える）。
 
         **放置するとフィルタが単調増加する。** 実体が増え続ける環境（搬送中の物品など）では、
         1 実体あたり数百バイトでも無視できない量になる。捨てた実体の信念は失われず、
@@ -312,10 +350,11 @@ class BeliefIngest:
         Returns:
             捨てた数。
         """
-        stale = [key for key, at in self._last_seen.items() if at < before]
+        stale = [key for key, at in self._touched.items() if at < before]
         for key in stale:
             self.filters.pop(key, None)
             self._last_seen.pop(key, None)
+            self._touched.pop(key, None)
         if stale:
             log.info("reasoning.ingest_pruned", dropped=len(stale), remaining=len(self.filters))
         return len(stale)

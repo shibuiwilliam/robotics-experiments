@@ -14,18 +14,19 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from services.belief_worker import BeliefWorker, default_ingest
+from services.belief_worker import BeliefWorker, GraphPlans, default_ingest
 from services.metrics import MetricRecorder
 
 from sbp.core import vocab
 from sbp.core.assertion import Assertion
 from sbp.core.belief import BooleanBelief
 from sbp.core.config import Settings
-from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, ValidTime
+from sbp.core.events import EventEnvelope, ProbeEvidence, Producer, RecordEvidence, ValidTime
 from sbp.core.ids import new_event_id
 from sbp.core.modality import Modality
 from sbp.core.time import now
 from sbp.eventlog.consumer import EventHandler
+from sbp.knowledge import AssertionStore, EmbeddedGraphStore
 from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink
 
 T0 = datetime(2026, 6, 10, 9, tzinfo=UTC)
@@ -461,3 +462,109 @@ class TestMetrics:
         await worker.handle_event(_event_for(PUMP, at=T0, p=0.9))
 
         assert worker.applied_total == 1
+
+
+def _claim(*, at: datetime = T0, p: float = 0.79) -> EventEnvelope:
+    """取込の主張イベント（``BusinessEvent/<fluent>``）。"""
+    return _event(at=at, p=p).model_copy(
+        update={
+            "type": f"{vocab.core.BusinessEvent}/{vocab.ent.Running}",
+            "modality": Modality.OBSERVED,
+            "evidence": (
+                RecordEvidence(
+                    record="https://sbp.example/site/siteA/record/r-1",
+                    source="https://sbp.example/source/mes",
+                ),
+            ),
+        }
+    )
+
+
+def _plan_store(*, start: datetime = T0, end: datetime = T0 + timedelta(hours=2)) -> AssertionStore:
+    """P-101 の Running の計画（遵守率 0.9）を 1 件持つストア。"""
+    store = AssertionStore(EmbeddedGraphStore(), site_id="siteA")
+    store.assert_(
+        Assertion(
+            subject=PUMP,
+            predicate=str(vocab.ent.Running),
+            object=True,
+            valid_from=start,
+            valid_to=end,
+            tx_from=T0,
+            modality=Modality.PLANNED,
+            belief=BooleanBelief(p=0.9),
+            provenance="urn:sbp:prov:plan/test",
+            ontology_version=vocab.ONTOLOGY_VERSION,
+        )
+    )
+    return store
+
+
+class TestGraphPlans:
+    """``planned`` の文から時刻に有効な計画を引く（M8-26）。"""
+
+    def test_a_plan_in_force_is_found(self) -> None:
+        span = GraphPlans(_plan_store())(PUMP, str(vocab.ent.Running), T0 + timedelta(hours=1))
+        assert span is not None
+        assert span.adherence_prior == pytest.approx(0.9)
+
+    def test_the_interval_is_right_open(self) -> None:
+        plans = GraphPlans(_plan_store())
+        assert plans(PUMP, str(vocab.ent.Running), T0 - timedelta(seconds=1)) is None
+        assert plans(PUMP, str(vocab.ent.Running), T0) is not None
+        assert plans(PUMP, str(vocab.ent.Running), T0 + timedelta(hours=2)) is None
+
+    def test_another_entity_or_fluent_has_no_plan(self) -> None:
+        plans = GraphPlans(_plan_store())
+        assert plans(PUMP + "-2", str(vocab.ent.Running), T0) is None
+        assert plans(PUMP, str(vocab.ent.UnderMaintenance), T0) is None
+
+    def test_a_cycle_reads_the_graph_once_per_key_and_refresh_rereads(self) -> None:
+        store = _plan_store()
+        plans = GraphPlans(store)
+        assert plans(PUMP, str(vocab.ent.Running), T0) is not None
+        for row in store.query(subject=PUMP, modality=Modality.PLANNED):
+            store.retract(row.assertion_id, T0 + timedelta(minutes=1))
+        assert plans(PUMP, str(vocab.ent.Running), T0) is not None, "周期の間は覚えている"
+        plans.refresh()
+        assert plans(PUMP, str(vocab.ent.Running), T0) is None, "refresh で読み直す"
+
+
+class TestThreeSourceWiring:
+    """ワーカーが主張と計画を信念更新に渡す（所見 102 の「構造的に 0」が解ける）。"""
+
+    @pytest.mark.asyncio
+    async def test_a_claim_and_a_plan_together_raise_the_belief(self) -> None:
+        recorder = MetricRecorder(site="siteA", sink=None, period_s=0.0)
+        worker = BeliefWorker(
+            Settings(), sink=_Sink(), metrics=recorder, plans=GraphPlans(_plan_store())
+        )
+        await worker.handle_event(_claim(at=T0))
+        await worker.handle_event(_event(at=T0 + timedelta(seconds=10), p=0.9))
+        update_filter = worker.ingest.filter_for(entity=PUMP, fluent="Running")
+        assert update_filter.posterior is not None
+        assert update_filter.posterior > 0.9
+
+    @pytest.mark.asyncio
+    async def test_the_worker_wires_the_plan_provider_into_ingest(self) -> None:
+        plans = GraphPlans(_plan_store())
+        worker = BeliefWorker(Settings(), sink=_Sink(), plans=plans)
+        assert worker.ingest.plan_provider is plans
+
+    @pytest.mark.asyncio
+    async def test_a_claim_becomes_an_inferred_assertion(self) -> None:
+        """不変条件 3: 記録の主張から出る信念も ``inferred``。"""
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink)
+        await worker.handle_event(_claim())
+        assert [row.modality for row in sink.written] == [Modality.INFERRED]
+        assert sink.written[0].belief.p > 0.5  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
+    async def test_an_existence_event_is_skipped_not_raised(self) -> None:
+        """記録の存在イベント（型が記録型の完全 IRI）は信念更新に入れない（所見 116）。"""
+        sink = _Sink()
+        worker = BeliefWorker(Settings(), sink=sink)
+        await worker.handle_event(_event().model_copy(update={"type": str(vocab.ent.OperationLog)}))
+        assert sink.written == []
+        assert worker.ingest.skipped

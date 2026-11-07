@@ -3,8 +3,16 @@
 プローブ由来のイベント（``<site>.bridge.physical``）を読み、実体単位の前向きフィルタを進めて
 ``inferred`` アサーションを書く。実体間結合（loopy BP）は ``bp_period_s`` ごとに回す。
 
-**業務記録と計画はまだ読まない**——運用の信念更新は一源（観測 + 遷移の事前）で、``contrib_record`` /
-``contrib_plan`` は構造的に 0 になる。三源にするのは M8-26（``docs/PROGRESS.md`` 所見 102）。
+**三源を読む**（M8-26、``docs/PROGRESS.md`` 所見 102）:
+
+- 物理観測: ``<site>.bridge.physical``（接地のプローブ出力）→ 観測尤度。
+- 業務記録: ``<site>.integration.business``。取込（ingest-worker）が信頼性モデルを通した確率の
+  「主張イベント」（``BusinessEvent/<fluent>``）にして出す（ADR-0016）→ 記録尤度。存在イベント
+  （型が記録型）はフルーエントではないので取り込まない。
+- 計画: 知識グラフの ``planned`` の文（区間と遵守率）を事前に混ぜる（:class:`GraphPlans`）。
+
+記録の監査隔離（不変条件 6）は :meth:`sbp.reasoning.ingest.BeliefIngest.handle` が主張イベントの
+証拠（``RecordEvidence``）にマスクを適用する。
 
 **結合を毎ループ回さない。** 実体間のメッセージパッシングは辺数に比例して重く、1 件のイベント
 ごとに回すと処理が追いつかない。設計書 §8.1 が「一定周期で回す」と言っているのはこのためで、
@@ -37,13 +45,14 @@ from sbp.core.belief import BooleanBelief
 from sbp.core.config import Settings
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
-from sbp.core.time import now
+from sbp.core.time import Interval, now
 from sbp.knowledge.relations import (
     aggregation_rules,
     group_by_whole,
     part_whole_edges,
     situation_members,
 )
+from sbp.reasoning.belief import PlannedSpan
 from sbp.reasoning.coupling import AggregationRule, PartWhole, SituationLink, propagate
 from sbp.reasoning.ingest import BeliefIngest, default_transition
 from services.metrics import MetricRecorder
@@ -55,6 +64,7 @@ if TYPE_CHECKING:
 
     from sbp.core.events import EventEnvelope
     from sbp.eventlog.consumer import EventHandler, KafkaEventConsumer
+    from sbp.knowledge.assertions import AssertionStore
     from sbp.knowledge.store import GraphStore
     from sbp.reasoning.ingest import IngestOutcome
 
@@ -89,6 +99,52 @@ _COUPLING_MIN_CHANGE = 0.01
 **追記専用なので、変化のない文を毎周期足すとグラフが単調に膨らむ**（60 秒周期なら 1 日で
 1440 件/実体）。二時制クエリの履歴が結合の周期で埋まり、「いつ信念が変わったか」が読めなくなる。
 閾値を置く代わりに、動いた分だけを記録する。"""
+
+
+class GraphPlans:
+    """知識グラフの ``planned`` の文から、時刻に有効な計画を引く（M8-26）。
+
+    **周期ごとに読み直す。** 計画は取込（ingest-worker）が置き換えるので、キャッシュしっぱなしに
+    すると変更された計画で事前を作り続ける。1 イベントごとにクエリすると Oxigraph への往復が
+    イベント数に比例するので、``step()`` の頭で :meth:`refresh` してその周期の間だけ覚える。
+    """
+
+    def __init__(self, store: AssertionStore) -> None:
+        """Args:
+        store: 二時制アサーション API（拠点のグラフ）。
+        """
+        self._store = store
+        self._cache: dict[tuple[str, str], list[PlannedSpan]] = {}
+
+    def refresh(self) -> None:
+        """覚えた計画を捨てる（次の引き当てで読み直す）。"""
+        self._cache.clear()
+
+    def __call__(self, entity: str, fluent: str, at: datetime) -> PlannedSpan | None:
+        """``at`` に有効な計画（無ければ ``None``）。
+
+        Args:
+            entity: 実体 IRI。
+            fluent: フルーエント型の IRI（``planned`` の文の述語）。
+            at: 引き当てる時刻。
+        """
+        key = (entity, fluent)
+        spans = self._cache.get(key)
+        if spans is None:
+            spans = [
+                PlannedSpan(
+                    planned_interval=Interval(row.valid_from, row.valid_to),
+                    adherence_prior=row.confidence,
+                )
+                for row in self._store.query(
+                    subject=entity, predicate=fluent, modality=Modality.PLANNED
+                )
+            ]
+            self._cache[key] = spans
+        for span in spans:
+            if span.planned_interval.contains_instant(at):
+                return span
+        return None
 
 
 def default_ingest(settings: Settings) -> BeliefIngest:
@@ -164,6 +220,7 @@ class BeliefWorker:
         ingest: BeliefIngest | None = None,
         relations: RelationProvider | None = None,
         metrics: MetricRecorder | None = None,
+        plans: GraphPlans | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -175,6 +232,7 @@ class BeliefWorker:
             ``propagate`` が結合の参照する実体すべての事前を要求するため**——持っていない
             実体を含む関係を渡すと例外になる。
         metrics: 指標の記録（``None`` なら測らない）。M8-14。
+        plans: 計画の引き当て（``None`` なら計画源は使わない。``contrib_plan`` は 0 になる）。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -188,6 +246,9 @@ class BeliefWorker:
         self._relations = relations
         self._metrics = metrics
         self.ingest = ingest if ingest is not None else default_ingest(self.settings)
+        self._plans = plans
+        if plans is not None and self.ingest.plan_provider is None:
+            self.ingest.plan_provider = plans
         self.applied_total = 0
         if driver is None:
             log.warning(
@@ -281,7 +342,8 @@ class BeliefWorker:
         # イベントログの滞留: 事象が起きた時刻から信念に入るまで。**負にならないよう
         # 下限 0 にする**——合成データや時計のずれで未来の事象が来ることがある
         lag = max(0.0, (at - event.valid_time.start).total_seconds())
-        self._metrics.record("event_log_lag", lag, at=at, labels={"topic": "bridge.physical"})
+        topic = "integration.business" if outcome.is_claim else "bridge.physical"
+        self._metrics.record("event_log_lag", lag, at=at, labels={"topic": topic})
 
         contrib = update.contribution
         total = contrib.observed + contrib.record + contrib.plan
@@ -311,6 +373,8 @@ class BeliefWorker:
             イベントは ``ingest.skipped`` に理由別で積まれる）。
         """
         before = self.applied_total
+        if self._plans is not None:
+            self._plans.refresh()
         received = await self._drive()
 
         at = now()
@@ -567,11 +631,15 @@ async def build_worker(
         sink=graph.assert_,
         relations=graph_relations(store),
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
+        plans=GraphPlans(graph),
     )
 
     consumer = KafkaEventConsumer(
         resolved,
-        topics=(topic_name(site_id, EventLayer.BRIDGE, "physical"),),
+        topics=(
+            topic_name(site_id, EventLayer.BRIDGE, "physical"),
+            topic_name(site_id, EventLayer.INTEGRATION, "business"),
+        ),
         policy=ConsumerPolicy(consumer_group=WORKER_NAME),
         store=PostgresIdempotencyStore(connection),
         handler=worker.handle_event,
