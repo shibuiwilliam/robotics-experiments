@@ -49,6 +49,8 @@ PROBE_IDS = {"Running": "https://sbp.example/probe/Running/2.0.0"}
 RULES = load_event_calculus("""
 initiates(start_cmd, running).
 terminates(stop_cmd, running).
+initiates(fault_evt, faulted).
+terminates(clear_evt, faulted).
 """)
 SETTINGS = Settings()
 
@@ -267,3 +269,93 @@ class TestGuards:
         )
         assert all(a.valid_from < T0 + STEP * 10 for a in outcome.added)
         assert all(row.valid_from < T0 + STEP * 10 for row in outcome.closed)
+
+
+class TestReviewFindings:
+    """M9-01 の独立レビューの指摘（複数フルーエント、結合の文、似た来歴）。"""
+
+    def test_fluents_switching_at_the_same_instant_are_both_replaced(self) -> None:
+        faulted = str(vocab.ent.Faulted)
+
+        def both(switch: int):  # type: ignore[no-untyped-def]
+            def run(latents: NDArray[np.float64]) -> dict[str, NDArray[np.float64]]:
+                on = np.where(latents[:, 0] < switch, 0.95, 0.05)
+                return {"Running": on, "Faulted": 1.0 - on}
+
+            return run
+
+        ids = {**PROBE_IDS, "Faulted": "https://sbp.example/probe/Faulted/2.0.0"}
+        store = _store()
+        for outcome in replay_entity(
+            entity=PUMP,
+            series=_series(),
+            probes=both(30),
+            probe_ids=ids,
+            wm_version=WM,
+            rules=RULES,
+            settings=SETTINGS,
+            claims=[],
+            ingest=default_ingest(SETTINGS),
+        ):
+            assert outcome.assertion is not None
+            store.assert_(outcome.assertion.model_copy(update={"tx_from": OLD_TX}))
+        plan = plan_regrounding(
+            trigger=RegroundingTrigger.PROBE_VERSION,
+            reason="2 つのフルーエント",
+            entities=[PUMP],
+            fluents=[RUNNING, faulted],
+            interval=Interval(T0, T0 + STEP * (N + 1)),
+            from_version="probe/1.0.0",
+            to_version="probe/2.0.0",
+        )
+
+        def go(switch: int):  # type: ignore[no-untyped-def]
+            return reground(
+                plan,
+                store=store,
+                series_by_entity={PUMP: _series()},
+                probes=both(switch),
+                probe_ids=ids,
+                wm_version=WM,
+                rules=RULES,
+                settings=SETTINGS,
+                claims=[],
+                ingest_factory=lambda: default_ingest(SETTINGS),
+                apply=True,
+                at=NOW,
+            )
+
+        same = go(30)
+        assert not same.added
+        assert not same.closed
+        changed = go(45)
+        for predicate in (RUNNING, faulted):
+            assert [a for a in changed.added if a.predicate == predicate], predicate
+            assert store.query(subject=PUMP, predicate=predicate), "旧文だけ閉じて信念を欠かさない"
+
+    @pytest.mark.parametrize(
+        "provenance",
+        [
+            "urn:sbp:prov:belief-worker/coupling/2026-11-08T09:00:00+00:00",
+            "urn:sbp:prov:belief-worker-2/x",
+            "urn:sbp:prov:belief-worker",
+        ],
+    )
+    def test_coupling_and_lookalike_provenance_are_not_closed(self, provenance: str) -> None:
+        store = _store()
+        _live(store, 30, tx=OLD_TX)
+        other = Assertion(
+            subject=PUMP,
+            predicate=RUNNING,
+            object=True,
+            valid_from=T0 + STEP * 7,
+            tx_from=OLD_TX,
+            modality=Modality.INFERRED,
+            belief=BooleanBelief(p=0.6),
+            provenance=provenance,
+            ontology_version=vocab.ONTOLOGY_VERSION,
+        )
+        store.assert_(other)
+        _run(store, 45, apply=True, at=NOW)
+        still_open = {row.assertion_id for row in store.query(subject=PUMP, predicate=RUNNING)}
+        assert other.assertion_id in still_open

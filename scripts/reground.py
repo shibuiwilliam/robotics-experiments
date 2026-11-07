@@ -6,7 +6,9 @@
 - 新しい版のプローブは ``--probe-id``（版を含む IRI、複数可）で指す。``latest`` は使えない。
 - 使う WM は ``SBP_BRIDGE_WM_VERSION``。WM 版を上げたときは、先に ``make encode`` で潜在を作る。
 - 主張（業務記録）は事象ログ（業務トピック）を最初から読む。運用の consumer group には触れない。
-- 終了コード: 0 = 完了（dry-run を含む）、1 = 差分が閾値を超えていて**人のレビューが要る**。
+- 終了コード: 0 = 完了、1 = dry-run で差分が閾値を超え、**人のレビューが要る**（apply は常に 0）。
+- dry-run は信念を書かない。指標（``regrounding_duration``）と Kafka の一時的な consumer group は
+  作る。
 """
 
 from __future__ import annotations
@@ -19,14 +21,14 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import psycopg
-from services.belief_worker import default_ingest
+from services.belief_worker import GraphPlans, default_ingest
 from services.bridge_worker import load_probe_set, load_rules
 
 from sbp.core.config import Settings, get_settings
 from sbp.core.errors import ConfigError
 from sbp.core.logging import configure_logging, get_logger
 from sbp.core.metrics import MetricSample, metric
-from sbp.core.time import Interval, ensure_utc
+from sbp.core.time import Interval, ensure_utc, now
 from sbp.knowledge import (
     AssertionStore,
     HttpGraphStore,
@@ -42,12 +44,43 @@ from scripts.train_probe import _read_claims  # pyright: ignore[reportPrivateUsa
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sbp.reasoning.ingest import BeliefIngest
+
 __all__ = ["main", "run_reground"]
 
 log = get_logger(__name__)
 
-_MAX_LATENTS = 200_000
-"""1 実体の潜在の読み出し上限。打ち切ったら落とす（途中までの再生は信念を壊す）。"""
+_PAGE = 20_000
+"""潜在を読む 1 回の件数。"""
+_MAX_LATENTS = 1_000_000
+"""1 実体の再生に使う潜在の上限。超えたら落とす（途中までの再生は信念を壊す）。"""
+
+
+async def _read_series(
+    index: LatentIndex, *, entity: str, wm_version: str, until: datetime
+) -> tuple[list[datetime], np.ndarray]:
+    """実体の最初の潜在から、期間の終端（右開）まで、ページで読む。"""
+    times: list[datetime] = []
+    vectors: list[np.ndarray] = []
+    after: datetime | None = None
+    while True:
+        rows = await index.since(
+            entity=entity, wm_version=wm_version, level="mid", after=after, limit=_PAGE
+        )
+        for at, vector in rows:
+            if at >= until:
+                rows = []
+                break
+            times.append(at)
+            vectors.append(vector)
+        if len(times) > _MAX_LATENTS:
+            raise ConfigError(f"latents of {entity} exceed {_MAX_LATENTS}; move --end earlier")
+        if len(rows) < _PAGE:
+            break
+        after = rows[-1][0]
+    if not times:
+        raise ConfigError(f"no latents for {entity} under {wm_version}")
+    return times, np.vstack(vectors).astype(np.float64)
 
 
 async def run_reground(
@@ -81,8 +114,13 @@ async def run_reground(
         結果。
 
     Raises:
-        ConfigError: 潜在が無い、または読み出しの上限に当たった場合。
+        ConfigError: 潜在が無い、読み出しの上限に当たった、または ``apply`` の期間が未来に及ぶ場合。
     """
+    if apply and interval.end is not None and interval.end > now():
+        raise ConfigError(
+            "refusing to apply a regrounding whose interval reaches the future; the live "
+            "belief-worker may still be writing there (stop it or move --end earlier)"
+        )
     plan = plan_regrounding(
         trigger=RegroundingTrigger.PROBE_VERSION,
         reason=reason,
@@ -98,25 +136,27 @@ async def run_reground(
         settings.pg_dsn, autocommit=True
     ) as connection:
         index = LatentIndex(connection)
-        series = {}
-        for entity in entities:
-            rows = await index.since(
+        series = {
+            entity: await _read_series(
+                index,
                 entity=entity,
                 wm_version=settings.bridge.wm_version,
-                level="mid",
-                limit=_MAX_LATENTS,
+                until=interval.end,  # type: ignore[arg-type]
             )
-            if not rows:
-                raise ConfigError(f"no latents for {entity} under {settings.bridge.wm_version}")
-            if len(rows) >= _MAX_LATENTS:
-                raise ConfigError(f"latents of {entity} exceed {_MAX_LATENTS}; split the plan")
-            series[entity] = (
-                [at for at, _v in rows],
-                np.vstack([v for _a, v in rows]).astype(np.float64),
-            )
+            for entity in entities
+        }
+        graph = AssertionStore(HttpGraphStore(settings), site_id=settings.site_id)
+        plans = GraphPlans(graph)
+
+        def ingest_factory() -> BeliefIngest:
+            """ライブと同じく計画の事前を混ぜる（belief-worker の配線）。"""
+            built = default_ingest(settings)
+            built.plan_provider = plans
+            return built
+
         outcome = reground(
             plan,
-            store=AssertionStore(HttpGraphStore(settings), site_id=settings.site_id),
+            store=graph,
             series_by_entity=series,
             probes=probes,
             probe_ids=probes.probe_ids(),
@@ -124,7 +164,7 @@ async def run_reground(
             rules=load_rules(),
             settings=settings,
             claims=claims,
-            ingest_factory=lambda: default_ingest(settings),
+            ingest_factory=ingest_factory,
             apply=apply,
         )
         sample = MetricSample(
@@ -185,7 +225,8 @@ def main(argv: list[str] | None = None) -> int:
         closed=len(outcome.closed),
         needs_review=outcome.report.needs_review,
     )
-    return 1 if outcome.report.needs_review else 0
+    # apply のあとの非ゼロは「失敗」と読まれる。書き込みの前に人が見る dry-run でだけ知らせる
+    return 1 if outcome.report.needs_review and not args.apply else 0
 
 
 if __name__ == "__main__":

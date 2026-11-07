@@ -9,13 +9,16 @@
   差し替える操作なので、先に差分を人が見る（runbook の手順 5）。
 - **旧文は ``tx_to`` を閉じるだけで消さない**（不変条件 2）。新文は ``valid_from`` を過去のまま、
   ``tx_from`` を実行時刻にして足す。``as_of`` で旧信念が、新しい ``tx`` で新信念が引ける（G7）。
-- **ライブと同じ区切りで再生する。** bridge-worker は潜在を ``batch_size`` ずつ読み、バッチごとに
-  変化点を探す。再生も同じ区切りで昇格する——1 本の系列として昇格すると、同じプローブでも
-  バッチの境目で結果が変わり、差分に偽の変化が出る。最後の 1 点だけのバッチはライブでも
-  処理されない（変化点は区間を見る）ので再生も飛ばす。
+- **ライブに近い区切りで再生する。** bridge-worker は潜在を ``batch_size`` ずつ読み、バッチごとに
+  変化点を探す。再生も先頭から ``batch_size`` ずつ昇格する。ただし**ライブの区切りは起動時刻・
+  再起動・ウォーターマークの復元で変わる**ので、同じプローブでも境目の変化点は食い違いうる。差分は
+  「新旧の版の違い」と「区切りの違い」を含む近似であり、人がレポートを読んで判断する。
 - **再生は実体の最初の潜在から始める**（対象期間より前から）。フィルタの状態（直前の事後と
   滞在時間）を持ち越すため。書くのは対象期間 ``[start, end)`` の文だけ。
-- 比べる相手は ``belief-worker`` の来歴の文だけ（人の訂正や他の来歴を閉じない）。
+- 比べる相手は ``belief-worker`` が観測・主張から書いた文だけ（人の訂正、結合の文
+  ``/coupling/``、他の来歴を閉じない）。
+- **belief-worker が動いている最中の ``apply`` は避ける**（対象期間の終端をウォーターマークより
+  前にするか、ワーカーを止める）。読み取りと閉じる処理の間に書かれた文は「消滅」として閉じられうる。
 - 再実行しても同じ（変わらない文は触らない。中断後に新旧が両方開いていても、一致するほうを
   残して残りを閉じる）。
 """
@@ -28,7 +31,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from sbp.bridge.lifting import fluent_local_name, lift_events
-from sbp.core.errors import RegroundingError
+from sbp.core.errors import AppendOnlyViolation, RegroundingError
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.core.time import now
@@ -205,7 +208,7 @@ def reground(
             ingest=ingest,
         )
         fresh = {
-            outcome.assertion.valid_from: outcome.assertion
+            (outcome.assertion.predicate, outcome.assertion.valid_from): outcome.assertion
             for outcome in outcomes
             if outcome.assertion is not None
             and outcome.assertion.predicate in plan.fluents
@@ -213,7 +216,7 @@ def reground(
         }
         for predicate in plan.fluents:
             old = _old_rows(store, entity, predicate, plan, ingest.provenance)
-            mine = {when: a for when, a in fresh.items() if a.predicate == predicate}
+            mine = {when: a for (pred, when), a in fresh.items() if pred == predicate}
             more_added, more_closed, more_diffs = _compare(
                 entity=entity,
                 predicate=predicate,
@@ -231,7 +234,10 @@ def reground(
         for assertion in added:
             store.assert_(assertion)
         for row in closed:
-            store.retract(row.assertion_id, at=started)
+            try:
+                store.retract(row.assertion_id, at=started)
+            except AppendOnlyViolation:  # 並行して別の者が閉じた。閉じ済みなら目的は達している
+                log.warning("reasoning.regrounding_already_closed", assertion=str(row.assertion_id))
     finished = now() if at is None else started
     report = summarise_regrounding(
         plan,
@@ -254,6 +260,20 @@ def reground(
     )
 
 
+def _is_live_belief(row_provenance: str, prefix: str) -> bool:
+    """belief-worker が観測・主張から書いた文（または前回の再接地が差し替えた文）か。
+
+    結合（``/coupling/``）の文は信念更新の再生では作られないので、対象に入れると置き換えなしで閉じてしまう。
+    ``prefix`` で始まる別の来歴（``…-2``）も拾わないよう、区切りの ``/`` を要求する。
+    """
+    rest = row_provenance[len(prefix) :]
+    return (
+        row_provenance.startswith(prefix)
+        and rest.startswith("/")
+        and not rest.startswith("/coupling/")
+    )
+
+
 def _old_rows(
     store: AssertionStore, entity: str, predicate: str, plan: RegroundingPlan, provenance: str
 ) -> dict[datetime, list[AssertionRow]]:
@@ -261,7 +281,7 @@ def _old_rows(
     rows = store.query(subject=entity, predicate=predicate, modality=Modality.INFERRED)
     grouped: dict[datetime, list[AssertionRow]] = {}
     for row in rows:
-        if row.provenance.startswith(provenance) and _in_scope(row.valid_from, plan):
+        if _is_live_belief(row.provenance, provenance) and _in_scope(row.valid_from, plan):
             grouped.setdefault(row.valid_from, []).append(row)
     return grouped
 
