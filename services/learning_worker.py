@@ -884,6 +884,29 @@ class LearningWorker:
             "request": f"{command.discrepancy_id}:{command.fluent}",
         }
 
+    async def _trusted_severity(self, command: ExecutionCommand) -> float:
+        """承認の要否の判定に使う深刻度（クライアントの申告を下げる方向に信じない）。
+
+        コマンドの ``severity`` は呼び出し側の申告で、``0`` を送れば ``severity_at_least_high`` の
+        契約で承認の記録が作られない（M8-22 のレビュー）。起因の不一致（``correlation_id``）が
+        表で読めるなら、その深刻度を下限にする。読めなければ申告をそのまま使い、ログに残す。
+
+        Args:
+            command: 実行要求。
+        """
+        if command.correlation_id is None or self._discrepancies is None:
+            return command.severity
+        record = await self._discrepancies(str(command.correlation_id))
+        if record is None:
+            log.warning(
+                "worker.action_discrepancy_not_found",
+                worker=WORKER_NAME,
+                correlation_id=str(command.correlation_id),
+                detail="起因の不一致が表に無い。深刻度は申告のまま使う",
+            )
+            return command.severity
+        return max(command.severity, record.severity_score)
+
     async def _apply_action(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
         """承認されたアクションを実行する（設計書 §9.2、ADR-0014）。
 
@@ -914,6 +937,7 @@ class LearningWorker:
                 "store is not wired; actions change the business system so the path is explicit"
             )
         contract = self._contracts.get(command.action_type)
+        severity = await self._trusted_severity(command)
 
         # 前提の物理面。**読めなければ空で渡す**——`check_preconditions` が「信念が無い」を
         # 未達として扱う（知らないことを満たしているとみなさない。設計書 §9.3）
@@ -924,7 +948,7 @@ class LearningWorker:
             contract=contract,
             target=command.target,
             requested_by=command.approved_by,
-            severity=command.severity,
+            severity=severity,
             # **冪等の鍵を判断から導く。** 既定は `uuid4` で、再試行ごとに別の値になる
             # ——部分的に失敗した実行を再試行すると、業務システムが 2 つの命令を見る
             command_id=command_id_for(row.decision_id),
@@ -956,7 +980,7 @@ class LearningWorker:
                 approved_at=at,
                 note=command.reason,
             )
-            if contract.requires_approval(severity=command.severity)
+            if contract.requires_approval(severity=severity)
             else None
         )
         event = request.execute(

@@ -17,7 +17,9 @@ import {
   buildActionRequest,
   checkAction,
   describeDecision,
+  POLL_LIMIT,
   hasPending,
+  nextPoll,
   parseArtifacts,
 } from "../src/lib/actions";
 import type { ActionRequest, ActionType, DecisionStatus, Discrepancy } from "../src/lib/types";
@@ -256,5 +258,24 @@ describe("submitAction", () => {
     stub({ ok: false, status: 409, body: { detail: "unknown command" } });
     const result = await submitAction("http://api", request());
     expect(result).toEqual({ accepted: false, detail: "unknown command" });
+  });
+});
+
+describe("nextPoll", () => {
+  it("適用待ちがあり、見えていて、上限前なら読む", () => {
+    expect(nextPoll({ pending: true, autoPolls: 0, hidden: false })).toBe("fetch");
+  });
+
+  it("適用待ちが無ければ止める（叩き続けない）", () => {
+    expect(nextPoll({ pending: false, autoPolls: 0, hidden: false })).toBe("stop");
+  });
+
+  it("上限に達したら止める（ワーカーが止まっているときに叩き続けない）", () => {
+    expect(nextPoll({ pending: true, autoPolls: POLL_LIMIT, hidden: false })).toBe("stop");
+    expect(nextPoll({ pending: true, autoPolls: POLL_LIMIT - 1, hidden: false })).toBe("fetch");
+  });
+
+  it("非表示のタブでは読まずに待つ", () => {
+    expect(nextPoll({ pending: true, autoPolls: 3, hidden: true })).toBe("wait");
   });
 });

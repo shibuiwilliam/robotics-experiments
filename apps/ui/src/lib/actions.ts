@@ -141,6 +141,25 @@ export function describeDecision(status: DecisionStatus): DecisionView {
 export const RESUBMIT_NOTE =
   "失敗した判断は自動では再試行されない。理由を読み、前提が整ってから新しい判断として投入する。";
 
+/** 自動で読み直す回数の上限（適用待ちが消えない = ワーカーが止まっているときに叩き続けない）。 */
+export const POLL_LIMIT = 60;
+
+/** 次の自動更新で何をするか。 */
+export type PollAction = "fetch" | "wait" | "stop";
+
+/**
+ * 適用待ちのあいだの自動更新の判断。**適用待ちが無ければ止める**（叩き続けない）、**上限に達したら
+ * 止める**（人が「状態を更新」で読み直す）、**非表示のタブでは読まずに待つ**。
+ */
+export function nextPoll(params: {
+  readonly pending: boolean;
+  readonly autoPolls: number;
+  readonly hidden: boolean;
+}): PollAction {
+  if (!params.pending || params.autoPolls >= POLL_LIMIT) return "stop";
+  return params.hidden ? "wait" : "fetch";
+}
+
 /** 適用待ちが残っているか（状態の自動更新を続けるか）。 */
 export function hasPending(statuses: readonly DecisionStatus[]): boolean {
   return statuses.some((status) => status.state === "pending");

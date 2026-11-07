@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from services.learning_worker import LearningWorker, command_id_for
@@ -28,6 +28,7 @@ from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.errors import ActionError
 from sbp.knowledge.decisions import DecisionKind, DecisionRow
+from sbp.knowledge.discrepancies import DiscrepancyRecord
 from sbp.reasoning.expectation_store import from_record
 
 if TYPE_CHECKING:
@@ -295,3 +296,55 @@ class TestOverride:
 
         assert summary["overridden"] is True
         assert len(sink.written) == 1
+
+
+class TestTrustedSeverity:
+    """承認の要否の判定に使う深刻度は、申告を下げる方向に信じない（M8-22 のレビュー）。
+
+    ``severity: 0`` を送れば ``severity_at_least_high`` の契約で承認の記録が作られない。
+    起因の不一致が表で読めるなら、その深刻度を下限にする。
+    """
+
+    @staticmethod
+    def _reader(severity: float | None) -> object:
+        async def read(discrepancy_id: str) -> DiscrepancyRecord | None:
+            if severity is None:
+                return None
+            return DiscrepancyRecord(
+                discrepancy_id=UUID(discrepancy_id),
+                kind=2,
+                status="Open",
+                status_rank=0,
+                subjects=(PUMP,),
+                severity_score=severity,
+                detected_at=T0,
+            )
+
+        return read
+
+    @pytest.mark.asyncio
+    async def test_a_lower_claim_is_raised_to_the_discrepancys_severity(
+        self, settings: Settings
+    ) -> None:
+        worker = LearningWorker(settings, discrepancies=self._reader(0.9))  # type: ignore[arg-type]
+        assert await worker._trusted_severity(_command(severity=0.0)) == pytest.approx(0.9)  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_a_higher_claim_is_kept(self, settings: Settings) -> None:
+        worker = LearningWorker(settings, discrepancies=self._reader(0.2))  # type: ignore[arg-type]
+        assert await worker._trusted_severity(_command(severity=0.7)) == pytest.approx(0.7)  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_discrepancy_falls_back_to_the_claim(self, settings: Settings) -> None:
+        worker = LearningWorker(settings, discrepancies=self._reader(None))  # type: ignore[arg-type]
+        assert await worker._trusted_severity(_command(severity=0.4)) == pytest.approx(0.4)  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_without_a_reader_or_a_correlation_the_claim_is_used(
+        self, settings: Settings
+    ) -> None:
+        worker = LearningWorker(settings)
+        assert await worker._trusted_severity(_command(severity=0.3)) == pytest.approx(0.3)  # pyright: ignore[reportPrivateUsage]
+        with_reader = LearningWorker(settings, discrepancies=self._reader(0.9))  # type: ignore[arg-type]
+        no_link = _command(severity=0.3, correlation_id=None)
+        assert await with_reader._trusted_severity(no_link) == pytest.approx(0.3)  # pyright: ignore[reportPrivateUsage]

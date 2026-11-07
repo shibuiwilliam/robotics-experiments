@@ -15,12 +15,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
 
 from sbp.actions import ActionRegistry
 from sbp.api import Permission, Principal, create_app
 from sbp.api.actions_view import summarize
+from sbp.api.factory import lazy_contracts
 from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.modality import Modality
@@ -194,3 +196,15 @@ class TestGraphQL:
             "/graphql", json={"query": '{ decisions(subject: "x", limit: 100000) { state } }'}
         ).json()["errors"]
         assert "limit" in errors[0]["message"]
+
+
+class TestBuildAppDoesNoIo:
+    """構築時に契約を読まない（カレントディレクトリに依存する相対パス。M8-22 のレビュー）。"""
+
+    def test_the_contracts_are_read_on_first_use_not_at_construction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)  # actions/ が無い場所
+        read = lazy_contracts()  # 構築では読まない（落ちない）
+        with pytest.raises(Exception, match=r"no action contracts|No such|not found"):
+            read()

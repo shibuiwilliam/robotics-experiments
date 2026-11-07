@@ -17,7 +17,9 @@ import {
   buildActionRequest,
   checkAction,
   describeDecision,
+  POLL_LIMIT,
   hasPending,
+  nextPoll,
 } from "../lib/actions";
 import type { ActionRequest, ActionType, DecisionStatus, Discrepancy } from "../lib/types";
 
@@ -35,6 +37,8 @@ interface Props {
 
 /** 適用待ちが残るあいだ、状態を読み直す間隔（ミリ秒）。 */
 const POLL_MS = 5000;
+
+
 
 export function ActionApproval({
   discrepancy,
@@ -77,6 +81,7 @@ export function ActionApproval({
         onNew={() => setGeneration((value) => value + 1)}
       />
       <DecisionHistory
+        key={discrepancy.discrepancyId}
         subjects={discrepancy.subjects}
         loadDecisions={loadDecisions}
         refreshKey={generation}
@@ -209,8 +214,13 @@ function ActionForm({
         </ul>
       ) : null}
 
+      {override ? (
+        <p className="problems" role="status">
+          <strong>前提未達の上書きが有効</strong>——安全ガードを外して投入する（折りたたみの中の設定）
+        </p>
+      ) : null}
       <button type="submit" disabled={!check.valid || sending || result?.accepted === true}>
-        承認として投入する
+        {override ? "前提未達を上書きして承認として投入する" : "承認として投入する"}
       </button>
       {result === null ? null : (
         <p className={result.accepted ? "notice" : "error"} role="status">
@@ -279,6 +289,8 @@ function DecisionHistory({
   const [statuses, setStatuses] = useState<readonly DecisionStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  // 自動で読み直した回数（人が押した更新は数えない）
+  const [autoPolls, setAutoPolls] = useState(0);
 
   const subjectsKey = subjects.join("|");
   useEffect(() => {
@@ -304,11 +316,22 @@ function DecisionHistory({
 
   // 適用待ちが残るあいだだけ読み直す（待ちが無いのに叩き続けない）
   const waiting = statuses !== null && hasPending(statuses);
+  const capped = autoPolls >= POLL_LIMIT;
+  const [wake, setWake] = useState(0);
   useEffect(() => {
     if (!waiting) return;
-    const timer = setTimeout(() => setTick((value) => value + 1), POLL_MS);
+    const timer = setTimeout(() => {
+      const action = nextPoll({ pending: waiting, autoPolls, hidden: document.hidden });
+      if (action === "wait") {
+        // 非表示のタブは読み直さない（見ていない画面のために API を叩かない）。次の周期を待つ
+        setWake((value) => value + 1);
+      } else if (action === "fetch") {
+        setAutoPolls((value) => value + 1);
+        setTick((value) => value + 1);
+      }
+    }, POLL_MS);
     return () => clearTimeout(timer);
-  }, [waiting, tick]);
+  }, [waiting, autoPolls, tick, wake]);
 
   if (loadDecisions === undefined) {
     return (
@@ -331,10 +354,22 @@ function DecisionHistory({
     <div className="decisions">
       <h5>
         投入した判断{" "}
-        <button type="button" onClick={() => setTick((value) => value + 1)}>
+        <button
+          type="button"
+          onClick={() => {
+            setAutoPolls(0);
+            setTick((value) => value + 1);
+          }}
+        >
           状態を更新
         </button>
       </h5>
+      {capped && waiting ? (
+        <p className="hint" role="status">
+          自動更新を止めた（適用待ちのまま {POLL_LIMIT} 回読んだ）。learning-worker が止まっていないか
+          確認し、「状態を更新」で読み直す。
+        </p>
+      ) : null}
       {statuses === null ? (
         <p className="empty">読み込み中</p>
       ) : statuses.length === 0 ? (

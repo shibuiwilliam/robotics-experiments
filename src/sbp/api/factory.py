@@ -32,18 +32,19 @@ from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Coroutine, Sequence
+    from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
     from datetime import datetime
 
     from fastapi import FastAPI, Request
 
+    from sbp.actions.contracts import ActionContract
     from sbp.core.metrics import MetricSample
     from sbp.knowledge.contributions import ContributionRecord
     from sbp.knowledge.decisions import DecisionKind, DecisionRow, DecisionStatus
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
 
-__all__ = ["build_app", "dev_principal_resolver"]
+__all__ = ["build_app", "dev_principal_resolver", "lazy_contracts"]
 
 log = get_logger(__name__)
 
@@ -128,6 +129,26 @@ def _run_sync[T](coroutine: Coroutine[Any, Any, T]) -> T:
         return pool.submit(asyncio.run, coroutine).result()
 
 
+def lazy_contracts() -> Callable[[], list[ActionContract]]:
+    """アクション契約を返す関数を作る。**初回の読み出しで読み、以後は覚える。**
+
+    ``build_app`` では読まない（構築時に I/O をしない契約。カレントディレクトリに依存する
+    相対パスなので、別の場所から起動しても組み立ては落ちず、``actionTypes`` が理由つきの
+    エラーを返す。M8-22 のレビュー）。
+    """
+    from sbp.actions import ActionRegistry  # noqa: PLC0415 — 実運用の配線でのみ使う
+
+    cache: dict[str, list[ActionContract]] = {}
+
+    def read() -> list[ActionContract]:
+        if "contracts" not in cache:
+            registry = ActionRegistry.from_directory(Path("actions"))
+            cache["contracts"] = [registry.get(t) for t in registry.types()]
+        return cache["contracts"]
+
+    return read
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """実物の依存で API を組む。
 
@@ -147,7 +168,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     Returns:
         FastAPI アプリ。
     """
-    from sbp.actions import ActionRegistry  # noqa: PLC0415
     from sbp.api.commands import build_command_handler  # noqa: PLC0415
     from sbp.knowledge import (  # noqa: PLC0415
         AssertionStore,
@@ -162,9 +182,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     )
 
     resolved = settings or Settings()
-    # 契約は起動時に読む（YAML が壊れていれば起動で落とす。リクエストのたびに読み直さない）
-    registry = ActionRegistry.from_directory(Path("actions"))
-    contracts = [registry.get(action_type) for action_type in registry.types()]
     store = HttpGraphStore(resolved)
     beliefs = AssertionStore(store, site_id=resolved.site_id)
 
@@ -292,7 +309,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         expectation_reader=read_expectations,
         proposal_reader=read_proposals,
         evidence_reader=read_evidence,
-        action_reader=lambda: contracts,
+        action_reader=lazy_contracts(),
         decision_reader=read_decisions,
     )
     app.router.lifespan_context = lifespan
