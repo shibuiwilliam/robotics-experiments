@@ -235,6 +235,27 @@ class TestVerdicts:
         assert verified.verification is not None
         assert "期限切れ" in verified.verification.note
 
+    def test_a_refuted_face_is_a_violation_even_if_the_other_is_unobserved(self) -> None:
+        """外れが分かっている期待を、期限切れだからと証拠不足にしない（所見 119）。"""
+        verified = verify_expectation(
+            _active(),
+            inputs=VerificationInputs(
+                at=T0 + timedelta(days=2), records_present={vocab.ent.WorkOrder: False}
+            ),
+        )
+        assert verified.status is ExpectationStatus.VIOLATED
+
+    def test_an_expectation_with_one_face_can_be_fulfilled_when_overdue(self) -> None:
+        """効果を持たない面は「観測できない」ではなく「期待していない」（所見 119）。"""
+        only_symbolic = _created().activate((_symbolic_effect(),), at=T0)
+        verified = verify_expectation(
+            only_symbolic,
+            inputs=VerificationInputs(
+                at=T0 + timedelta(days=2), records_present={vocab.ent.WorkOrder: True}
+            ),
+        )
+        assert verified.status is ExpectationStatus.FULFILLED
+
     def test_the_method_is_recorded(self) -> None:
         verified = verify_expectation(
             _active(),

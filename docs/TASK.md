@@ -352,7 +352,7 @@ H-22 の決定次第**である。
 - [ ] **M8-27** 期待の周期検証 — `verify_expectation` を期限と証拠の到着で回し、`expectations` 表の状態を進める。`Violated` は不一致（類型 2 / 3）の起票、`Undetermined` は観測要求（設計書 §8.5）。**いまは learning-worker が `Active` で書くだけで、検証する運用コードが無い**（所見 103）。置き場は ADR-0012 / ADR-0014 の延長で決める。**2026-11-07 に ADR-0017 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-27-1** ADR-0017 と所見 118（文書のみ。置き場は learning-worker の周期処理、検証は期限切れのみ、記録の存在は投影表 `business_records`） → 完了（2026-11-07）
   - [x] **M8-27-2** 記録の存在の投影 — alembic 0011、`sbp.knowledge.RecordIndex`、ingest-worker が送信後に書く → 完了（2026-11-07。`business_records` 表（PK = 拠点・記録型・外部 ID・記録時刻、検索索引）、`RecordIndex.add`（冪等、対象未解決は入れない）/ `present_types(entity, since)`。ingest-worker は送信の後・カーソルの前に書き、`unwired` に `records` を足した。単体 2 件 + 統合 3 件）
-  - [ ] **M8-27-3** 検証の純粋な部分 — `ExpectationStore.overdue_active`、`sbp.reasoning.expectation_runner`（期限切れ判定・入力の組み立て・結果 → 観測要求 / 起票対象）
+  - [x] **M8-27-3** 検証の純粋な部分 — `ExpectationStore.overdue_active`、`sbp.reasoning.expectation_runner`（期限切れ判定・入力の組み立て・結果 → 観測要求 / 起票対象） → 完了（2026-11-07。`overdue_active(at)`（Active かつ期限 < at、期限の古い順）、`verify_if_overdue`（期限前・Active 以外は `None`。記号側の「無い」は違反、物理側の「無い」は観測不能 → 観測要求。違反は類型 1 / 2 の不一致、ID は期待から決まる）。**検証器の不具合を 2 つ直した**（所見 119。再現テスト先行）。単体 11 + 2 件、統合 1 件）
   - [ ] **M8-27-4** learning-worker の検証パス — 検証周期の設定、`step()`、`build_worker` の配線と `unwired`
   - [ ] **M8-27-5** 統合テスト — 期限切れの `Active` 3 本（満たす / 外れる / 観測なし）を production の `build_worker` で検証、2 周目は何も変わらない
   - [ ] **M8-27-6** レビュー・評価・記録 — 独立レビュー、全件テスト、TASK / STATUS / README / PROGRESS / HITL

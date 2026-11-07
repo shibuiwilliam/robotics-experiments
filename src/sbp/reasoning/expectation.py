@@ -527,7 +527,17 @@ def verify_expectation(
     symbolic = judge(expectation.effects_of("symbolic"))
     rollout = judge(expectation.effects_of("rollout"))
 
-    if (symbolic is None or rollout is None) and expectation.is_overdue(at=inputs.at):
+    # 期限切れの判定不能は ``Undetermined``。**ただし宣言された面だけを数え、外れた面があれば
+    # 違反を優先する**——効果を持たない面は「観測できない」ではなく「期待していない」で、
+    # 外れが分かっている期待を証拠不足にすると違反が学習信号に出ない（所見 119）。
+    declared = {
+        "symbolic": (symbolic, bool(expectation.effects_of("symbolic"))),
+        "rollout": (rollout, bool(expectation.effects_of("rollout"))),
+    }
+    verdicts = [value for value, has_effects in declared.values() if has_effects]
+    unobserved = any(value is None for value in verdicts)
+    refuted = any(value is False for value in verdicts)
+    if unobserved and not refuted and expectation.is_overdue(at=inputs.at):
         return expectation.expire(
             at=inputs.at, note="期限切れ: " + "; ".join(notes or ["証拠不足"])
         )

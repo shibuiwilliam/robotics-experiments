@@ -204,6 +204,30 @@ class ExpectationStore:
         )
         return found
 
+    async def overdue_active(self, *, at: datetime, limit: int = 50) -> list[ExpectationRecord]:
+        """期限を過ぎた ``Active`` の期待を、期限の古い順に返す（M8-27、ADR-0017）。
+
+        **検証してよいのは期限切れだけ**（早く検証すると「まだ判定できない」が「判定不能」に
+        なる。所見 118）。期限の列は ``Expectation.deadline`` そのもの（最も遅い効果）。
+
+        Args:
+            at: この時刻より前に期限が来たものを返す（期限ちょうどは含めない。右開）。
+            limit: 返す件数の上限。
+
+        Returns:
+            行の列（期限の昇順）。
+        """
+        async with self._connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT expectation_id, status, status_rank, action_type, target, created_at, "
+                f"deadline, payload FROM {_TABLE} "
+                "WHERE site = %s AND status = 'Active' AND deadline < %s "
+                "ORDER BY deadline ASC LIMIT %s",
+                (self.site, ensure_utc(at), limit),
+            )
+            rows = await cursor.fetchall()
+        return [_to_record(row) for row in rows]
+
     async def count_by_status(self) -> dict[str, int]:
         """状態ごとの件数（運用の棚卸しと指標に使う）。
 

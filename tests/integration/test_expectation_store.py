@@ -224,3 +224,38 @@ class TestLifecycle:
 
             assert await store.count_by_status() == {"Active": 1, "Created": 1}
             await _cleanup(connection)
+
+
+class TestOverdueActive:
+    """期限切れの ``Active`` だけを引く（M8-27、ADR-0017。検証してよいのは期限切れだけ）。"""
+
+    @pytest.mark.asyncio
+    async def test_only_active_rows_past_their_deadline_come_back_oldest_first(
+        self, settings: Settings
+    ) -> None:
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = ExpectationStore(connection, site=SITE)
+            late = _expectation(minutes=10)
+            later = _expectation(minutes=30)
+            future = _expectation(minutes=600)
+            done = _expectation(minutes=5)
+            for item in (late, later, future):
+                await store.upsert(to_record(item))
+            verdict = VerificationResult(
+                method=VerificationMethod.CONFORMAL,
+                verified_at=done.created_at,
+                symbolic_passed=True,
+                rollout_passed=None,
+                note="済み",
+            )
+            await store.upsert(to_record(done.verify(verdict, at=done.created_at)))
+
+            at = late.created_at + timedelta(minutes=60)
+            overdue = await store.overdue_active(at=at)
+            assert [row.expectation_id for row in overdue] == [
+                late.expectation_id,
+                later.expectation_id,
+            ]
+            # 期限ちょうどは期限切れではない（右開）
+            assert await store.overdue_active(at=late.deadline) == []  # type: ignore[arg-type]
+            await _cleanup(connection)
