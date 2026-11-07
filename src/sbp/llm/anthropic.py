@@ -146,6 +146,9 @@ class AnthropicProvider:
 
         payload = self._post(body, task=task)
         content = _tool_input(payload, task=task, model=self.model)
+        # record モードはこの戻り値を fixture に保存する。崩れた出力を永続的な fixture にしない
+        # ため、ここで必須項目と型を確かめる（呼び出し側の検証は保存の後に走る）
+        _check_shape(content, schema, task=task, model=self.model)
         usage = payload.get("usage") or {}
         return ProviderResponse(
             content=content,
@@ -205,7 +208,9 @@ class AnthropicProvider:
                     f"anthropic call for task {task.value} failed after {attempt + 1} attempts "
                     f"({reason})"
                 )
-            delay = retry_after if retry_after is not None else self._backoff_s * (2**attempt)
+            backoff = self._backoff_s * (2**attempt)
+            # `Retry-After: 0` でも即時に叩き直さない（バックオフの下限を持つ）
+            delay = backoff if retry_after is None else max(retry_after, self._backoff_s)
             attempt += 1
             log.warning(
                 "llm.anthropic_retry",
@@ -228,8 +233,50 @@ def _json_object(response: httpx.Response) -> dict[str, Any]:
     return payload
 
 
+_JSON_TYPES: Final[dict[str, type | tuple[type, ...]]] = {
+    "string": str,
+    "boolean": bool,
+    "integer": int,
+    "number": (int, float),
+    "array": list,
+    "object": dict,
+}
+
+
+def _check_shape(
+    content: dict[str, Any], schema: dict[str, Any], *, task: LlmTask, model: str
+) -> None:
+    """必須項目の有無と、宣言された型（浅く）を確かめる。
+
+    完全な JSON Schema の検証ではない（``jsonschema`` は開発依存）。目的は、**切り詰められた・
+    型の崩れた出力を record の fixture に残さない**こと。意味の検証は呼び出し側の pydantic が行う。
+    """
+    missing = [name for name in schema.get("required", ()) if name not in content]
+    wrong = [
+        name
+        for name, spec in (schema.get("properties") or {}).items()
+        if name in content
+        and (expected := _JSON_TYPES.get(str(spec.get("type")))) is not None
+        and not isinstance(content[name], expected)
+    ]
+    if missing or wrong:
+        raise StructuredOutputError(
+            f"{model} returned output that does not fit the schema for task {task.value}: "
+            f"missing={missing}, wrong_type={wrong}"
+        )
+
+
 def _tool_input(payload: dict[str, Any], *, task: LlmTask, model: str) -> dict[str, Any]:
-    """応答の ``tool_use`` ブロックから構造化出力を取り出す。"""
+    """応答の ``tool_use`` ブロックから構造化出力を取り出す。
+
+    **``max_tokens`` で打ち切られた出力は採らない**——ツール入力が途中で切れていても、緩いスキーマ
+    を満たしてしまうことがある。切れた定義が提案として残る。
+    """
+    if payload.get("stop_reason") == "max_tokens":
+        raise StructuredOutputError(
+            f"{model} stopped at max_tokens for task {task.value}; the structured output may be "
+            "truncated (raise ANTHROPIC_MAX_TOKENS)"
+        )
     for block in payload.get("content") or ():
         if isinstance(block, dict) and block.get("type") == "tool_use":
             value = block.get("input")

@@ -60,6 +60,7 @@ def build_provider(
         return AnthropicProvider(
             api_key=SecretStr(key.get_secret_value()),
             model=settings.anthropic_model,
+            max_tokens=settings.anthropic_max_tokens,
             client=client,
         )
 

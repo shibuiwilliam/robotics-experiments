@@ -279,3 +279,65 @@ class TestBuildProvider:
         again = provider.complete_structured(MESSAGES, **kwargs)
         assert again.from_fixture is True
         assert len(recorder.requests) == 1, "2 回目は fixture を再生し、API を叩かない"
+
+
+class TestReviewFixes:
+    """M8-10 の独立レビュー。"""
+
+    def test_a_truncated_output_is_refused_even_if_it_fits_the_loose_schema(self) -> None:
+        truncated = _ok()
+        truncated["stop_reason"] = "max_tokens"
+        with pytest.raises(StructuredOutputError, match="max_tokens"):
+            _call(_provider(_Recorder(httpx.Response(200, json=truncated))))
+
+    def test_output_that_misses_a_required_field_or_has_the_wrong_type_is_refused(self) -> None:
+        for content in ({}, {"name": 3}):
+            payload = _ok()
+            payload["content"] = [{"type": "tool_use", "name": "x", "input": content}]
+            with pytest.raises(StructuredOutputError, match="does not fit"):
+                _call(_provider(_Recorder(httpx.Response(200, json=payload))))
+
+    def test_record_does_not_save_a_malformed_output_as_a_fixture(self, tmp_path: Path) -> None:
+        malformed = _ok()
+        malformed["content"] = [{"type": "tool_use", "name": "x", "input": {"other": 1}}]
+        provider = build_provider(
+            Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                llm_mode=LlmMode.RECORD,
+                anthropic_api_key=SecretStr(KEY),
+                anthropic_model="claude-test",
+            ),
+            root=tmp_path,
+            client=_Recorder(httpx.Response(200, json=malformed)).client(),
+        )
+        with pytest.raises(StructuredOutputError):
+            provider.complete_structured(
+                MESSAGES, schema=SCHEMA, task=LlmTask.CONCEPT_PROPOSAL, prompt_version="1.0.0"
+            )
+        assert list(tmp_path.rglob("*.json")) == [], "崩れた出力を永続的な fixture にしない"
+
+    def test_retry_after_zero_still_waits_the_backoff_floor(self) -> None:
+        recorder = _Recorder(
+            httpx.Response(429, headers={"retry-after": "0"}, json={}),
+            httpx.Response(200, json=_ok()),
+        )
+        sleeps: list[float] = []
+        _call(_provider(recorder, sleeps=sleeps, backoff_s=1.5))
+        assert sleeps == [1.5]
+
+    def test_a_non_json_success_body_is_an_error(self) -> None:
+        with pytest.raises(LlmError, match="not JSON"):
+            _call(_provider(_Recorder(httpx.Response(200, content=b"<html>"))))
+
+    def test_both_key_names_are_accepted_and_the_process_environment_wins(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        env_file = tmp_path / ".env"
+        env_file.write_text("ANTHROPIC_API_KEY=from-dotenv\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        assert Settings().anthropic_api_key.get_secret_value() == "from-dotenv"  # type: ignore[union-attr]
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
+        assert Settings().anthropic_api_key.get_secret_value() == "from-env"  # type: ignore[union-attr]
+        monkeypatch.delenv("ANTHROPIC_API_KEY")
+        monkeypatch.setenv("SBP_ANTHROPIC_API_KEY", "prefixed")
+        assert Settings().anthropic_api_key.get_secret_value() == "prefixed"  # type: ignore[union-attr]

@@ -319,6 +319,8 @@ class Settings(_DotenvSettings):
         default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "SBP_ANTHROPIC_API_KEY")
     )
     """Anthropic の API キー（``.env`` のみ。不変条件 12）。``SecretStr`` でログに出さない。"""
+    anthropic_max_tokens: int = Field(default=4096, ge=256, le=64_000)
+    """応答の最大トークン。``max_tokens`` で止まった出力は採らない（失敗する。ADR-0022）。"""
     anthropic_model: str = Field(
         default="", validation_alias=AliasChoices("ANTHROPIC_MODEL", "SBP_ANTHROPIC_MODEL")
     )
