@@ -11,12 +11,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
-from services.learning_worker import ConceptDiscovery, LearningWorker
+from pydantic import SecretStr
+from services.learning_worker import (
+    ConceptDiscovery,
+    LearningWorker,
+    _build_discovery,  # pyright: ignore[reportPrivateUsage]
+)
 
-from sbp.core.config import ReasoningSettings, Settings
+from sbp.core.config import LlmMode, ReasoningSettings, Settings
 from sbp.core.errors import FixtureMissingError
 from sbp.core.time import Interval, now
 from sbp.knowledge.concepts import ConceptProposalRecord
@@ -239,3 +245,27 @@ class TestUnwired:
         worker = LearningWorker(Settings())
         assert await worker.step() == 0
         assert worker.proposed_total == 0
+
+
+class TestProviderWiring:
+    """発見ループのプロバイダの組み立て（M8-10、ADR-0022）。"""
+
+    @staticmethod
+    def _build(**settings: object) -> ConceptDiscovery | None:
+        return _build_discovery(
+            Settings(_env_file=None, **settings),  # type: ignore[call-arg, arg-type]
+            store=SimpleNamespace(resolved=None),
+            proposals=SimpleNamespace(queue=None, upsert=None),
+        )
+
+    def test_replay_builds_a_provider_without_a_key(self) -> None:
+        assert self._build(llm_mode=LlmMode.REPLAY) is not None
+
+    def test_live_without_a_key_does_not_fall_back_to_replay(self) -> None:
+        assert self._build(llm_mode=LlmMode.LIVE, anthropic_model="m") is None
+
+    def test_live_with_a_key_and_model_builds_a_provider(self) -> None:
+        built = self._build(
+            llm_mode=LlmMode.LIVE, anthropic_api_key=SecretStr("dummy"), anthropic_model="m"
+        )
+        assert built is not None

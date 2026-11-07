@@ -1316,9 +1316,9 @@ def _build_discovery(settings: Settings, *, store: Any, proposals: Any) -> Conce
     """概念発見の依存を組む。LLM プロバイダが作れなければ ``None``（発見しない）。
 
     **replay は fixture が無ければ呼ぶたびに失敗する**（黙って live に落ちない）ので、運用の既定
-    （``SBP_LLM_MODE=replay``）では fixture のある signal だけが提案になる。live / record は
-    各社 SDK のファクトリが要るが、どのプロバイダを使うかは H-04 の判断待ちなので本リポジトリでは
-    組まない（``LlmError`` → 発見しない）。
+    （``SBP_LLM_MODE=replay``）では fixture のある signal だけが提案になる。``live`` / ``record`` は
+    anthropic の live プロバイダ（H-04 の決定、ADR-0022）を使い、**鍵・モデルが無ければ組めない**
+    （``LlmError`` → 発見しない。黙って replay に落ちない）。
 
     Args:
         settings: 設定。
@@ -1326,10 +1326,10 @@ def _build_discovery(settings: Settings, *, store: Any, proposals: Any) -> Conce
         proposals: 概念提案の作業項目表（``ConceptProposalStore``）。
     """
     from sbp.core.errors import LlmError  # noqa: PLC0415 — 実運用の配線でのみ使う
-    from sbp.llm import LlmMode, resolve_provider  # noqa: PLC0415
+    from sbp.llm import build_provider  # noqa: PLC0415
 
     try:
-        provider = resolve_provider(mode=LlmMode(settings.llm_mode.value))
+        provider = build_provider(settings)
     except LlmError as exc:
         log.warning("worker.discovery_no_provider", worker=WORKER_NAME, error=str(exc))
         return None
