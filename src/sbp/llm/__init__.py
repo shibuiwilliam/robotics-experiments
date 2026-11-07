@@ -22,6 +22,7 @@ from sbp.llm.base import (
     UsageLedger,
     request_digest,
 )
+from sbp.llm.factory import build_provider
 from sbp.llm.registry import PromptRegistry, PromptTemplate, TaskRouting, load_routing
 from sbp.llm.replay import LlmMode, ReplayProvider, fixture_path, resolve_provider
 
@@ -38,6 +39,7 @@ __all__ = [
     "TaskRouting",
     "TokenUsage",
     "UsageLedger",
+    "build_provider",
     "fixture_path",
     "load_routing",
     "request_digest",

@@ -11,7 +11,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -315,6 +315,14 @@ class Settings(_DotenvSettings):
     llm_mode: LlmMode = LlmMode.REPLAY
     llm_default: Literal["anthropic", "openai", "gemini"] = "anthropic"
     embeddings: Literal["openai", "gemini", "local"] = "openai"
+    anthropic_api_key: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("ANTHROPIC_API_KEY", "SBP_ANTHROPIC_API_KEY")
+    )
+    """Anthropic の API キー（``.env`` のみ。不変条件 12）。``SecretStr`` でログに出さない。"""
+    anthropic_model: str = Field(
+        default="", validation_alias=AliasChoices("ANTHROPIC_MODEL", "SBP_ANTHROPIC_MODEL")
+    )
+    """モデル ID（コードに書かない。空だと live は失敗する。ADR-0022）。"""
 
     # ---- 書き戻し ----
     writeback_mode: WritebackMode = WritebackMode.DRY

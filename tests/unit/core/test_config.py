@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 
 import pytest
+from pydantic import AliasChoices
 from pydantic_settings import BaseSettings
 
 from sbp.core.config import Settings
@@ -128,7 +129,12 @@ def _setting_variables() -> set[str]:
             prefix = str(layer.model_config.get("env_prefix", ""))
             names.update(f"{prefix}{field}".upper() for field in layer.model_fields)
         else:
-            names.add(f"SBP_{name}".upper())
+            alias = Settings.model_fields[name].validation_alias
+            if isinstance(alias, AliasChoices) and isinstance(alias.choices[0], str):
+                # プロバイダ標準の名前（`ANTHROPIC_API_KEY` など）を `.env.example` に載せる
+                names.add(alias.choices[0])
+            else:
+                names.add(f"SBP_{name}".upper())
     return names
 
 
@@ -137,7 +143,7 @@ class TestEnvExampleListsEverySetting:
         """コメントアウトでもよい（既定値を見せる）。名前が無いことだけを落とす。"""
         listed = set(
             re.findall(
-                r"^#?\s*(SBP_[A-Z0-9_]+)=",
+                r"^#?\s*([A-Z][A-Z0-9_]+)=",
                 (ROOT / ".env.example").read_text(encoding="utf-8"),
                 re.MULTILINE,
             )
