@@ -27,8 +27,9 @@ from sbp.core import vocab
 from sbp.core.audit import AuditMask, no_audit
 from sbp.core.belief import BooleanBelief
 from sbp.core.errors import ReasoningError
+from sbp.core.events import RecordEvidence
 from sbp.core.logging import bind_event, get_logger
-from sbp.reasoning.belief import BeliefFilter, TransitionPrior
+from sbp.reasoning.belief import BeliefFilter, TransitionPrior, claim_log_odds
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -66,6 +67,8 @@ class SkipReason:
     """``PhysicalEvent/ent:Running`` の形でない。昇格イベント以外（心拍など）が混ざるとここ。"""
     NOT_BOOLEAN = "真偽フルーエントではない"
     """数値・カテゴリの信念は別の更新則が必要（この版では真偽のみ）。"""
+    STALE_CLAIM = "同じ情報源のより新しい主張が既にある"
+    """遅れて届いた古い主張。置き換えると最新の状態を古い主張が上書きする（ADR-0027）。"""
     OUT_OF_ORDER = "実体内で時刻が戻った"
     """前向きフィルタに入れると滞在時間が負になる。"""
     AUDIT_EXCLUDED = "監査隔離の対象"
@@ -114,6 +117,14 @@ def fluent_of_event(event_type: str) -> str | None:
             local = tail.rsplit(":", 1)[-1].rsplit("#", 1)[-1]
             return local if local in _FLUENT_LOCAL_NAMES else None
     return None
+
+
+def _claim_source(event: EventEnvelope) -> str:
+    """主張の情報源（``RecordEvidence.source``）。無ければ空文字（1 つの情報源として扱う）。"""
+    for evidence in event.evidence:
+        if isinstance(evidence, RecordEvidence):
+            return evidence.source
+    return ""
 
 
 def is_record_claim(event_type: str) -> bool:
@@ -189,6 +200,9 @@ class BeliefIngest:
     skipped: dict[str, int] = field(default_factory=dict)
     _last_seen: dict[tuple[str, str], datetime] = field(default_factory=dict)
     _touched: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    _claim_terms: dict[tuple[str, str], dict[str, tuple[float, datetime]]] = field(
+        default_factory=dict
+    )
 
     def filter_for(self, *, entity: str, fluent: str) -> BeliefFilter:
         """実体 × フルーエントのフィルタを得る（無ければ作る）。
@@ -249,6 +263,11 @@ class BeliefIngest:
                 "(invariant 5 forbids writing IRIs in code)"
             )
 
+        source = _claim_source(event) if claim else ""
+        latest = self._claim_terms.get(key, {}).get(source)
+        if claim and latest is not None and event.tx_time < latest[1]:
+            return self._skip(bound, event, entity, fluent, SkipReason.STALE_CLAIM)
+
         existed = key in self.filters
         probe_filter = self.filter_for(entity=entity, fluent=fluent)
         before = (
@@ -256,7 +275,13 @@ class BeliefIngest:
             probe_filter.elapsed,
             self._last_seen.get(key),
             self._touched.get(key),
+            dict(self._claim_terms.get(key, {})),
         )
+        # 同じ情報源の主張は直前のものを置き換える。業務記録は同じ状態を繰り返し言うので（誤りも
+        # 繰り返される）、独立な証拠として足すと件数だけで信念が飽和する（H-26、ADR-0027）。
+        # 観測が挟まっても持ち分は残す（空にすると観測と主張の交互で再び積み上がる）
+        terms = self._claim_terms.setdefault(key, {})
+        superseded = terms[source][0] if claim and source in terms else 0.0
         plan = (
             self.plan_provider(entity, predicate, event.tx_time)
             if self.plan_provider is not None
@@ -279,7 +304,10 @@ class BeliefIngest:
             reliability=self.reliability,
             plan=plan,
             mask=applied_mask,
+            superseded_claim_log_odds=superseded,
         )
+        if claim:
+            terms[source] = (claim_log_odds(event.belief.p), event.tx_time)
         if not claim:
             self._last_seen[key] = event.tx_time
         self._touched[key] = max(step_at, self._touched.get(key, step_at))
@@ -313,14 +341,20 @@ class BeliefIngest:
         key: tuple[str, str],
         *,
         existed: bool,
-        before: tuple[float | None, timedelta, datetime | None, datetime | None],
+        before: tuple[
+            float | None,
+            timedelta,
+            datetime | None,
+            datetime | None,
+            dict[str, tuple[float, datetime]],
+        ],
     ) -> None:
         """更新前のフィルタの状態に戻す（書き込みに失敗した更新の取り消し）。
 
         Args:
             key: ``(実体, フルーエント)``。
             existed: 更新の前からフィルタがあったか（無ければ消す）。
-            before: ``(事後, 滞在時間, 最後の観測, 最後の更新)``。
+            before: ``(事後, 滞在時間, 最後の観測, 最後の更新, 情報源ごとの主張の持ち分)``。
         """
         if not existed:
             self.filters.pop(key, None)
@@ -332,6 +366,10 @@ class BeliefIngest:
                 table.pop(key, None)
             else:
                 table[key] = value
+        if existed:
+            self._claim_terms[key] = before[4]
+        else:
+            self._claim_terms.pop(key, None)
 
     def handle_batch(
         self, events: Sequence[EventEnvelope], *, mask: AuditMask | None = None
@@ -401,6 +439,7 @@ class BeliefIngest:
             self.filters.pop(key, None)
             self._last_seen.pop(key, None)
             self._touched.pop(key, None)
+            self._claim_terms.pop(key, None)
         if stale:
             log.info("reasoning.ingest_pruned", dropped=len(stale), remaining=len(self.filters))
         return len(stale)

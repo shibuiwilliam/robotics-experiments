@@ -58,7 +58,9 @@ from sbp.knowledge import (
     DiscrepancyStore,
     ObservationQueue,
     S3ArtifactStore,
+    current_beliefs,
 )
+from sbp.reasoning.ingest import SkipReason
 from sbp.testing import SynthConfig, SynthWorld
 from sbp.testing.synth import Fluent
 
@@ -336,3 +338,23 @@ class TestG8:
         # ---- scheduler-worker: 観測要求 → 観測クエリ ----
         scheduler, _queue = await build_scheduler_worker(run, site_id=site)
         assert await scheduler.step() > 0, "scheduler-worker"
+
+        # ---- 履歴の再生（H-26、ADR-0027）: 残りを一度に流しても信念は末尾の状態に着く ----
+        # 同じ consumer group で続きを全件読む。主張は観測の数十倍あるが、同じ情報源の繰り返しは
+        # 置き換わるので、件数だけで飽和しない。読み飛ばされた観測も無い
+        replay, replay_consumer = await build_belief_worker(run, site_id=site)
+        try:
+            idle = 0
+            for _ in range(600):
+                n = await replay.step()
+                idle = 0 if n else idle + 1
+                if idle >= 5:
+                    break
+        finally:
+            await replay_consumer.stop()
+        assert replay.applied_total > 0, "再生の段が空振りしていない"
+        assert replay.ingest.skipped.get(SkipReason.OUT_OF_ORDER, 0) == 0
+        final = current_beliefs(AssertionStore(graph_store, site_id=site), entity=pump)
+        assert final[RUNNING] == pytest.approx(
+            float(world.oracle.labels_for(Fluent.RUNNING)[-1]), abs=0.4
+        )

@@ -52,6 +52,7 @@ __all__ = [
     "PlannedSpan",
     "SourceContribution",
     "TransitionPrior",
+    "claim_log_odds",
     "update_belief",
 ]
 
@@ -97,6 +98,11 @@ def _log_odds(probability: float) -> float:
     """確率を対数オッズに変換する（0 と 1 で飽和させる）。"""
     clamped = min(max(probability, 1e-9), 1.0 - 1e-9)
     return float(np.clip(math.log(clamped / (1.0 - clamped)), -_LOG_ODDS_CLAMP, _LOG_ODDS_CLAMP))
+
+
+def claim_log_odds(probability: float) -> float:
+    """主張の確率が記録尤度として信念に足す対数オッズ。"""
+    return _log_odds(probability)
 
 
 def _probability(log_odds: float) -> float:
@@ -324,6 +330,7 @@ def update_belief(
     mask: AuditMask,
     weak_evidence_threshold: float = 0.3,
     advance: bool = True,
+    superseded_claim_log_odds: float = 0.0,
 ) -> BeliefUpdate:
     """三源を統合して事後信念を計算する（設計書 §8.1 の擬似コード）。
 
@@ -371,7 +378,7 @@ def update_belief(
             fluent=fluent, previous=previous, elapsed=elapsed, plan=plan, at=at
         )
     else:
-        prior_log_odds, plan_log_odds = _log_odds(previous), 0.0
+        prior_log_odds, plan_log_odds = _log_odds(previous) - superseded_claim_log_odds, 0.0
 
     # ---- 2. 観測尤度（プローブ）----
     observed_log_odds = 0.0
@@ -492,6 +499,7 @@ class BeliefFilter:
         plan: PlanView | None = None,
         mask: AuditMask,
         advance: bool = True,
+        superseded_claim_log_odds: float = 0.0,
     ) -> BeliefUpdate:
         """1 刻み進める。
 
@@ -508,6 +516,7 @@ class BeliefFilter:
             mask: 監査隔離マスク。
             advance: 偽なら時間を進めない（遷移を適用せず、滞在時間も延ばさない。
                 :func:`update_belief` を参照）。
+            superseded_claim_log_odds: 置き換えられる主張の対数オッズ（update_belief を参照）。
 
         Returns:
             この刻みの更新結果。
@@ -526,6 +535,7 @@ class BeliefFilter:
             plan=plan,
             mask=mask,
             advance=advance,
+            superseded_claim_log_odds=superseded_claim_log_odds,
         )
         # 状態が反転したら滞在時間をリセットする（半マルコフの「続いた長さ」）
         flipped = self.posterior is not None and (self.posterior >= 0.5) != (
