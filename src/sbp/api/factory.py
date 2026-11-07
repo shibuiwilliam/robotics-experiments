@@ -177,6 +177,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         DecisionQueue,
         DiscrepancyStore,
         ExpectationStore,
+        ForecastRecord,
+        ForecastStore,
         HttpGraphStore,
         MetricStore,
     )
@@ -249,6 +251,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = ConceptProposalStore(_connection(), site=resolved.site_id)
         return _run_sync(store.queue(include_curated=include_curated, limit=limit))
 
+    def read_forecasts(
+        *, entity: str | None = None, fluent: str | None = None, limit: int = 50
+    ) -> list[ForecastRecord]:
+        """予測を同期の形で返す（M9-03）。
+
+        Args:
+            entity: 実体で絞る。
+            fluent: フルーエント型で絞る。
+            limit: 返す件数の上限。
+        """
+        store = ForecastStore(_connection(), site=resolved.site_id)
+        return _run_sync(store.recent(entity=entity, fluent=fluent, limit=limit))
+
     def read_evidence(
         entity: str, fluent: str, start: datetime, end: datetime
     ) -> list[ContributionRecord]:
@@ -308,6 +323,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         discrepancy_reader=read_discrepancies,
         expectation_reader=read_expectations,
         proposal_reader=read_proposals,
+        forecast_reader=read_forecasts,
         evidence_reader=read_evidence,
         action_reader=lazy_contracts(),
         decision_reader=read_decisions,

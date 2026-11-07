@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 import strawberry
 
 from sbp.api.actions_view import summarize
-from sbp.api.authorization import AuthorizationError, visible_rows
+from sbp.api.authorization import AuthorizationError, authorize, visible_rows
 from sbp.api.evidence import build_evidence
 from sbp.core import vocab
 from sbp.core.logging import get_logger
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
+    from sbp.knowledge.forecasts import ForecastRecord
 else:  # Protocol の注釈を実行時にも解決できるようにする
     Sequence = __import__("collections.abc", fromlist=["Sequence"]).Sequence
     AssertionRow = object
@@ -387,6 +388,80 @@ class BeliefSource:
         except Exception:
             return False
         return True
+
+
+@strawberry.type
+class ForecastPointType:
+    """予測の先行時間 1 点（M9-03、ADR-0032）。
+
+    Attributes:
+        leadTimeS: 起点からの先行時間（秒）。
+        mean: 予測確率（プローブの較正済み出力の標本平均）。
+        lower: 確率の認識的な幅の下端。
+        upper: 同、上端。
+        sampleCount: 幅の根拠になった標本（軌道）の数。**標本そのものは返さない。**
+    """
+
+    leadTimeS: float  # noqa: N815 — GraphQL は camelCase
+    mean: float
+    lower: float
+    upper: float
+    sampleCount: int  # noqa: N815
+
+
+@strawberry.type
+class ForecastType:
+    """フルーエントの成立確率の予測 1 件（M9-03、ADR-0032）。
+
+    **``lower`` / ``upper`` は確率の認識的な幅であって、実測（0 / 1）の予測区間ではない。**
+    採点は予測集合の被覆率と Brier で行う（``forecast_*`` 指標）。
+
+    Attributes:
+        forecastId: 識別子。
+        entity: 実体 IRI。
+        fluent: フルーエント型 IRI。
+        horizonOrigin: 予測の起点。
+        wmVersion: 予測を出した WM の版。
+        intervalLevel: 名目被覆（予測集合の水準）。
+        scored: 採点済みか。
+        points: 先行時間ごとの予測。
+    """
+
+    forecastId: str  # noqa: N815
+    entity: str
+    fluent: str
+    horizonOrigin: datetime  # noqa: N815
+    wmVersion: str  # noqa: N815
+    intervalLevel: float  # noqa: N815
+    scored: bool
+    points: list[ForecastPointType]
+
+    @classmethod
+    def from_record(cls, record: ForecastRecord) -> ForecastType:
+        """表の行から作る。
+
+        Args:
+            record: 予測の行（``payload`` は ``Forecast`` の JSON）。
+        """
+        return cls(
+            forecastId=str(record.forecast_id),
+            entity=record.entity,
+            fluent=record.fluent,
+            horizonOrigin=record.horizon_origin,
+            wmVersion=record.wm_version,
+            intervalLevel=record.interval_level,
+            scored=record.scored_at is not None,
+            points=[
+                ForecastPointType(
+                    leadTimeS=float(point["lead_time_s"]),
+                    mean=float(point["mean"]),
+                    lower=float(point["lower"]),
+                    upper=float(point["upper"]),
+                    sampleCount=len(point.get("samples", ())),
+                )
+                for point in record.payload.get("points", ())
+            ],
+        )
 
 
 @strawberry.type
@@ -1025,6 +1100,55 @@ class Query:
             rows=len(records),
         )
         return [ExpectationType.from_record(record) for record in records]
+
+    @strawberry.field(description="フルーエントの成立確率の予測を新しい起点の順に返す")
+    def forecasts(
+        self,
+        info: strawberry.Info,
+        entity: str | None = None,
+        fluent: str | None = None,
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[ForecastType]:
+        """予測を返す（設計書 §10.2 の ``predict``、M9-03）。
+
+        **ABAC を通す。** 予測は ``predicted`` の信念と同じ機密度を持つ。概念型×様相×拠点の
+        許可が無い行は返さない（行ごとに判定する）。
+
+        Args:
+            info: strawberry の文脈（``forecasts`` に読み出し関数を持つ）。
+            entity: 実体 IRI で絞る。
+            fluent: フルーエント型 IRI で絞る。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: ``limit`` が範囲外、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        reader = info.context.get("forecasts")
+        if reader is None:
+            raise ValueError(
+                "予測の読み出しが設定されていない（create_app に forecast_reader を渡す）"
+            )
+        site = info.context["settings"].site_id
+        records = [
+            record
+            for record in reader(entity=entity, fluent=fluent, limit=limit)
+            if authorize(
+                principal, concept_type=record.fluent, modality=Modality.PREDICTED, site=site
+            ).allowed
+        ]
+        log.info(
+            "api.forecasts_queried", principal=principal.subject, entity=entity, rows=len(records)
+        )
+        return [ForecastType.from_record(record) for record in records]
 
     @strawberry.field(description="curation 待ちの概念提案を支持の多い順に返す")
     def proposals(
