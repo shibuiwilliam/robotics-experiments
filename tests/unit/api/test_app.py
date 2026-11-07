@@ -276,6 +276,7 @@ class TestStreamAndCommands:
             settings=Settings(),
             assertion_store=store,  # type: ignore[arg-type]
             command_handler=explode,
+            principal_resolver=_site_a_reader,
         )
         response = TestClient(app).post("/commands/execute_action", json={})
         assert response.status_code == 409
@@ -290,6 +291,84 @@ class TestStreamAndCommands:
         )
         assert client.get("/stream/t").status_code == 503
         assert client.post("/commands/x", json={}).status_code == 503
+
+
+def _nobody(_request: Request) -> Principal | None:
+    return None
+
+
+def _an_agent(_request: Request) -> Principal | None:
+    return Principal(subject="https://x/agent/a", is_agent=True)
+
+
+class TestCommandIdentity:
+    """コマンドの「誰が」は認証済みの要求者から決まる（H-25、ADR-0029）。"""
+
+    OP = "https://sbp.example/id/person/op1"
+
+    def _client(self, resolver: Any = _site_a_reader) -> tuple[TestClient, list[dict[str, Any]]]:
+        seen: list[dict[str, Any]] = []
+
+        def handler(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+            seen.append({"name": name, **payload})
+            return {"accepted": True}
+
+        app = create_app(
+            settings=Settings(),
+            assertion_store=_FakeStore(),  # type: ignore[arg-type]
+            command_handler=handler,
+            principal_resolver=resolver,
+        )
+        return TestClient(app), seen
+
+    @pytest.mark.parametrize(
+        ("name", "fieldname"),
+        [
+            ("resolve_discrepancy", "resolved_by"),
+            ("curate_concept", "decided_by"),
+            ("execute_action", "approved_by"),
+            ("answer_observation", "answered_by"),
+        ],
+    )
+    def test_the_actor_field_is_filled_from_the_principal(self, name: str, fieldname: str) -> None:
+        client, seen = self._client()
+        assert client.post(f"/commands/{name}", json={"x": 1}).status_code == 200
+        assert seen[0][fieldname] == self.OP
+
+    @pytest.mark.parametrize(
+        ("name", "fieldname"),
+        [
+            ("resolve_discrepancy", "resolved_by"),
+            ("curate_concept", "decided_by"),
+            ("execute_action", "approved_by"),
+            ("answer_observation", "answered_by"),
+        ],
+    )
+    def test_naming_someone_else_is_refused(self, name: str, fieldname: str) -> None:
+        client, seen = self._client()
+        response = client.post(f"/commands/{name}", json={fieldname: "https://x/person/boss"})
+        assert response.status_code == 403
+        assert seen == [], "ハンドラに届かない"
+
+    def test_naming_oneself_is_accepted(self) -> None:
+        client, seen = self._client()
+        assert (
+            client.post("/commands/answer_observation", json={"answered_by": self.OP}).status_code
+            == 200
+        )
+        assert seen[0]["answered_by"] == self.OP
+
+    def test_without_a_resolvable_principal_nothing_is_accepted(self) -> None:
+        client, seen = self._client(resolver=_nobody)
+        assert client.post("/commands/answer_observation", json={}).status_code == 401
+        no_resolver, seen2 = self._client(resolver=None)
+        assert no_resolver.post("/commands/answer_observation", json={}).status_code == 401
+        assert seen == seen2 == []
+
+    def test_an_agent_cannot_make_a_human_decision(self) -> None:
+        client, seen = self._client(resolver=_an_agent)
+        assert client.post("/commands/execute_action", json={}).status_code == 403
+        assert seen == []
 
 
 class TestMetricsEndpoint:

@@ -22,6 +22,21 @@ import type {
   Resolution,
 } from "./types";
 
+/**
+ * 要求者のヘッダ（開発用。`SBP_ENV=dev` の API だけが読む、H-02 / H-25）。
+ *
+ * コマンドの「誰が」は本文ではなくここから決まる。本文の `*_by` はこの値と一致しなければ 403 になる。
+ * 本番の認証方式が決まるまでは、`VITE_SBP_DEV_PRINCIPAL` を設定した開発ビルドだけが送る。
+ */
+function requestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const principal = import.meta.env.VITE_SBP_DEV_PRINCIPAL as string | undefined;
+  if (principal !== undefined && principal !== "") {
+    headers["X-SBP-Principal"] = principal;
+  }
+  return headers;
+}
+
 /** 設定の誤り（起動時に落とす）。 */
 export class ConfigurationError extends Error {}
 
@@ -61,7 +76,7 @@ async function graphql<T>(
 ): Promise<T> {
   const response = await fetch(`${apiUrl}/graphql`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify({ query, variables }),
   });
   if (!response.ok) {
@@ -244,7 +259,7 @@ export async function submitResolution(
 ): Promise<{ readonly accepted: boolean; readonly detail: string }> {
   const response = await fetch(`${apiUrl}/commands/resolve_discrepancy`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify({
       decision_id: resolution.decisionId,
       discrepancy_id: resolution.discrepancyId,
@@ -277,7 +292,7 @@ export async function submitCuration(
 ): Promise<{ readonly accepted: boolean; readonly detail: string }> {
   const response = await fetch(`${apiUrl}/commands/curate_concept`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: requestHeaders(),
     // API の契約は snake_case（`extra="forbid"` なので camelCase は弾かれる）
     body: JSON.stringify({
       decision_id: decision.decisionId,
@@ -383,7 +398,7 @@ export async function submitAction(
   if (request.overrideReason !== null) body["override_reason"] = request.overrideReason;
   const response = await fetch(`${apiUrl}/commands/execute_action`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: requestHeaders(),
     body: JSON.stringify(body),
   });
   const payload = (await response.json()) as Record<string, unknown>;

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from sbp.api.commands import bind_principal
 from sbp.api.schema import BeliefSource, build_schema
 from sbp.core.logging import get_logger
 from sbp.core.metrics import prometheus_exposition
@@ -275,11 +276,7 @@ def create_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="コマンド API は設定されていない",
             )
-        payload = await request.json()
-        if not isinstance(payload, dict):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="引数は JSON オブジェクト"
-            )
+        payload = await _command_payload(name, request, principal_resolver)
         try:
             result = command_handler(name, payload)
         except Exception as exc:
@@ -312,3 +309,69 @@ def _ontology_version() -> str:
     from sbp.core import vocab  # noqa: PLC0415 — 生成物への依存を局所化
 
     return vocab.ONTOLOGY_VERSION
+
+
+def _command_principal(
+    resolver: Callable[[Request], Principal | None] | None, request: Request
+) -> Principal:
+    """コマンドの要求者を解決する。解決できない・エージェントなら拒否する（H-25、ADR-0029）。
+
+    Args:
+        resolver: リクエスト → 要求者。
+        request: HTTP リクエスト。
+
+    Raises:
+        HTTPException: 401（要求者を解決できない）、403（エージェント）。
+    """
+    principal = None if resolver is None else resolver(request)
+    if principal is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="要求者を解決できない。コマンドは認証済みの主体にだけ受ける",
+        )
+    if principal.is_agent:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="エージェントは人の判断（解決・採否・承認・回答）を出せない",
+        )
+    return principal
+
+
+def _bind_command(name: str, payload: dict[str, Any], principal: Principal) -> dict[str, Any]:
+    """本文の主体の欄を要求者に結びつける（食い違えば 403）。
+
+    Args:
+        name: コマンド名。
+        payload: 引数。
+        principal: 認証済みの要求者。
+    """
+    try:
+        return bind_principal(name, payload, principal.subject)
+    except PermissionError as exc:
+        log.info("api.command_refused", command=name, principal=principal.subject)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+async def _command_payload(
+    name: str,
+    request: Request,
+    resolver: Callable[[Request], Principal | None] | None,
+) -> dict[str, Any]:
+    """コマンドの引数を読み、主体の欄を認証済みの要求者に結びつける。
+
+    Args:
+        name: コマンド名。
+        request: HTTP リクエスト。
+        resolver: リクエスト → 要求者。
+
+    Raises:
+        HTTPException: 要求者が解決できない・エージェント・引数が JSON オブジェクトでない・
+            本文の主体が要求者と食い違う場合。
+    """
+    principal = _command_principal(resolver, request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="引数は JSON オブジェクト"
+        )
+    return _bind_command(name, payload, principal)

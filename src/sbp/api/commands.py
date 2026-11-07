@@ -32,14 +32,53 @@ if TYPE_CHECKING:
     """``DecisionQueue.enqueue`` を包む。"""
 
 __all__ = [
+    "IDENTITY_FIELDS",
     "AnswerCommand",
     "CurationCommand",
     "ExecutionCommand",
     "ResolutionCommand",
+    "bind_principal",
     "build_command_handler",
 ]
 
 log = get_logger(__name__)
+
+IDENTITY_FIELDS: dict[str, str] = {
+    "resolve_discrepancy": "resolved_by",
+    "curate_concept": "decided_by",
+    "execute_action": "approved_by",
+    "answer_observation": "answered_by",
+}
+"""コマンドごとの「誰がやったか」の欄。来歴と監査隔離の単位なので、本文の自称を受けない（H-25）。"""
+
+
+def bind_principal(name: str, payload: dict[str, Any], subject: str) -> dict[str, Any]:
+    """コマンドの主体の欄を、認証済みの要求者に結びつける。
+
+    本文に主体の欄が無ければ要求者を入れ、あれば要求者と一致することを要求する（UI が送って
+    くる値は許すが、他人の名は受けない）。コマンド名が未知ならそのまま返す（検証は後段）。
+
+    Args:
+        name: コマンド名。
+        payload: 引数（コピーを返す。元は変えない）。
+        subject: 認証済みの要求者の主体 IRI。
+
+    Returns:
+        主体の欄を埋めた引数。
+
+    Raises:
+        PermissionError: 本文の主体が要求者と食い違う場合。
+    """
+    fieldname = IDENTITY_FIELDS.get(name)
+    if fieldname is None:
+        return dict(payload)
+    claimed = payload.get(fieldname)
+    if claimed is not None and claimed != subject:
+        raise PermissionError(
+            f"{fieldname} は要求者と一致しなければならない（本文: {claimed!r}）。"
+            "他の主体の名で判断できない"
+        )
+    return {**payload, fieldname: subject}
 
 
 class ResolutionCommand(BaseModel):
