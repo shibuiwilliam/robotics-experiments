@@ -361,6 +361,11 @@ SynthWorld の難度自体が低いことは変わらない（実機データで
 H-22 の決定次第**である。
 
 - [ ] **M8-23** プローブ束を置き場に入れる経路 — 学習 → 評価 → `promote()`（AND ゲート）→ `bundle_probe` → `ArtifactStore.put` を運用の手順（`scripts/` のコマンド）にする。**いまは `put` を呼ぶ運用コードが無く、新規環境では bridge-worker が構築で落ちる**（空の束は拒否、ADR-0009）。学習の弱ラベルは記録由来（`TimeBag`）なので M8-25 に依存する。スクリプトから真値を読まない（不変条件 10。import-linter の対象に `scripts` が入っている）
+  - [x] **M8-23-1** ADR-0024（弱ラベル・時間順の三分割・ゲート不通過は置かない）→ 完了（2026-11-08）
+  - [x] **M8-23-2** 学習ライブラリ `sbp.bridge.training`（`bags_from_claims` / `train_probe`）と設定 → 完了（2026-11-08。純粋関数。単体 12 件）
+  - [x] **M8-23-3** `scripts/train_probe.py`・`make train-probe`・consumer の `stop_when_idle_s` → 完了（2026-11-08。単体 4 件）
+  - [x] **M8-23-4** 統合テスト（潜在 + 主張 → 束が置かれ `load_probe_set` が読める／ゲート不通過なら置かれない／上書きしない）→ 完了（2026-11-08。統合 218）
+  - [ ] **M8-23-5** レビュー・評価・記録
 - [x] **M8-24** 推定パスの先頭（**ADR 先行**） — 観測窓 → `WorldModel.encode` → `LatentIndex.write` を運用で回す。**いまは潜在索引に書くコードがテストにしか無い**（`test_bridge_worker_e2e` / `test_g4_worldmodel`）。エンコーダをどこで動かすか（6 番目のワーカー / bridge-worker の前段 / 本リポジトリ外のエッジ。設計書 §12.1 はエッジにエンコーダを置く）を ADR で決める。前提として WM 本体の重みの直列化（PROGRESS 既知の制約）と観測の入口の契約が要る。1 日を超えるなら分割する。**2026-11-08 に ADR-0023 で設計を決め、枝番に分割した**（親は枝番がすべて終わったら `[x]`）
   - [x] **M8-24-1** ADR-0023（文書のみ。推定パスの先頭は「エンコードジョブ」＝スクリプト + ライブラリ、観測の入口はスプール（JSONL）の Protocol、WM の重みは `.npz` で `ArtifactStore` に直列化）→ 完了（2026-11-08）
   - [x] **M8-24-2** WM 重みの直列化（Koopman）— `sbp.worldmodel.serialization` → 完了（2026-11-08。`KoopmanModel.export_state` / `from_state`（形・有限性を検証）、`sbp.worldmodel.serialization`（`.npz`・`allow_pickle=False`・メタ同梱。pickle・欠けたメタ・形式の MAJOR 違い・形の食い違い・非有限・`latest` を拒否、MINOR は読む）、`save_model`（上書きしない）/ `load_model`（鍵の版と中身の食い違いを拒否）、鍵は `models/<モデル>/<版>/koopman.npz`。単体 19 件）

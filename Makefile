@@ -65,6 +65,11 @@ encode: ## スプール（SBP_WM_SPOOL_DIR）の観測窓を潜在にして索�
 train-wm: ## スプールから Koopman を学習して置き場に置く（SEED=… 必須）
 	$(UV) python -m scripts.train_koopman --seed $(SEED)
 
+# ---- 接地パスの学習（ADR-0024）------------------------------------------------
+.PHONY: train-probe
+train-probe: ## 弱ラベルからプローブを学習し、ゲートを通ったら置き場に置く（FLUENT=… PROBE_ID=… SEED=… 必須）
+	$(UV) python -m scripts.train_probe --fluent $(FLUENT) --probe-id $(PROBE_ID) --seed $(SEED)
+
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
 dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ

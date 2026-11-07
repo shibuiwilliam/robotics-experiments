@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 from sbp.core.errors import SchemaValidationError
 from sbp.core.events import EventEnvelope
@@ -213,12 +213,16 @@ class KafkaEventConsumer:
         """停止を要求する（SIGTERM ハンドラから呼ぶ）。"""
         self._stopping.set()
 
-    async def run(self, *, max_events: int | None = None) -> int:
+    async def run(
+        self, *, max_events: int | None = None, stop_when_idle_s: float | None = None
+    ) -> int:
         """イベントを処理し続ける。
 
         Args:
             max_events: この件数を処理したら戻る（テスト・バッチ用）。``None`` なら
                 :meth:`request_stop` が呼ばれるまで続ける。
+            stop_when_idle_s: 新しいメッセージが来ないまま、この秒数が経ったら戻る（過去の
+                イベントを読み切るバッチ用。学習ジョブなど）。``None`` なら待ち続ける。
 
         Returns:
             副作用を実行した件数（重複で飛ばした分は含まない）。
@@ -229,26 +233,21 @@ class KafkaEventConsumer:
         if self._consumer is None:
             raise RuntimeError("consumer is not started; use `async with` or call start()")
         handled = 0
+        idle_s = 0.0
         while not self._stopping.is_set():
             batch = await self._consumer.getmany(timeout_ms=500)  # type: ignore[attr-defined]
             if not batch:
                 if max_events is not None:
                     break
+                if stop_when_idle_s is not None:
+                    idle_s += 0.5
+                    if idle_s >= stop_when_idle_s:
+                        break
                 continue
+            idle_s = 0.0
             for records in batch.values():
                 for record in records:
-                    try:
-                        event = EventEnvelope.model_validate_json(record.value)
-                    except Exception as exc:
-                        log.error(
-                            "consumer.undecodable_payload",
-                            topic=record.topic,
-                            offset=record.offset,
-                            error=str(exc),
-                        )
-                        raise SchemaValidationError(
-                            f"undecodable payload at {record.topic}@{record.offset}"
-                        ) from exc
+                    event = _decode(record)
                     did_work = await process_once(
                         event,
                         topic=record.topic,
@@ -265,3 +264,19 @@ class KafkaEventConsumer:
             if not self._policy.auto_commit:
                 await self._consumer.commit()  # type: ignore[attr-defined]
         return handled
+
+
+def _decode(record: Any) -> EventEnvelope:
+    """メッセージ本体を ``EventEnvelope`` にする。読めなければ握りつぶさず失敗させる。"""
+    try:
+        return EventEnvelope.model_validate_json(record.value)
+    except Exception as exc:
+        log.error(
+            "consumer.undecodable_payload",
+            topic=record.topic,
+            offset=record.offset,
+            error=str(exc),
+        )
+        raise SchemaValidationError(
+            f"undecodable payload at {record.topic}@{record.offset}"
+        ) from exc
