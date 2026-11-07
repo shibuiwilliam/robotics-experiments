@@ -42,6 +42,8 @@ function discrepancy(overrides: Partial<Discrepancy> & { discrepancyId: string }
     evidence: [],
     assigneeRole: null,
     ontologyVersion: "0.5.0",
+    intervalStart: "2026-06-10T09:00:00Z",
+    intervalEnd: "2026-06-10T09:10:00Z",
     ...overrides,
   };
 }

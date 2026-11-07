@@ -11,6 +11,7 @@
 
 import type {
   Belief,
+  BeliefEvidence,
   ConceptProposal,
   Discrepancy,
   Expectation,
@@ -111,6 +112,7 @@ export async function fetchBeliefs(
 const DISCREPANCY_FIELDS = `
   discrepancyId kind status subjects severity
   detectedAt detector assertions evidence assigneeRole ontologyVersion
+  intervalStart intervalEnd
 `;
 
 /**
@@ -290,4 +292,31 @@ export async function submitCuration(
     };
   }
   return { accepted: true, detail: String(payload["detail"] ?? "受け付けた") };
+}
+
+/**
+ * 実体 × フルーエント × 区間の証拠の三源並置を読む（GraphQL の `beliefEvidence`。ADR-0020）。
+ *
+ * **寄与が無い点は `contribution: null` のまま返る**（0 に丸めない）。画面は「記録されていない」と
+ * 「寄与なし」を区別して出す。
+ */
+export async function fetchBeliefEvidence(
+  apiUrl: string,
+  params: { entity: string; fluent: string; start: string; end: string },
+): Promise<BeliefEvidence> {
+  const data = await graphql<{ beliefEvidence: BeliefEvidence }>(
+    apiUrl,
+    `query BeliefEvidence($entity: String!, $fluent: String!, $start: DateTime!, $end: DateTime!) {
+      beliefEvidence(entity: $entity, fluent: $fluent, start: $start, end: $end) {
+        entity fluent start end
+        points {
+          assertionId at probability origin
+          contribution { observed record plan dominant prior sourceEventId excludedRecords }
+        }
+        planned { start end adherence }
+      }
+    }`,
+    params,
+  );
+  return data.beliefEvidence;
 }

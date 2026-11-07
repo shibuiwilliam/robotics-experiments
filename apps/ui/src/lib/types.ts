@@ -110,6 +110,59 @@ export interface Discrepancy {
   readonly evidence: readonly string[];
   readonly assigneeRole: string | null;
   readonly ontologyVersion: string;
+  /** 不一致が成立していた区間の始端（証拠の三源並置の鍵。M8-17）。 */
+  readonly intervalStart: string | null;
+  /** 同じく終端（右開。`null` は継続中、または区間が記録されていない）。 */
+  readonly intervalEnd: string | null;
+}
+
+/** 証拠の源（設計書 §8.2 の三源）。**様相ではなく寄与で分ける**（所見 84、ADR-0020）。 */
+export type EvidenceSource = "observed" | "record" | "plan";
+
+/**
+ * 信念 1 点の三源の寄与（対数尤度比の絶対値。**生の大きさ**で、割合ではない）。
+ */
+export interface EvidenceContribution {
+  readonly observed: number;
+  readonly record: number;
+  readonly plan: number;
+  /** 最も事後を動かした源。全部 0 なら `null`。 */
+  readonly dominant: EvidenceSource | null;
+  readonly prior: number;
+  readonly sourceEventId: string;
+  /** 監査隔離で除外した記録の数（不変条件 6 が働いた証拠）。 */
+  readonly excludedRecords: number;
+}
+
+/**
+ * 信念の時系列の 1 点。
+ *
+ * **`contribution` が `null` は「記録されていない」であって、寄与 0 ではない。**
+ * この変更より前の信念と、実体間の結合が書いた信念（`origin: "coupling"`）が該当する。
+ */
+export interface EvidencePoint {
+  readonly assertionId: string;
+  readonly at: string;
+  readonly probability: number;
+  readonly origin: "update" | "coupling";
+  readonly contribution: EvidenceContribution | null;
+}
+
+/** 区間と重なる計画。 */
+export interface PlannedSpan {
+  readonly start: string;
+  readonly end: string | null;
+  readonly adherence: number;
+}
+
+/** 実体 × フルーエント × 区間の証拠の三源並置（GraphQL の `beliefEvidence`。ADR-0020）。 */
+export interface BeliefEvidence {
+  readonly entity: string;
+  readonly fluent: string;
+  readonly start: string;
+  readonly end: string;
+  readonly points: readonly EvidencePoint[];
+  readonly planned: readonly PlannedSpan[];
 }
 
 /**

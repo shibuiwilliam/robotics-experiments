@@ -149,6 +149,8 @@ class DiscrepancyType:
         evidence: 根拠になった証拠（イベント・記録）の IRI。
         assigneeRole: 配賦先ロールの IRI。
         ontologyVersion: 検出時のオントロジー版。
+        intervalStart: 不一致が成立していた区間の始端（証拠の三源並置の鍵。M8-17）。
+        intervalEnd: 同じく終端（右開。継続中は ``None``）。
     """
 
     discrepancyId: str  # noqa: N815 — GraphQL は camelCase
@@ -162,6 +164,8 @@ class DiscrepancyType:
     evidence: list[str]
     assigneeRole: str | None  # noqa: N815
     ontologyVersion: str  # noqa: N815
+    intervalStart: datetime | None = None  # noqa: N815
+    intervalEnd: datetime | None = None  # noqa: N815
 
     @classmethod
     def from_record(cls, record: DiscrepancyRecord) -> DiscrepancyType:
@@ -171,6 +175,8 @@ class DiscrepancyType:
             record: 表の行。
         """
         payload = record.payload
+        raw_interval = payload.get("interval")
+        interval: dict[str, object] = raw_interval if isinstance(raw_interval, dict) else {}
         return cls(
             discrepancyId=str(record.discrepancy_id),
             kind=record.kind,
@@ -183,7 +189,20 @@ class DiscrepancyType:
             evidence=[str(value) for value in payload.get("evidence", ())],
             assigneeRole=payload.get("assignee_role"),
             ontologyVersion=str(payload.get("ontology_version", "")),
+            intervalStart=_parse_time(interval.get("start")),
+            intervalEnd=_parse_time(interval.get("end")),
         )
+
+
+def _parse_time(value: object) -> datetime | None:
+    """payload の ISO 8601 文字列を ``datetime`` にする（無ければ ``None``）。
+
+    Args:
+        value: 文字列または ``None``。
+    """
+    if isinstance(value, str) and value:
+        return datetime.fromisoformat(value)
+    return None
 
 
 @strawberry.type

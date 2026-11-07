@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  fetchBeliefEvidence,
   fetchBeliefs,
   fetchDiscrepancies,
   fetchExpectations,
@@ -19,6 +20,7 @@ import {
   submitCuration,
   submitResolution,
 } from "./lib/api";
+import type { EvidenceTarget } from "./lib/evidence";
 import type {
   Belief,
   ConceptProposal,
@@ -109,6 +111,13 @@ export function App(): React.JSX.Element {
     [apiUrl, load],
   );
 
+  // 三源の並置（M8-17）。apiUrl が変わらない限り同じ関数を渡す——子の effect が毎描画で
+  // 読み直さないように
+  const loadEvidence = useCallback(
+    (target: EvidenceTarget) => fetchBeliefEvidence(apiUrl, target),
+    [apiUrl],
+  );
+
   const onDecide = useCallback(
     async (decision: {
       proposalId: string;
@@ -180,6 +189,7 @@ export function App(): React.JSX.Element {
           now={now}
           resolvedBy="https://sbp.example/id/person/dev"
           onResolve={(resolution) => void onResolve(resolution)}
+          loadEvidence={loadEvidence}
         />
       ) : null}
       {tab === "beliefs" ? <BeliefView beliefs={beliefs} subject={subject} /> : null}

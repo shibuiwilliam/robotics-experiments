@@ -17,14 +17,23 @@ import {
   referenceRows,
   visibleQueue,
 } from "../lib/queue";
+import type { EvidenceTarget } from "../lib/evidence";
 import { DISCREPANCY_KIND_LABEL } from "../lib/types";
-import type { Discrepancy, Resolution, ResolutionOutcome } from "../lib/types";
+import type {
+  BeliefEvidence,
+  Discrepancy,
+  Resolution,
+  ResolutionOutcome,
+} from "../lib/types";
+import { EvidenceJuxtaposition } from "./EvidenceJuxtaposition";
 
 interface Props {
   readonly discrepancies: readonly Discrepancy[];
   readonly now: string;
   readonly resolvedBy: string;
   readonly onResolve: (resolution: Resolution) => void;
+  /** 三源の並置を読む関数（M8-17。未配線なら並置できない理由を画面に出す）。 */
+  readonly loadEvidence?: (target: EvidenceTarget) => Promise<BeliefEvidence>;
 }
 
 export function DiscrepancyQueue({
@@ -32,6 +41,7 @@ export function DiscrepancyQueue({
   now,
   resolvedBy,
   onResolve,
+  loadEvidence,
 }: Props): React.JSX.Element {
   const queue = visibleQueue(discrepancies);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -87,8 +97,7 @@ export function DiscrepancyQueue({
           <table className="evidence">
             <caption>
               不一致が参照しているもの。<strong>どちらが正しいかは示さない</strong>
-              ——判断は人がする。<strong>三源の並置（観測 / 記録 / 計画）はまだ作れていない</strong>
-              ——信念の本体を引く経路が無く、源は様相では分かれない（M8-17）。
+              ——判断は人がする。三源（観測 / 記録 / 計画）の並置は下に出る。
             </caption>
             <tbody>
               {referenceRows(selected).map((row) => (
@@ -114,6 +123,8 @@ export function DiscrepancyQueue({
               ))}
             </tbody>
           </table>
+
+          <EvidenceJuxtaposition discrepancy={selected} now={now} load={loadEvidence} />
 
           <ResolutionForm
             discrepancyId={selected.discrepancyId}

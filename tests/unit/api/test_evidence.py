@@ -21,11 +21,13 @@ from fastapi.testclient import TestClient
 
 from sbp.api import Permission, Principal, create_app
 from sbp.api.evidence import build_evidence
+from sbp.api.schema import DiscrepancyType
 from sbp.core import vocab
 from sbp.core.config import Settings
 from sbp.core.modality import Modality
 from sbp.knowledge.assertions import AssertionRow
 from sbp.knowledge.contributions import ContributionRecord
+from sbp.knowledge.discrepancies import DiscrepancyRecord
 
 T0 = datetime(2026, 11, 7, 9, tzinfo=UTC)
 END = T0 + timedelta(hours=1)
@@ -251,3 +253,37 @@ def test_uuid_ids_round_trip() -> None:
     client = _client([row], [], principal=_principal(Modality.INFERRED))
     point = _ask(client)["data"]["beliefEvidence"]["points"][0]
     assert UUID(point["assertionId"]) == row.assertion_id
+
+
+class TestDiscrepancyInterval:
+    """不一致の区間が API に出る（証拠の三源並置の鍵。M8-17）。"""
+
+    def test_the_interval_comes_from_the_payload(self) -> None:
+        record = DiscrepancyRecord(
+            discrepancy_id=uuid4(),
+            kind=2,
+            status="Open",
+            status_rank=0,
+            subjects=(PUMP,),
+            severity_score=0.5,
+            detected_at=T0,
+            payload={"interval": {"start": T0.isoformat(), "end": END.isoformat()}},
+        )
+        found = DiscrepancyType.from_record(record)
+        assert found.intervalStart == T0
+        assert found.intervalEnd == END
+
+    def test_a_missing_interval_is_null_not_an_error(self) -> None:
+        record = DiscrepancyRecord(
+            discrepancy_id=uuid4(),
+            kind=2,
+            status="Open",
+            status_rank=0,
+            subjects=(PUMP,),
+            severity_score=0.5,
+            detected_at=T0,
+            payload={},
+        )
+        found = DiscrepancyType.from_record(record)
+        assert found.intervalStart is None
+        assert found.intervalEnd is None

@@ -570,3 +570,31 @@ code {
   color: var(--violated);
   line-height: 1.7;
 }
+
+/* 証拠の三源並置（M8-17）。どの列も空欄にしない。「記録されていない」と「寄与なし」は見た目も分ける */
+.juxtaposition {
+  margin: 1rem 0;
+}
+
+.juxtaposition h4 {
+  margin: 0.8rem 0 0.3rem;
+}
+
+.juxtaposition-columns td.state-unrecorded,
+.juxtaposition-columns td.state-no-beliefs {
+  color: var(--empty);
+  font-style: italic;
+}
+
+.juxtaposition-columns td.state-none {
+  color: var(--ink-soft);
+}
+
+.juxtaposition-points {
+  margin-top: 0.5rem;
+  font-size: 0.9em;
+}
+
+.juxtaposition .none {
+  color: var(--empty);
+}

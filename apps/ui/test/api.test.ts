@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   ConfigurationError,
+  fetchBeliefEvidence,
   fetchBeliefs,
   fetchDiscrepancies,
   fetchExpectations,
@@ -51,6 +52,51 @@ describe("resolveApiUrl", () => {
     // 既定値を入れると、本番ビルドが黙って開発環境を向く（不変条件 12）
     expect(() => resolveApiUrl({})).toThrow(ConfigurationError);
     expect(() => resolveApiUrl({ VITE_SBP_API_URL: "   " })).toThrow(ConfigurationError);
+  });
+});
+
+describe("fetchBeliefEvidence", () => {
+  const params = {
+    entity: "urn:x:P-101",
+    fluent: "https://sbp.example/ent#Running",
+    start: "2026-11-07T09:00:00Z",
+    end: "2026-11-07T10:00:00Z",
+  };
+
+  it("寄与の無い点は null のまま返す（0 に丸めない）", async () => {
+    stubFetch({
+      body: {
+        data: {
+          beliefEvidence: {
+            ...params,
+            points: [
+              { assertionId: "a", at: params.start, probability: 0.8, origin: "update", contribution: null },
+            ],
+            planned: [],
+          },
+        },
+      },
+    });
+    const evidence = await fetchBeliefEvidence("http://api", params);
+    expect(evidence.points[0]?.contribution).toBeNull();
+  });
+
+  it("鍵（実体・フルーエント・区間）を変数で送る", async () => {
+    const fetchMock = stubFetch({
+      body: { data: { beliefEvidence: { ...params, points: [], planned: [] } } },
+    });
+    await fetchBeliefEvidence("http://api", params);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1].body)) as {
+      variables: Record<string, unknown>;
+    };
+    expect(body.variables).toEqual(params);
+  });
+
+  it("errors があれば落とす（認可で落とされた並置を「証拠なし」と読ませない）", async () => {
+    stubFetch({
+      body: { data: null, errors: [{ message: "ABAC が設定されていない" }] },
+    });
+    await expect(fetchBeliefEvidence("http://api", params)).rejects.toThrow(ApiError);
   });
 });
 
