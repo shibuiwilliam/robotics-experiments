@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from sbp.bridge.lifting import lift_events, load_event_calculus
+from sbp.bridge.lifting import fluent_local_name, lift_events, load_event_calculus
 from sbp.bridge.probes import ProbeKind, ProbeSpec
 from sbp.bridge.runner import ProbeSet
 from sbp.bridge.serialization import artifact_key, loads, restore_probe
@@ -355,7 +355,7 @@ class BridgeWorker:
             site_id=self.settings.site_id,
             # 逆写像で最も確率の高い事象型を型 IRI にする。**分布は証拠として残る**ので、
             # 下流は最尤の型だけでなく候補全体を見られる
-            event_type_iri=f"sbp-core:PhysicalEvent/{event.fluent}",
+            event_type_iri=f"sbp-core:PhysicalEvent/ent:{fluent_local_name(event.fluent)}",
             ontology_version=vocab.ONTOLOGY_VERSION,
         )
         self._sink(envelope)

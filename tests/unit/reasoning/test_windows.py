@@ -131,6 +131,34 @@ class TestRecord:
         assert not window.record(at=T0, probability=0.1)
         assert len(window) == 0
 
+    def test_a_record_that_arrives_before_the_ticks_is_not_lost(self) -> None:
+        """記録が観測より先に届いても、刻みが揃ったときに割り当てられる（G8 で発見）。
+
+        記録と観測は別のトピックから届き、どちらが先かは決まらない。届いた時点の刻みへ
+        割り当てると、先に届いた記録が失われる。
+        """
+        early = _window()
+        early.record(at=T0 + timedelta(seconds=22), probability=0.1)
+        late = _window()
+        for index in range(5):
+            early.observe(at=T0 + STEP * index, probability=0.9)
+            late.observe(at=T0 + STEP * index, probability=0.9)
+        late.record(at=T0 + timedelta(seconds=22), probability=0.1)
+        a, b = early.to_series(), late.to_series()
+        assert a is not None and b is not None
+        assert a.recorded == b.recorded
+        assert a.recorded[2] == 0.1
+
+    def test_the_newer_record_wins_on_the_same_tick(self) -> None:
+        window = _window()
+        for index in range(5):
+            window.observe(at=T0 + STEP * index, probability=0.9)
+        window.record(at=T0 + timedelta(seconds=21), probability=0.8)
+        window.record(at=T0 + timedelta(seconds=19), probability=0.2)  # 古い時刻だが後から届く
+        series = window.to_series()
+        assert series is not None
+        assert series.recorded[2] == 0.8
+
     def test_samples_without_records_stay_none(self) -> None:
         """記録が無い刻みは ``None`` のまま。
 

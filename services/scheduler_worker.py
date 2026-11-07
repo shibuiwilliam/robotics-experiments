@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING
 
 from sbp.core.config import Settings
 from sbp.core.logging import get_logger
-from sbp.core.modality import Modality
 from sbp.core.time import now
 from sbp.reasoning.means import MeansRegistry
 from sbp.reasoning.requests import ObservationMeans, to_queries
@@ -309,7 +308,12 @@ async def build_worker(
     """
     import psycopg  # noqa: PLC0415 — 実運用の配線でのみ使う
 
-    from sbp.knowledge import AssertionStore, HttpGraphStore, ObservationQueue  # noqa: PLC0415
+    from sbp.knowledge import (  # noqa: PLC0415
+        AssertionStore,
+        HttpGraphStore,
+        ObservationQueue,
+        current_beliefs,
+    )
 
     resolved = settings or Settings()
     connection = await psycopg.AsyncConnection.connect(resolved.pg_dsn, autocommit=True)
@@ -352,12 +356,14 @@ async def build_worker(
 
         def fetch() -> dict[tuple[str, str], float]:
             found: dict[tuple[str, str], float] = {}
-            for entity, fluent in keys:
-                rows = graph.query(subject=entity, predicate=fluent, modality=Modality.INFERRED)
-                if rows:
-                    # 同じ述語に複数の現在信念は無い想定だが、あれば最新の tx を採る
-                    latest = max(rows, key=lambda row: row.tx_from)
-                    found[(entity, fluent)] = latest.confidence
+            # **「現在の信念」の定義は ``current_beliefs`` に一本化する。** 有効開始が最も遅い文を
+            # 採る（同じ有効開始なら記録時刻の遅い文）。記録時刻だけで選ぶと、同じ周期に書かれた
+            # 文の間で順序が決まらない（G8 で発見）。
+            for entity in sorted({entity for entity, _fluent in keys}):
+                beliefs = current_beliefs(graph, entity=entity)
+                for key_entity, fluent in keys:
+                    if key_entity == entity and fluent in beliefs:
+                        found[(entity, fluent)] = beliefs[fluent]
             return found
 
         return await asyncio.to_thread(fetch)

@@ -56,7 +56,7 @@ class SeriesWindow:
     capacity: int
     _timestamps: deque[datetime] = field(default_factory=deque)
     _observed: deque[float] = field(default_factory=deque)
-    _recorded: deque[float | None] = field(default_factory=deque)
+    _records: deque[tuple[datetime, float]] = field(default_factory=deque)
 
     def __post_init__(self) -> None:
         """上限が意味を持つことを検証する。"""
@@ -94,37 +94,37 @@ class SeriesWindow:
             return
         self._timestamps.append(at)
         self._observed.append(probability)
-        self._recorded.append(None)
         self._trim()
 
     def record(self, *, at: datetime, probability: float) -> bool:
-        """記録由来の値を、最も近い観測の刻みへ割り当てる。
+        """記録由来の値を溜める。刻みへの割り当ては列を組むとき（:meth:`to_series`）に行う。
 
-        **観測の刻みが無ければ入れない。** 記録だけの刻みを作ると、観測列に埋め草の値が必要に
-        なり、「観測していない」と「観測して偽だった」が混ざる。
+        **到着順に依存させない。** 記録と観測は別のトピックから届き、どちらが先に届くかは
+        決まらない。届いた時点の最も近い刻みへ割り当てると、記録が先に届いたとき（刻みが
+        まだ無い・遠い刻みしか無い）に割り当てが失われる／ずれる。記録は時刻つきで保持し、
+        列を組むときに、その時点の刻みへ割り当てる。
+
+        **刻みは作らない。** 記録だけの刻みを作ると、観測列に埋め草の値が必要になり、
+        「観測していない」と「観測して偽だった」が混ざる。
 
         Args:
             at: 記録の時刻。
             probability: 記録が含意する確率。
 
         Returns:
-            割り当てられたら真。観測の刻みが無くて捨てたら偽。
+            いま観測の刻みがあり、割り当てられる状態なら真。刻みがまだ無ければ偽
+            （記録は保持される）。
         """
-        if not self._timestamps:
-            return False
-        index = min(
-            range(len(self._timestamps)),
-            key=lambda i: abs((self._timestamps[i] - at).total_seconds()),
-        )
-        self._recorded[index] = probability
-        return True
+        self._records.append((at, probability))
+        while len(self._records) > self.capacity:
+            self._records.popleft()
+        return bool(self._timestamps)
 
     def _trim(self) -> None:
         """上限を超えた古い刻みを捨てる。"""
         while len(self._timestamps) > self.capacity:
             self._timestamps.popleft()
             self._observed.popleft()
-            self._recorded.popleft()
 
     def to_series(self) -> BeliefSeries | None:
         """``BeliefSeries`` にする。
@@ -142,8 +142,19 @@ class SeriesWindow:
             fluent=self.fluent,
             timestamps=tuple(self._timestamps),
             observed=tuple(self._observed),
-            recorded=tuple(self._recorded),
+            recorded=tuple(self._assign_records()),
         )
+
+    def _assign_records(self) -> list[float | None]:
+        """記録を最も近い刻みへ割り当てる（同じ刻みに複数なら時刻の新しい記録が勝つ）。"""
+        recorded: list[float | None] = [None] * len(self._timestamps)
+        for at, probability in sorted(self._records, key=lambda item: item[0]):
+            nearest = min(
+                range(len(self._timestamps)),
+                key=lambda i: abs((self._timestamps[i] - at).total_seconds()),
+            )
+            recorded[nearest] = probability
+        return recorded
 
 
 @dataclass(slots=True)

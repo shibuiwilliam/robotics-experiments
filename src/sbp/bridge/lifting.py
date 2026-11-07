@@ -56,6 +56,7 @@ __all__ = [
     "EventCalculusRules",
     "FluentChange",
     "LiftedEvent",
+    "fluent_local_name",
     "lift_events",
     "load_event_calculus",
 ]
@@ -145,7 +146,8 @@ class FluentChange:
         uncertainty_s: 変化点推定の不確実幅（秒）。
         direction: ``rise`` または ``fall``。
         probability: 変化点の事後確率。
-        confidence_after: 変化後のプローブ確率（代表値）。
+        confidence_after: 変化の瞬間のプローブ確率（事象の確信度の計算に使う）。
+        state_after: 変化後の安定した区間のプローブ確率の中央値（フルーエントが成立している確率）。
     """
 
     fluent: str
@@ -155,6 +157,7 @@ class FluentChange:
     direction: str
     probability: float
     confidence_after: float
+    state_after: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +169,9 @@ class LiftedEvent:
         fluent: 変化したフルーエント。
         valid_time: 有効時間（``uncertainty_s`` を必ず持つ）。
         belief: 事象が起きたことの確信度。
+        state_probability: 変化後にフルーエントが成立している確率。**イベントに載せるのはこちら**
+            （ADR-0026）。下流は ``PhysicalEvent/<フルーエント>`` の確率を
+            フルーエントの確率として読む。
         inferred_event_type: 候補事象型の確率分布（逆写像の結果）。
         evidence: 根拠となったプローブ。
         alignment_residual: この昇格時点での整合残差。
@@ -175,6 +181,7 @@ class LiftedEvent:
     fluent: str
     valid_time: ValidTime
     belief: BooleanBelief
+    state_probability: float
     inferred_event_type: CategoricalBelief
     evidence: tuple[ProbeEvidence, ...]
     alignment_residual: float
@@ -197,7 +204,7 @@ class LiftedEvent:
             valid_time=self.valid_time,
             tx_time=self.valid_time.start,
             modality=Modality.INFERRED,
-            belief=self.belief,
+            belief=BooleanBelief(p=self.state_probability),
             evidence=self.evidence,
             producer=Producer(agent=f"bridge@{site_id}", version=_PRODUCER_VERSION),
             ontology_version=ontology_version,
@@ -281,6 +288,9 @@ def lift_events(
                     direction=change.direction,
                     probability=change.probability,
                     confidence_after=float(values[change.index]),
+                    state_after=float(
+                        np.median(values[change.index : change.index + min_duration_samples])
+                    ),
                 )
             )
 
@@ -320,6 +330,7 @@ def lift_events(
                 fluent=change.fluent,
                 valid_time=ValidTime(start=change.at, uncertainty_s=change.uncertainty_s),
                 belief=BooleanBelief(p=_event_confidence(change)),
+                state_probability=float(np.clip(change.state_after, 0.0, 1.0)),
                 inferred_event_type=CategoricalBelief(pmf=distribution),
                 evidence=evidence,
                 alignment_residual=alignment_residual,
@@ -388,7 +399,7 @@ def _score_candidates(
         co_initiated = {f for e, f in rules.initiates if e == candidate}
         support = 1.0
         for fluent in co_initiated:
-            camel = _camel(fluent)
+            camel = fluent_local_name(fluent)
             if camel in probe_outputs:
                 # 同時に動くべきフルーエントが実際に高いなら、この候補を支持する
                 support *= 0.5 + float(probe_outputs[camel][change.index])
@@ -407,8 +418,12 @@ def _score_candidates(
     return scaled
 
 
-def _camel(snake: str) -> str:
-    """snake_case を CamelCase に戻す。"""
+def fluent_local_name(snake: str) -> str:
+    """snake_case のフルーエント名をオントロジーのローカル名（CamelCase）に戻す。
+
+    昇格イベントの型 ``PhysicalEvent/ent:<ローカル名>`` に使う。下流（信念更新・照合）は末尾が
+    オントロジーの FluentType のローカル名に当たるものだけをフルーエントとして読む（ADR-0026）。
+    """
     return "".join(part.capitalize() for part in snake.split("_"))
 
 
@@ -456,6 +471,7 @@ def _suppress_duplicates(events: Sequence[LiftedEvent], *, window: timedelta) ->
                 fluent=event.fluent,
                 valid_time=event.valid_time,
                 belief=event.belief,
+                state_probability=event.state_probability,
                 inferred_event_type=event.inferred_event_type,
                 evidence=merged_evidence,
                 alignment_residual=event.alignment_residual,

@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
@@ -135,14 +135,32 @@ def bags_from_claims(
     return bags, unused
 
 
+def _core(bag: TimeBag, half_width: timedelta) -> TimeBag:
+    """バッグの芯: 主張の時刻（区間の中点）の前後だけ。評価と較正のラベルに使う。
+
+    訓練のバッグは情報源の時計のずれの幅まで広げる（MIL は曖昧さを前提にする）。しかし評価に
+    同じ幅を使うと、状態が変わる境目の前後が逆のラベルになり、ECE が真の較正誤差ではなく
+    ラベルの雑音を測ってしまう（G8 で実測: 幅 5 分・停止 24 分で ECE 0.39）。
+    """
+    end = bag.interval.end
+    if end is None:
+        return bag
+    center = bag.interval.start + (end - bag.interval.start) / 2
+    return replace(bag, interval=Interval(center - half_width, center + half_width))
+
+
 def _labels(
-    series: EntitySeries, bags: Sequence[TimeBag], indices: range
+    series: EntitySeries,
+    bags: Sequence[TimeBag],
+    indices: range,
+    *,
+    half_width: timedelta,
 ) -> tuple[NDArray[np.intp], NDArray[np.bool_]]:
-    """区間内の標本に弱ラベルを付ける。正負のバッグに同時に入る標本は捨てる。"""
+    """区間内の標本に弱ラベルを付ける（芯だけ）。正負のバッグに同時に入る標本は捨てる。"""
     pos: set[int] = set()
     neg: set[int] = set()
     window = [series.timestamps[i] for i in indices]
-    for bag in bags:
+    for bag in (_core(b, half_width) for b in bags):
         hit = {indices[j] for j in bag.sample_indices(window)}
         (pos if bag.positive else neg).update(hit)
     both = pos & neg
@@ -231,6 +249,7 @@ def train_probe(
     )
     if problem:
         return _declined(spec, bags, problem)
+    _shift_intercept(probe, calib[0], calib[1])
     probe.attach_calibrator(TemperatureScaler().fit(probe.logits(calib[0]), calib[1]))
     metrics = _metrics(probe, held, series, settings)
     if metrics is None:
@@ -268,6 +287,29 @@ def _training_bags(
     return found
 
 
+def _shift_intercept(
+    probe: LinearProbe, latents: NDArray[np.float64], labels: NDArray[np.bool_]
+) -> None:
+    """較正枠で切片だけを合わせる（重みは動かさないので順位・AUROC は変わらない）。
+
+    弱ラベル（MIL）の学習は、正バッグの「どれか 1 つ」しか押し上げないので、スコア全体が
+    ずれた位置に出る。温度スケーリングは縮尺しか直せず、このずれは直せない（G8 で実測:
+    AUROC 1.0 のまま ECE 0.39）。切片の最尤（ニュートン法）で較正枠の事前に合わせる。
+    """
+    logits = probe.logits(latents)
+    targets = labels.astype(np.float64)
+    shift = 0.0
+    for _ in range(50):
+        p = 1.0 / (1.0 + np.exp(-(logits + shift)))
+        gradient = float(np.mean(p - targets))
+        curvature = float(np.mean(p * (1.0 - p))) + 1e-9
+        step = gradient / curvature
+        shift -= step
+        if abs(step) < 1e-8:
+            break
+    probe.load_parameters(weights=probe.weights, bias=float(probe.bias) + shift)
+
+
 def _bags_of_slot(
     series: EntitySeries, bags: Sequence[TimeBag], settings: BridgeSettings, slot: int
 ) -> list[TimeBag]:
@@ -299,7 +341,12 @@ def _labelled(
     where: dict[str, tuple[NDArray[np.intp], range]] = {}
     for s in series:
         window = _slices(len(s.timestamps), settings)[slot]
-        keep, flags = _labels(s, _bags_of_slot(s, by_entity[s.entity], settings, slot), window)
+        keep, flags = _labels(
+            s,
+            _bags_of_slot(s, by_entity[s.entity], settings, slot),
+            window,
+            half_width=timedelta(seconds=settings.weak_label_min_half_width_s),
+        )
         if len(keep):
             rows.append(s.latents[keep])
             labels.append(flags)

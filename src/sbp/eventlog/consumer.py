@@ -236,7 +236,13 @@ class KafkaEventConsumer:
         handled = 0
         last_data = time.monotonic()
         while not self._stopping.is_set():
-            batch = await self._consumer.getmany(timeout_ms=500)  # type: ignore[attr-defined]
+            # **取得の上限を残りの件数にする。** 上限なしで取ると、取れたぶんのうち上限を超えた
+            # 残りを処理しないまま戻ることになり、位置は進んでいるので残りは二度と読まれない
+            # （G8 で発見: max_events < バッチのとき、後ろのイベントが黙って失われた）
+            remaining = None if max_events is None else max(max_events - handled, 1)
+            batch = await self._consumer.getmany(  # type: ignore[attr-defined]
+                timeout_ms=500, max_records=remaining
+            )
             if not batch:
                 if max_events is not None:
                     break

@@ -328,3 +328,33 @@ class TestEventLifting:
         assert len(events) == 1
         assert events[0].fluent == "running"
         assert events[0].inferred_event_type.pmf["start_cmd"] > 0.5
+
+    def test_the_envelope_carries_the_state_probability_not_the_event_confidence(
+        self, rules: EventCalculusRules
+    ) -> None:
+        """イベントの確率は「変化後にフルーエントが成立している確率」（ADR-0026）。
+
+        下流（信念更新・照合）は ``PhysicalEvent/<フルーエント>`` の確率を
+        フルーエントの確率として読む。
+        停止（fall）で高い確率を載せると、停止が「稼働の証拠」として数えられる。
+        """
+        probabilities = np.concatenate([np.full(30, 0.05), np.full(30, 0.95), np.full(30, 0.05)])
+        events = lift_events(
+            subject=PUMP,
+            probe_outputs={"Running": probabilities},
+            timestamps=_timestamps(90),
+            rules=rules,
+            settings=BridgeSettings(min_duration_s=60.0),
+            probe_ids={"Running": "https://sbp.example/site/siteA/probe/running-v1"},
+        )
+        assert len(events) == 2
+        rise, fall = (
+            e.to_envelope(
+                site_id="siteA",
+                event_type_iri="sbp-core:PhysicalEvent/ent:Running",
+                ontology_version="0.6.0",
+            )
+            for e in events
+        )
+        assert rise.belief.p > 0.8  # type: ignore[union-attr]
+        assert fall.belief.p < 0.2  # type: ignore[union-attr]
