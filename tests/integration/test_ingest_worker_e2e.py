@@ -103,7 +103,7 @@ def business_db(tmp_path: Path) -> Path:
 async def ingest_settings(
     settings: Settings, site: str, business_db: Path, postgres_available: None
 ) -> AsyncIterator[Settings]:
-    """取込ワーカーの設定。テスト後にこの拠点のカーソルを消す。"""
+    """取込ワーカーの設定。テスト後にこの拠点のカーソルと記録の投影を消す。"""
     del postgres_available
     yield settings.model_copy(
         update={
@@ -113,6 +113,7 @@ async def ingest_settings(
     )
     async with await psycopg.AsyncConnection.connect(settings.pg_dsn, autocommit=True) as conn:
         await conn.execute("DELETE FROM ingest_cursors WHERE site = %s", (site,))
+        await conn.execute("DELETE FROM business_records WHERE site = %s", (site,))
 
 
 async def _collect(settings: Settings, topic: str, *, expect: int) -> list[EventEnvelope]:

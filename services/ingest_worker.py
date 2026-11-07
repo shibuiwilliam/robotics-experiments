@@ -59,6 +59,8 @@ if TYPE_CHECKING:
 
     EventSink = Callable[[str, EventEnvelope], Awaitable[object]]
     """``(トピック, イベント)`` を送る（``KafkaEventProducer.send`` を包む）。"""
+    RecordSink = Callable[[Sequence[Record]], Awaitable[object]]
+    """送信し終えた記録の存在を投影表に追記する（``RecordIndex.add``。ADR-0017）。"""
 
 __all__ = ["MASTER_TABLE", "PLAN_TABLE", "IngestWorker", "build_worker", "main"]
 
@@ -128,6 +130,7 @@ class IngestWorker:
         plans: PlanSync | None = None,
         cursors: CursorStore | None = None,
         metrics: MetricRecorder | None = None,
+        records: RecordSink | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -139,6 +142,7 @@ class IngestWorker:
         plans: 計画の同期（``None`` なら planned の文を書かない）。
         cursors: 取込カーソル（``None`` なら毎周期全行を読む）。
         metrics: 指標の記録先（``cdc_lag`` / ``mapping_violations``）。
+        records: 記録の存在の投影（``None`` なら書かない。期待の記号側の検証が記録を引けない）。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -158,6 +162,7 @@ class IngestWorker:
         self._master = master
         self._plans = plans
         self._cursor_store = cursors
+        self._records = records
         self._cursors: dict[tuple[str, str], datetime] | None = None
         self._metrics = metrics
         self._last_poll: datetime | None = None
@@ -169,6 +174,7 @@ class IngestWorker:
                 ("master", master),
                 ("plans", plans),
                 ("cursors", cursors),
+                ("records", records),
             )
             if given is None
         )
@@ -241,6 +247,9 @@ class IngestWorker:
         for topic, event in result.events:
             await self._sink(topic, event)
         handled = len(result.events)
+        if self._records is not None:
+            # 送信の後・カーソルの前。書けなければカーソルは進まず、次周期に送り直す（冪等）
+            await self._records(result.records)
         if table == PLAN_TABLE:
             handled += await self._sync_plans(result.records, at=at)
         newest = _newest_revision(rows)
@@ -344,6 +353,7 @@ async def build_worker(
         HttpGraphStore,
         IngestCursorStore,
         MetricStore,
+        RecordIndex,
     )
     from services.metrics import MetricRecorder  # noqa: PLC0415
 
@@ -375,6 +385,7 @@ async def build_worker(
         plans=PlanSync(assertions, site_id=site_id),
         cursors=IngestCursorStore(connection, site=site_id),
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
+        records=RecordIndex(connection, site=site_id).add,
     )
     log.info("worker.wired", worker=WORKER_NAME, site_id=site_id, tables=sorted(connectors))
     return worker, producer

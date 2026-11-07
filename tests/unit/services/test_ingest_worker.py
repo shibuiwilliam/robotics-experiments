@@ -30,7 +30,10 @@ from sbp.integration.mock.business_system import build_default_scenario
 from sbp.knowledge import AssertionStore, EmbeddedGraphStore
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sbp.core.events import EventEnvelope
+    from sbp.core.records import Record
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 T0 = datetime(2026, 9, 12, 9, tzinfo=UTC)
@@ -48,6 +51,17 @@ class _Sink:
         if self.fail:
             raise ConnectionError("broker down")
         self.sent.append((topic, event))
+
+
+class _Records:
+    """記録の存在の投影（``RecordIndex.add`` の代わり）。"""
+
+    def __init__(self) -> None:
+        self.added: list[Record] = []
+
+    async def __call__(self, records: Sequence[Record]) -> int:
+        self.added.extend(records)
+        return len(records)
 
 
 class _Cursors:
@@ -78,7 +92,11 @@ def _graph() -> EmbeddedGraphStore:
 
 
 def _worker(
-    tmp_path: Path, *, sink: _Sink | None = None, cursors: _Cursors | None = None
+    tmp_path: Path,
+    *,
+    sink: _Sink | None = None,
+    cursors: _Cursors | None = None,
+    records: _Records | None = None,
 ) -> tuple[IngestWorker, _Sink, _Cursors, EmbeddedGraphStore]:
     graph = _graph()
     assertions = AssertionStore(graph, site_id=SITE)
@@ -94,6 +112,7 @@ def _worker(
         master=MasterDataSync(assertions, graph, site_id=SITE),
         plans=PlanSync(assertions, site_id=SITE),
         cursors=cursors,
+        records=records,
     )
     return worker, sink, cursors, graph
 
@@ -130,6 +149,27 @@ class TestOneCycle:
         assert all(table != "asset_register" for _source, table in cursors.saved), (
             "台帳は毎周期全行を読むのでカーソルを持たない"
         )
+
+
+class TestRecordIndex:
+    """記録の存在の投影（ADR-0017）。送信の後に書く。"""
+
+    @pytest.mark.asyncio
+    async def test_sent_records_are_indexed_with_their_entity(self, tmp_path: Path) -> None:
+        records = _Records()
+        worker, _sink, _c, _g = _worker(tmp_path, records=records)
+        await worker.step()
+        assert records.added, "業務記録の存在が投影に渡る"
+        assert P101 in {record.is_about for record in records.added}
+
+    @pytest.mark.asyncio
+    async def test_a_failed_send_indexes_nothing(self, tmp_path: Path) -> None:
+        """送れなかった記録は「あった」ことにしない。"""
+        records = _Records()
+        worker, _s, _c, _g = _worker(tmp_path, sink=_Sink(fail=True), records=records)
+        with pytest.raises(ConnectionError):
+            await worker.step()
+        assert records.added == []
 
 
 class TestIdempotency:
@@ -170,7 +210,7 @@ class TestUnconfiguredPaths:
             mappings=MappingRegistry.from_directory(REPO_ROOT / "mappings"),
             reliability=ReliabilityRegistry.from_directory(REPO_ROOT / "reliability"),
         )
-        assert worker.unwired == ("connectors", "sink", "master", "plans", "cursors")
+        assert worker.unwired == ("connectors", "sink", "master", "plans", "cursors", "records")
         assert await worker.step() == 0
 
     @pytest.mark.asyncio

@@ -35,6 +35,7 @@ from sbp.knowledge.latent import LatentIndex, LatentNeighbour, LatentRegistratio
 from sbp.knowledge.master import RDF_TYPE, rebuild_master_projection
 from sbp.knowledge.metrics_store import MetricStore
 from sbp.knowledge.observations import ObservationQueue, ObservationRow
+from sbp.knowledge.records import RecordIndex
 from sbp.knowledge.regrounding import (
     CompatibilityMatrix,
     DiffEntry,
@@ -87,6 +88,7 @@ __all__ = [
     "ObservationRow",
     "PartWholeEdge",
     "PlanStrategy",
+    "RecordIndex",
     "RegroundingPlan",
     "RegroundingReport",
     "RegroundingTrigger",
