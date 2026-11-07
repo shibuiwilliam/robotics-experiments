@@ -464,10 +464,10 @@ M8 の目的と G8 は変えない。ADR-0030。
 
 - [x] **M9-01** 再接地の実行（2026-11-08 完了。ADR-0031） — `scripts/reground.py`（既定 dry-run、`--apply`）、潜在 → プローブ → 昇格 → 信念更新の再生。旧文は `tx_to` を閉じるだけ。差分レポートと `regrounding_duration`
 - [x] **M9-02** 予測の周期ジョブ（2026-11-08 完了。ADR-0032） — WM のロールアウト → `predicted` の予測 → 後から来る観測で採点（`forecast_coverage` / `forecast_crps`）
-- [ ] **M9-03** 問い合わせの入口 — GraphQL で予測・説明を読む。What-if はコマンド（`hypothetical` を主信念に入れない）
-- [ ] **M9-04** ゲート G9 の統合テスト — M9-01〜03 を外界だけの模擬で通す。`test_metrics_wiring` の分類を更新
+- [x] **M9-03** 問い合わせの入口（2026-11-08 完了。GraphQL `forecasts`。ABAC を通し、標本は返さない。**説明は既存の `beliefEvidence` が三源を返す。What-if の入口は H-27**）
+- [x] **M9-04** ゲート G9 の統合テスト（2026-11-08 完了。`tests/integration/test_g9_entrances.py`: 再接地 dry-run / apply → 予測と採点 → 実物の API で ABAC と H-25）。`test_metrics_wiring` は 23 配線
 
-**ゲート G9**: G8 維持 + M9-04 緑。M9 に入れないもの（同一性束縛・LLM の入口・SHACL 隔離）は `docs/HITL.md` H-27。
+**ゲート G9**（2026-11-08 通過）: G8 維持 + M9-04 緑。M9 に入れないもの（同一性束縛・LLM の入口・SHACL 隔離・What-if の入口）は `docs/HITL.md` H-27。
 
 ---
 
