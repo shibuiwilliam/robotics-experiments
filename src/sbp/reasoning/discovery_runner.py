@@ -15,13 +15,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from sbp.core.errors import LlmError, ReasoningError
 from sbp.core.logging import get_logger
 from sbp.core.time import ensure_utc
+from sbp.llm.base import LlmTask
+from sbp.llm.registry import PromptRegistry, load_routing
 from sbp.reasoning.concept_store import from_record
-from sbp.reasoning.discovery import ProposalStatus, repeated_discrepancy_signals
+from sbp.reasoning.discovery import (
+    ConceptProposal,
+    ProposalStatus,
+    repeated_discrepancy_signals,
+)
+from sbp.reasoning.discovery_prompt import PROPOSAL_SCHEMA, ProposalOutput, render_messages
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -29,9 +38,16 @@ if TYPE_CHECKING:
 
     from sbp.knowledge.concepts import ConceptProposalRecord
     from sbp.knowledge.discrepancies import DiscrepancyRecord
+    from sbp.llm.base import Provider
     from sbp.reasoning.discovery import DiscoverySignal
 
-__all__ = ["resolution_signals", "signal_fingerprint", "suppressed_fingerprints"]
+__all__ = [
+    "DiscoveryReport",
+    "resolution_signals",
+    "run_discovery",
+    "signal_fingerprint",
+    "suppressed_fingerprints",
+]
 
 log = get_logger(__name__)
 
@@ -114,3 +130,131 @@ def suppressed_fingerprints(
             if rejected_at is None or now_ - ensure_utc(rejected_at) < cooldown:
                 suppressed.update(signal_fingerprint(signal) for signal in proposal.signals)
     return frozenset(suppressed)
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryReport:
+    """発見 1 周期の結果。**件数を内訳で持つ**——「提案が 0 件」の理由（抑制・LLM の失敗・既存で
+    足りる）がログに出ないと、動いていないのか、出すものが無いのかが区別できない。
+
+    Attributes:
+        signals: 入口が出した signal の数。
+        suppressed: 指紋で抑えた数（LLM を呼んでいない）。
+        deferred: 周期あたりの上限で次周期に回した数。
+        failed: LLM の失敗・出力の崩れで提案にならなかった数。
+        declined: LLM が「既存の語彙で足りる」と答えた（または既存と同名の）数。
+        proposals: 生成した提案（``PROPOSED``）。
+    """
+
+    signals: int
+    suppressed: int
+    deferred: int
+    failed: int
+    declined: int
+    proposals: tuple[ConceptProposal, ...]
+
+
+def run_discovery(
+    signals: Sequence[DiscoverySignal],
+    *,
+    existing: Sequence[ConceptProposalRecord],
+    provider: Provider,
+    at: datetime,
+    cooldown: timedelta,
+    max_proposals: int,
+    existing_fluents: Sequence[str],
+) -> DiscoveryReport:
+    """signal から提案を作る（抑制 → 上限 → LLM の順。ADR-0019）。
+
+    **signal 1 件ごとに 1 回呼ぶ**（プロンプトの制約: 1 回の提案は 1 概念まで）。強い signal から
+    ``max_proposals`` 件まで。LLM を呼ぶ前に指紋で抑えるので、抑制された signal は費用が掛からない。
+
+    **LLM の失敗は提案を作らない。** 例外は握らずに数える（replay で fixture が無い、出力が崩れた、
+    プロバイダの失敗）——黙って成功にすると、発見が止まっていることに気付けない。1 件の失敗で残りを
+    止めない。出力は pydantic で検証してから提案にする（設計書 §7.5）。**自動採用しない**
+    （``PROPOSED`` のまま。不変条件 11）。
+
+    同じ周期で既存と同名の提案が返ってきたら採らない（LLM は同じ状況に同じ名前を付けやすい）。
+
+    Args:
+        signals: 入口が出した signal。
+        existing: 既存の提案の行（採否済みを含む）。
+        provider: LLM プロバイダ（replay / live）。
+        at: 現在時刻（提案時刻・冷却の判定）。
+        cooldown: 却下の冷却期間。
+        max_proposals: 1 周期あたりに LLM を呼ぶ上限。
+        existing_fluents: 既存のフルーエント型のローカル名（プロンプトに渡す）。
+
+    Returns:
+        結果と内訳。
+    """
+    blocked = suppressed_fingerprints(existing, at=at, cooldown=cooldown)
+    ordered = sorted(signals, key=lambda signal: signal.strength, reverse=True)
+    candidates = [signal for signal in ordered if signal_fingerprint(signal) not in blocked]
+    suppressed = len(ordered) - len(candidates)
+    selected, deferred = candidates[:max_proposals], max(0, len(candidates) - max_proposals)
+
+    routing = load_routing()[LlmTask.CONCEPT_PROPOSAL]
+    template = PromptRegistry().get(LlmTask.CONCEPT_PROPOSAL, routing.prompt_version)
+    taken = {record.name.lower() for record in existing}
+    proposals: list[ConceptProposal] = []
+    failed = declined = 0
+    for signal in selected:
+        messages = render_messages(template.body, [signal], existing=existing_fluents)
+        try:
+            response = provider.complete_structured(
+                messages,
+                schema=PROPOSAL_SCHEMA,
+                task=LlmTask.CONCEPT_PROPOSAL,
+                prompt_version=template.version,
+            )
+            output: ProposalOutput = response.validated(ProposalOutput)
+        except LlmError as exc:
+            failed += 1
+            log.warning(
+                "discovery.proposal_failed",
+                fingerprint=signal_fingerprint(signal),
+                error=str(exc),
+            )
+            continue
+        if output.name.lower() in taken:
+            declined += 1
+            log.info("discovery.proposal_duplicate_name", name=output.name)
+            continue
+        try:
+            proposal = ConceptProposal(
+                name=output.name,
+                definition=output.definition,
+                superclass=output.superclass,
+                mutually_exclusive_with=output.mutually_exclusive_with,
+                initiates=output.initiates,
+                terminates=output.terminates,
+                rejected_alternatives=output.rejected_alternatives,
+                signals=(signal,),
+                proposed_at=at,
+                llm_provenance=response.provenance(),
+            )
+        except ReasoningError as exc:
+            declined += 1
+            log.info("discovery.proposal_declined", error=str(exc))
+            continue
+        taken.add(output.name.lower())
+        proposals.append(proposal)
+    report = DiscoveryReport(
+        signals=len(ordered),
+        suppressed=suppressed,
+        deferred=deferred,
+        failed=failed,
+        declined=declined,
+        proposals=tuple(proposals),
+    )
+    log.info(
+        "discovery.cycle",
+        signals=report.signals,
+        suppressed=report.suppressed,
+        deferred=report.deferred,
+        failed=report.failed,
+        declined=report.declined,
+        proposed=len(report.proposals),
+    )
+    return report

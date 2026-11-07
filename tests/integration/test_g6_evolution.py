@@ -44,10 +44,8 @@ from sbp.core.time import now
 from sbp.llm import (
     LlmMode,
     LlmTask,
-    Message,
     PromptRegistry,
     ReplayProvider,
-    Role,
     load_routing,
 )
 from sbp.reasoning import (
@@ -57,12 +55,12 @@ from sbp.reasoning import (
     cluster_latents,
     find_low_coverage_clusters,
 )
+from sbp.reasoning.discovery_prompt import PROPOSAL_SCHEMA, render_messages
 from sbp.testing import Fluent, SynthConfig, SynthWorld
 from sbp.worldmodel import KoopmanConfig, KoopmanModel
 
 if TYPE_CHECKING:
     from sbp.knowledge import AssertionStore
-    from sbp.reasoning import DiscoverySignal
 
 pytestmark = [pytest.mark.integration, pytest.mark.enable_socket]
 
@@ -75,46 +73,6 @@ HIDDEN_FLUENT = Fluent.ACCESSIBLE
 
 ``Accessible`` を選んだのは、保留窓に両クラスが入る唯一のフルーエントだからである
 （``VibrationAnomaly`` は保留窓が全て真で AUROC が定義できない）。"""
-
-PROPOSAL_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "name": {"type": "string"},
-        "definition": {"type": "string"},
-        "superclass": {"type": "string"},
-        "mutually_exclusive_with": {"type": "array", "items": {"type": "string"}},
-        "initiates": {"type": "array", "items": {"type": "string"}},
-        "terminates": {"type": "array", "items": {"type": "string"}},
-        "rejected_alternatives": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["name", "definition", "rejected_alternatives"],
-}
-
-
-def render_messages(prompt_body: str, signals: tuple[DiscoverySignal, ...]) -> list[Message]:
-    """LLM へのメッセージを**決定的に**組み立てる。
-
-    fixture の鍵はメッセージの内容ハッシュなので、ここが非決定的だと fixture が当たらない。
-    クラスタのサイズと活性だけを渡し、潜在ベクトルそのものは渡さない——数値の羅列は LLM の
-    役に立たず、ハッシュを不安定にするだけである。
-
-    Args:
-        prompt_body: プロンプト本文。
-        signals: 発見 signal。
-    """
-    lines = [f"- {signal.trigger.value}: {signal.note}" for signal in signals]
-    existing = ", ".join(
-        sorted(name for name in ("Running", "UnderMaintenance", "Faulted", "Accessible"))
-    )
-    return [
-        Message(role=Role.SYSTEM, content=prompt_body),
-        Message(
-            role=Role.USER,
-            content=(
-                "既存のフルーエント型: " + existing + "\n発見された signal:\n" + "\n".join(lines)
-            ),
-        ),
-    ]
 
 
 @pytest.fixture(scope="module")
@@ -204,7 +162,11 @@ class TestG6Proposal:
         routing = load_routing()
         entry = routing[LlmTask.CONCEPT_PROPOSAL]
         template = PromptRegistry().get(LlmTask.CONCEPT_PROPOSAL, entry.prompt_version)
-        messages = render_messages(template.body, discovery["signals"])
+        messages = render_messages(
+            template.body,
+            discovery["signals"],
+            existing=("Running", "UnderMaintenance", "Faulted", "Accessible"),
+        )
         provider = ReplayProvider(mode=LlmMode.REPLAY, root=FIXTURE_ROOT)
         response = provider.complete_structured(
             messages,
