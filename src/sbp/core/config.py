@@ -214,7 +214,10 @@ class ReasoningSettings(_DotenvSettings):
     """却下した提案と同じ signal を再提案しない期間（日。H-10 の暫定決定）。0 なら冷却しない。"""
 
     discovery_max_proposals_per_cycle: int = Field(default=3, ge=1, le=100)
-    """1 周期に LLM を呼ぶ（=提案を作る）上限。curation の人手を守る。"""
+    """1 周期に LLM を呼ぶ**試行**の上限（提案の数ではない。失敗や見送りも数える）。
+
+    curation の人手と LLM の費用を守る。毎周期失敗する signal は順位を下げて後ろを試す。
+    """
 
     discovery_min_repeats: int = Field(default=3, ge=2)
     """同じ実体・同じ類型の解決を「反復」とみなす回数（入口 (c)）。"""

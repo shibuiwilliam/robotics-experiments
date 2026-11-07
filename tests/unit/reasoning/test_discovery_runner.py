@@ -334,7 +334,7 @@ class TestRunDiscovery:
         existing = [
             concept_to_record(_proposal(ProposalStatus.PROPOSED, signal=_signal(entity=LINE)))
         ]
-        provider = _Provider(_answer("partiallyrunning"))
+        provider = _Provider(_answer("PartiallyRunning"))
         report = _run(_signals(PUMP), provider, existing=existing)
         assert report.declined == 1
         assert report.proposals == ()
@@ -347,6 +347,50 @@ class TestRunDiscovery:
         provider = _Provider(_answer("PartiallyRunning"))
         report = _run(_signals(PUMP), provider, existing=[rejected])
         assert [p.name for p in report.proposals] == ["PartiallyRunning"]
+
+    def test_a_failing_signal_does_not_starve_the_next_one(self) -> None:
+        """毎周期失敗する signal が上位を占めると、後ろの signal が試されない（レビュー指摘）。"""
+        strong = replace(_signal(entity=PUMP), strength=0.9)
+        weak = replace(_signal(entity=LINE), strength=0.1)
+        first = _Provider(FixtureMissingError("no fixture"))
+        report = _run([strong, weak], first, max_proposals=1)
+        assert report.failed == 1
+        assert report.unproductive == (signal_fingerprint(strong),)
+
+        counts = {signal_fingerprint(strong): 1}
+        second = _Provider(_answer("Weak"))
+        again = run_discovery(
+            [strong, weak],
+            existing=[],
+            provider=second,
+            at=T0,
+            cooldown=COOLDOWN,
+            max_proposals=1,
+            existing_fluents=("Running",),
+            unproductive_counts=counts,
+        )
+        assert [p.signals[0].entities for p in again.proposals] == [(LINE,)], "次は後ろを試す"
+
+    def test_an_unexpected_exception_keeps_the_proposals_already_made(self) -> None:
+        """LlmError 以外の例外でも、それまでに作った提案を失わない（レビュー指摘）。"""
+        provider = _Provider(_answer("First"), AttributeError("boom"), _answer("Third"))
+        report = _run(_signals(PUMP, LINE, "https://sbp.example/site/siteA/asset/P-102"), provider)
+        assert [p.name for p in report.proposals] == ["First", "Third"]
+        assert report.failed == 1
+
+    def test_an_existing_fluent_name_is_declined(self) -> None:
+        provider = _Provider(_answer("Running"))
+        report = _run(_signals(PUMP), provider)
+        assert report.declined == 1
+        assert report.proposals == ()
+        assert report.unproductive
+
+    def test_a_malformed_name_is_a_failure_not_a_proposal(self) -> None:
+        for bad in ("foo bar", "lowerCamel", "X<script>", ""):
+            provider = _Provider(_answer(bad))
+            report = _run(_signals(PUMP), provider)
+            assert report.failed == 1, bad
+            assert report.proposals == (), bad
 
     def test_the_messages_are_deterministic(self) -> None:
         """fixture の鍵（内容ハッシュ）が安定する。順序や時刻が混ざらない。"""

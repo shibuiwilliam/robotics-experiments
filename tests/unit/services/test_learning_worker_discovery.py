@@ -18,7 +18,7 @@ from services.learning_worker import ConceptDiscovery, LearningWorker
 
 from sbp.core.config import ReasoningSettings, Settings
 from sbp.core.errors import FixtureMissingError
-from sbp.core.time import Interval
+from sbp.core.time import Interval, now
 from sbp.knowledge.concepts import ConceptProposalRecord
 from sbp.llm.base import ProviderResponse, TokenUsage
 from sbp.reasoning.concept_store import from_record
@@ -210,6 +210,27 @@ class TestFailures:
         assert await worker.step() == 0
         assert worker.discovery_failed_total == 1
         assert worker.proposed_total == 0
+
+
+class TestRetryAndRanking:
+    @pytest.mark.asyncio
+    async def test_a_dependency_failure_retries_soon_not_after_a_full_period(self) -> None:
+        """読み出しの一時的な障害で 1 日分の発見を失わない（レビュー指摘）。"""
+        world, provider = _World(), _Provider(_ANSWER)
+        world.fail_resolved = True
+        worker = _worker(world, provider)
+        assert await worker.step() == 0
+        world.fail_resolved = False
+        # 既定の周期は 1 日だが、障害後の再試行は 5 分以内に来る
+        assert worker.discover_due(at=now() + timedelta(minutes=6))
+        assert not worker.discover_due(at=now() + timedelta(seconds=1))
+
+    @pytest.mark.asyncio
+    async def test_an_unproductive_signal_is_remembered_for_the_next_cycle(self) -> None:
+        world, provider = _World(), _Provider(FixtureMissingError("no fixture"))
+        worker = _worker(world, provider)
+        await worker.step()
+        assert sum(worker.unproductive_signals.values()) == 1
 
 
 class TestUnwired:

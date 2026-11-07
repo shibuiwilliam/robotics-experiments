@@ -154,6 +154,12 @@ _VERIFY_MAX_FAILURES = 3
 飢えさせる。隔離は警告ログに出し、再起動で再試行する（永続化しない: 原因の修正後に
 再起動すれば戻る）。"""
 
+_DISCOVERY_RETRY_S = 300.0
+"""概念発見の依存（不一致・提案の読み出し）が一時的に失敗したときの再試行間隔（秒）。"""
+
+_DISCOVERY_LIST_LIMIT = 5000
+"""既存の提案を読む上限。超えたら警告する（古い採択済みの提案が抑制から外れる恐れ）。"""
+
 _DEFAULT_PERIOD_S = 30.0
 """キューを引く周期（秒）。人の判断は毎秒来るものではない。"""
 
@@ -299,6 +305,7 @@ class LearningWorker:
         self._answers = answers
         self._discovery = discovery
         self._last_discover: datetime | None = None
+        self._unproductive: dict[str, int] = {}
         self.proposed_total = 0
         self.discovery_failed_total = 0
         if discovery is None:
@@ -374,6 +381,11 @@ class LearningWorker:
         applied = await self._apply_decisions()
         return applied + await self._verify_overdue() + await self._discover()
 
+    @property
+    def unproductive_signals(self) -> dict[str, int]:
+        """提案にならなかった signal の指紋と回数（次の周期で順位を下げる。プロセス内のみ）。"""
+        return dict(self._unproductive)
+
     def discover_due(self, *, at: datetime) -> bool:
         """この時点で概念発見を回すべきか。
 
@@ -420,11 +432,18 @@ class LearningWorker:
                 cooldown=timedelta(days=reasoning.discovery_rejection_cooldown_days),
                 max_proposals=reasoning.discovery_max_proposals_per_cycle,
                 existing_fluents=d.fluents,
+                unproductive_counts=self._unproductive,
             )
         except Exception as exc:  # 依存の一時的な障害でワーカーのループを止めない
             self.discovery_failed_total += 1
+            # 次の周期（既定 1 日）まで待たず、短い間隔で再試行する。読み出しの一時的な障害で
+            # 1 日分の発見を失わない
+            retry = min(reasoning.discovery_period_s, _DISCOVERY_RETRY_S)
+            self._last_discover = at - timedelta(seconds=reasoning.discovery_period_s - retry)
             log.warning("worker.discovery_unavailable", worker=WORKER_NAME, error=str(exc))
             return 0
+        for fingerprint in report.unproductive:
+            self._unproductive[fingerprint] = self._unproductive.get(fingerprint, 0) + 1
         self.discovery_failed_total += report.failed
         written = 0
         for proposal in report.proposals:
@@ -1291,7 +1310,16 @@ def _build_discovery(settings: Settings, *, store: Any, proposals: Any) -> Conce
 
     async def existing() -> list[ConceptProposalRecord]:
         """既存の提案を採否済みも含めて読む（再提案の抑制）。"""
-        return await proposals.queue(limit=1000, include_curated=True)
+        found = await proposals.queue(limit=_DISCOVERY_LIST_LIMIT, include_curated=True)
+        if len(found) >= _DISCOVERY_LIST_LIMIT:
+            # 古い採択済み・判断待ちの提案が窓から落ちると、その signal が再提案される
+            log.warning(
+                "worker.discovery_existing_truncated",
+                worker=WORKER_NAME,
+                limit=_DISCOVERY_LIST_LIMIT,
+                detail="再提案の抑制が一部効かない。保持窓か専用の問い合わせを検討する",
+            )
+        return found
 
     fluents = sorted(iri.rsplit("#", 1)[-1] for iri in vocab.FLUENT_TYPES)
     return ConceptDiscovery(

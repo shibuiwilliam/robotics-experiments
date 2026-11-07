@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from sbp.core.errors import LlmError, ReasoningError
+from sbp.core.errors import ReasoningError
 from sbp.core.logging import get_logger
 from sbp.core.time import ensure_utc
 from sbp.llm.base import LlmTask
@@ -33,7 +33,7 @@ from sbp.reasoning.discovery import (
 from sbp.reasoning.discovery_prompt import PROPOSAL_SCHEMA, ProposalOutput, render_messages
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from datetime import datetime
 
     from sbp.knowledge.concepts import ConceptProposalRecord
@@ -160,9 +160,12 @@ class DiscoveryReport:
         signals: 入口が出した signal の数。
         suppressed: 指紋で抑えた数（LLM を呼んでいない）。
         deferred: 周期あたりの上限で次周期に回した数。
-        failed: LLM の失敗・出力の崩れで提案にならなかった数。
-        declined: LLM が「既存の語彙で足りる」と答えた（または既存と同名の）数。
+        failed: LLM の失敗・出力の崩れ・想定外の例外で提案にならなかった数。
+        declined: LLM が「既存の語彙で足りる」と答えた（既存のフルーエント型・妨げている提案と
+            同名を含む）数。
         proposals: 生成した提案（``PROPOSED``）。
+        unproductive: 提案にならなかった signal の指紋（失敗・見送り）。呼び出し側が覚えて次の
+            周期の順位を下げる——毎周期失敗する signal が上位を占めて後ろを飢えさせない。
     """
 
     signals: int
@@ -171,6 +174,7 @@ class DiscoveryReport:
     failed: int
     declined: int
     proposals: tuple[ConceptProposal, ...]
+    unproductive: tuple[str, ...] = ()
 
 
 def run_discovery(
@@ -182,18 +186,24 @@ def run_discovery(
     cooldown: timedelta,
     max_proposals: int,
     existing_fluents: Sequence[str],
+    unproductive_counts: Mapping[str, int] | None = None,
 ) -> DiscoveryReport:
     """signal から提案を作る（抑制 → 上限 → LLM の順。ADR-0019）。
 
-    **signal 1 件ごとに 1 回呼ぶ**（プロンプトの制約: 1 回の提案は 1 概念まで）。強い signal から
-    ``max_proposals`` 件まで。LLM を呼ぶ前に指紋で抑えるので、抑制された signal は費用が掛からない。
+    **signal 1 件ごとに 1 回呼ぶ**（プロンプトの制約: 1 回の提案は 1 概念まで）。呼ぶ回数の上限が
+    ``max_proposals``（**提案の数ではなく試行の数**。失敗や見送りも費用が掛かりうる）。
+    LLM を呼ぶ前に指紋で抑えるので、抑制された signal は費用が掛からない。
+
+    **順位は「これまで提案にならなかった回数が少ない順、同数なら強い順」。** 毎周期失敗する signal
+    （replay で fixture が無い等）が上位を占め続けると、後ろの signal が試されない。
 
     **LLM の失敗は提案を作らない。** 例外は握らずに数える（replay で fixture が無い、出力が崩れた、
-    プロバイダの失敗）——黙って成功にすると、発見が止まっていることに気付けない。1 件の失敗で残りを
-    止めない。出力は pydantic で検証してから提案にする（設計書 §7.5）。**自動採用しない**
-    （``PROPOSED`` のまま。不変条件 11）。
+    プロバイダの失敗、想定外の例外）——黙って成功にすると、発見が止まっていることに気付けない。
+    **1 件の失敗で、それまでに作った提案を失わず、残りも止めない。** 出力は pydantic で検証して
+    から提案にする（設計書 §7.5）。**自動採用しない**（``PROPOSED`` のまま。不変条件 11）。
 
-    同じ周期で既存と同名の提案が返ってきたら採らない（LLM は同じ状況に同じ名前を付けやすい）。
+    既存のフルーエント型・妨げている提案と同名の提案は採らない（LLM は同じ状況に同じ名前を
+    付けやすい）。
 
     Args:
         signals: 入口が出した signal。
@@ -201,8 +211,9 @@ def run_discovery(
         provider: LLM プロバイダ（replay / live）。
         at: 現在時刻（提案時刻・冷却の判定）。
         cooldown: 却下の冷却期間。
-        max_proposals: 1 周期あたりに LLM を呼ぶ上限。
+        max_proposals: 1 周期あたりに LLM を呼ぶ試行の上限。
         existing_fluents: 既存のフルーエント型のローカル名（プロンプトに渡す）。
+        unproductive_counts: 指紋 → これまで提案にならなかった回数（順位を下げる）。
 
     Returns:
         結果と内訳。
@@ -211,7 +222,11 @@ def run_discovery(
     blocked = frozenset(
         signal_fingerprint(signal) for proposal in blocking for signal in proposal.signals
     )
-    ordered = sorted(signals, key=lambda signal: signal.strength, reverse=True)
+    counts = unproductive_counts or {}
+    ordered = sorted(
+        signals,
+        key=lambda signal: (counts.get(signal_fingerprint(signal), 0), -signal.strength),
+    )
     candidates = [signal for signal in ordered if signal_fingerprint(signal) not in blocked]
     suppressed = len(ordered) - len(candidates)
     selected, deferred = candidates[:max_proposals], max(0, len(candidates) - max_proposals)
@@ -219,7 +234,9 @@ def run_discovery(
     routing = load_routing()[LlmTask.CONCEPT_PROPOSAL]
     template = PromptRegistry().get(LlmTask.CONCEPT_PROPOSAL, routing.prompt_version)
     taken = {proposal.name.lower() for proposal in blocking}
+    taken |= {name.lower() for name in existing_fluents}
     proposals: list[ConceptProposal] = []
+    unproductive: list[str] = []
     failed = declined = 0
     for signal in selected:
         messages = render_messages(template.body, [signal], existing=existing_fluents)
@@ -231,16 +248,19 @@ def run_discovery(
                 prompt_version=template.version,
             )
             output: ProposalOutput = response.validated(ProposalOutput)
-        except LlmError as exc:
+        except Exception as exc:  # LlmError に限らない。1 件の想定外で作った提案を失わない
             failed += 1
+            unproductive.append(signal_fingerprint(signal))
             log.warning(
                 "discovery.proposal_failed",
                 fingerprint=signal_fingerprint(signal),
+                error_type=type(exc).__name__,
                 error=str(exc),
             )
             continue
         if output.name.lower() in taken:
             declined += 1
+            unproductive.append(signal_fingerprint(signal))
             log.info("discovery.proposal_duplicate_name", name=output.name)
             continue
         try:
@@ -258,6 +278,7 @@ def run_discovery(
             )
         except ReasoningError as exc:
             declined += 1
+            unproductive.append(signal_fingerprint(signal))
             log.info("discovery.proposal_declined", error=str(exc))
             continue
         taken.add(output.name.lower())
@@ -269,6 +290,7 @@ def run_discovery(
         failed=failed,
         declined=declined,
         proposals=tuple(proposals),
+        unproductive=tuple(unproductive),
     )
     log.info(
         "discovery.cycle",

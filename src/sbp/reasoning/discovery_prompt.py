@@ -46,7 +46,8 @@ class ProposalOutput(BaseModel):
     """LLM の出力の契約。未知のフィールドは弾かず捨てる（``evidence_note`` などの説明用）。
 
     Attributes:
-        name: 概念のローカル名。
+        name: 概念のローカル名（``UpperCamelCase``。オントロジーのローカル名規約。崩れた名前は
+            IRI の断片として使えないので検証で弾く）。
         definition: 一文の定義（成立条件）。
         superclass: 上位概念のローカル名。
         mutually_exclusive_with: 排他になる既存フルーエント型。
@@ -58,7 +59,7 @@ class ProposalOutput(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    name: str = Field(min_length=1)
+    name: str = Field(pattern=r"^[A-Z][A-Za-z0-9]*$")
     definition: str = Field(min_length=1)
     superclass: str = ""
     mutually_exclusive_with: tuple[str, ...] = ()
