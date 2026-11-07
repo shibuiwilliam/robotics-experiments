@@ -112,7 +112,7 @@ export async function fetchBeliefs(
 const DISCREPANCY_FIELDS = `
   discrepancyId kind status subjects severity
   detectedAt detector assertions evidence assigneeRole ontologyVersion
-  intervalStart intervalEnd
+  intervalStart intervalEnd fluentRefs
 `;
 
 /**
@@ -314,6 +314,7 @@ export async function fetchBeliefEvidence(
           contribution { observed record plan dominant prior sourceEventId excludedRecords }
         }
         planned { start end adherence }
+        contributionsTruncatedAfter
       }
     }`,
     params,

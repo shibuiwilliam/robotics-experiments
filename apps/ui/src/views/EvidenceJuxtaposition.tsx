@@ -109,7 +109,7 @@ function TargetEvidence({
     );
   }
   const columns = sourceColumns(state.evidence);
-  const rows = pointRows(state.evidence.points);
+  const rows = pointRows(state.evidence.points, state.evidence);
   return (
     <section>
       {heading}
@@ -134,6 +134,11 @@ function TargetEvidence({
                 {column.state === "contributed" && column.unrecordedPoints > 0 ? (
                   <div className="none">
                     寄与が記録されていない点 {column.unrecordedPoints} 件を含まない
+                  </div>
+                ) : null}
+                {column.state === "contributed" && column.unreadPoints > 0 ? (
+                  <div className="none">
+                    寄与を読めていない点 {column.unreadPoints} 件を含まない（読み出しが上限で切れた）
                   </div>
                 ) : null}
                 {column.source === "plan" ? (

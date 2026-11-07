@@ -247,7 +247,7 @@ class TestDiscrepancyResource:
                 json={
                     "query": """{ discrepancies(limit: 50) {
                         discrepancyId kind status subjects severity detector
-                        assertions evidence ontologyVersion intervalStart intervalEnd
+                        assertions evidence ontologyVersion intervalStart intervalEnd fluentRefs
                     } }"""
                 },
                 headers={"X-SBP-Principal": OPERATOR},
@@ -266,6 +266,7 @@ class TestDiscrepancyResource:
         # 区間は証拠の三源並置の鍵（M8-17）。右開の終端も返る
         assert found[0]["intervalStart"] is not None
         assert found[0]["intervalEnd"] is not None
+        assert found[0]["fluentRefs"] == [], "根拠 `urn:sbp:assertion:e2e` はフルーエント型ではない"
 
     def test_the_queue_requires_a_principal(self, settings: Settings, seeded: str) -> None:
         """要求者を名乗らなければ不一致を返さない（既定は拒否）。

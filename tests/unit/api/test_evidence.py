@@ -287,3 +287,52 @@ class TestDiscrepancyInterval:
         found = DiscrepancyType.from_record(record)
         assert found.intervalStart is None
         assert found.intervalEnd is None
+
+
+class TestReviewFixes:
+    def test_an_exact_tie_has_no_dominant_source(self) -> None:
+        tie = _contribution(_row(), observed=1.0, record=1.0)
+        assert tie.dominant is None, "同点で先頭の源に印を付けない"
+        assert _contribution(_row(), record=2.0, observed=1.0).dominant == "record"
+        assert _contribution(_row()).dominant is None
+
+    def test_a_naive_datetime_is_refused_at_the_boundary(self) -> None:
+        client = _client([], [], principal=_principal(Modality.INFERRED))
+        query = _QUERY.replace(T0.isoformat(), "2026-11-07T09:00:00")
+        errors = client.post("/graphql", json={"query": query}).json()["errors"]
+        assert "タイムゾーン" in errors[0]["message"]
+
+    def test_a_truncated_contribution_read_is_reported(self) -> None:
+        rows = [_row(at=T0 + timedelta(seconds=i)) for i in range(1000)]
+        contributions = [_contribution(row, observed=1.0) for row in rows]
+        client = _client(rows, contributions, principal=_principal(Modality.INFERRED))
+        query = _QUERY.replace(
+            "planned { adherence }", "planned { adherence } contributionsTruncatedAfter"
+        )
+        data = client.post("/graphql", json={"query": query}).json()["data"]["beliefEvidence"]
+        assert data["contributionsTruncatedAfter"] is not None
+
+    def test_a_complete_read_is_not_reported_as_truncated(self) -> None:
+        row = _row()
+        client = _client(
+            [row], [_contribution(row, observed=1.0)], principal=_principal(Modality.INFERRED)
+        )
+        query = _QUERY.replace(
+            "planned { adherence }", "planned { adherence } contributionsTruncatedAfter"
+        )
+        data = client.post("/graphql", json={"query": query}).json()["data"]["beliefEvidence"]
+        assert data["contributionsTruncatedAfter"] is None
+
+    def test_fluent_refs_keep_only_ontology_fluent_types(self) -> None:
+        """イベント型（``ent#StopCmd``）は IRI の形がフルーエントと同じでも、鍵にしない。"""
+        record = DiscrepancyRecord(
+            discrepancy_id=uuid4(),
+            kind=3,
+            status="Open",
+            status_rank=0,
+            subjects=(PUMP,),
+            severity_score=0.5,
+            detected_at=T0,
+            payload={"assertions": [RUNNING, str(vocab.ent.StopCmd), "urn:sbp:assertion:1"]},
+        )
+        assert DiscrepancyType.from_record(record).fluentRefs == [RUNNING]

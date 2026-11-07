@@ -508,3 +508,51 @@ class TestClaimsDoNotMoveTheClock:
         assert first.update is not None
         assert second.update is not None
         assert second.update.at > first.update.at
+
+
+class TestUndo:
+    """書き込みに失敗した更新を取り消す（M8-17 のレビュー）。戻さずに再配送を受けると、
+    同じ証拠を二重に数える。"""
+
+    def test_undoing_a_probe_update_makes_a_retry_give_the_same_posterior(self) -> None:
+        ingest = _ingest()
+        first = ingest.handle(_event(at=T0, p=0.9))
+        assert first.update is not None
+        assert first.undo is not None
+        first.undo()
+        retry = ingest.handle(_event(at=T0, p=0.9))
+        assert retry.update is not None
+        assert retry.update.posterior == pytest.approx(first.update.posterior)
+
+    def test_without_undo_a_retry_double_counts(self) -> None:
+        """取り消さなかった場合の挙動（undo が必要な理由）を固定する。"""
+        ingest = _ingest()
+        first = ingest.handle(_event(at=T0, p=0.9))
+        again = ingest.handle(_event(at=T0, p=0.9))
+        assert first.update is not None
+        assert again.update is not None
+        assert again.update.posterior > first.update.posterior
+
+    def test_undoing_the_first_update_removes_the_filter(self) -> None:
+        ingest = _ingest()
+        outcome = ingest.handle(_event(at=T0))
+        assert ingest.tracked_entities == 1
+        assert outcome.undo is not None
+        outcome.undo()
+        assert ingest.tracked_entities == 0
+
+    def test_undoing_a_claim_restores_the_time_it_would_be_stamped_with(self) -> None:
+        ingest = _ingest()
+        ingest.handle(_event(at=T0 + timedelta(minutes=10)))
+        first = ingest.handle(_claim_event(at=T0))
+        assert first.undo is not None
+        first.undo()
+        retry = ingest.handle(_claim_event(at=T0))
+        assert first.update is not None
+        assert retry.update is not None
+        assert retry.update.at == first.update.at, "1µs ずつ進まない"
+        assert retry.update.posterior == pytest.approx(first.update.posterior)
+
+    def test_a_skipped_event_has_nothing_to_undo(self) -> None:
+        outcome = _ingest().handle(_event(numeric=True))
+        assert outcome.undo is None

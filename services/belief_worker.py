@@ -323,6 +323,26 @@ class BeliefWorker:
             return
         assert outcome.assertion is not None  # applied が真なら必ずある
         assert outcome.update is not None
+        try:
+            await self._persist(event, outcome)
+        except Exception:
+            # 書けなかった更新を、フィルタの状態に残さない。再配送で同じ証拠が二重に数えられ、
+            # 主張の時刻が 1µs ずつ進む（M8-17 のレビュー）
+            if outcome.undo is not None:
+                outcome.undo()
+            raise
+        self.applied_total += 1
+        self._measure(event, outcome, started=started)
+
+    async def _persist(self, event: EventEnvelope, outcome: IngestOutcome) -> None:
+        """寄与とアサーションを書く（寄与 → アサーションの順。ADR-0020）。
+
+        Args:
+            event: 処理したイベント。
+            outcome: 信念更新の結果（更新した場合）。
+        """
+        assert outcome.assertion is not None
+        assert outcome.update is not None
         if self._contributions is not None:
             # **寄与 → アサーションの順。** 逆だと、アサーションがあるのに源が分からない文が残る。
             # 寄与だけ残る孤児は無害（読み出しがアサーションと突き合わせる）。失敗は上に投げて
@@ -344,8 +364,6 @@ class BeliefWorker:
                 )
             )
         self._write(outcome.assertion)
-        self.applied_total += 1
-        self._measure(event, outcome, started=started)
 
     def _measure(self, event: EventEnvelope, outcome: IngestOutcome, *, started: datetime) -> None:
         """信念更新 1 件ぶんの指標を記録する（M8-14）。

@@ -60,6 +60,7 @@ function evidence(overrides: Partial<BeliefEvidence> = {}): BeliefEvidence {
     end: "2026-11-07T10:00:00Z",
     points: [],
     planned: [],
+    contributionsTruncatedAfter: null,
     ...overrides,
   };
 }
@@ -79,6 +80,7 @@ function discrepancy(overrides: Partial<Discrepancy> = {}): Discrepancy {
     ontologyVersion: "0.6.0",
     intervalStart: "2026-11-07T09:00:00Z",
     intervalEnd: "2026-11-07T09:10:00Z",
+    fluentRefs: [RUNNING],
     ...overrides,
   };
 }
@@ -165,6 +167,49 @@ describe("sourceColumns", () => {
   });
 });
 
+describe("上限で切れた読み出し", () => {
+  const after = "2026-11-07T09:30:00Z";
+  const cut = evidence({
+    contributionsTruncatedAfter: after,
+    points: [
+      point({ assertionId: "a", at: "2026-11-07T09:10:00Z", contribution: contribution({ observed: 2, dominant: "observed" }) }),
+      point({ assertionId: "b", at: "2026-11-07T09:40:00Z", contribution: null }),
+    ],
+  });
+
+  it("切れた後の点は「読めていない」で、「記録されていない」と言わない", () => {
+    const rows = pointRows(cut.points, cut);
+    expect(rows[0]?.contribution).toBe("記録あり");
+    expect(rows[1]?.contribution).toBe("読めていない（上限）");
+  });
+
+  it("列は読めていない点の数を持ち、記録されていない点には数えない", () => {
+    const column = sourceColumns(cut).find((c) => c.source === "observed");
+    expect(column?.unreadPoints).toBe(1);
+    expect(column?.unrecordedPoints).toBe(0);
+  });
+
+  it("切れていなければ、同じ点は「記録されていない」", () => {
+    const rows = pointRows(cut.points, { contributionsTruncatedAfter: null });
+    expect(rows[1]?.contribution).toBe("記録されていない");
+  });
+});
+
+describe("記録のある点と無い点が混ざる列", () => {
+  it("記録のある点で 0 でも、記録されていない点があれば「寄与なし」に言い添える", () => {
+    const mixed = evidence({
+      points: [
+        point({ assertionId: "a", contribution: contribution({ observed: 1, dominant: "observed" }) }),
+        point({ assertionId: "b", contribution: null }),
+      ],
+    });
+    const column = sourceColumns(mixed).find((c) => c.source === "plan");
+    expect(column?.state).toBe("none");
+    expect(column?.note).toContain("記録のある点のみ");
+    expect(column?.note).toContain("記録されていない点 1 件");
+  });
+});
+
 describe("pointRows", () => {
   it("結合が書いた信念は出どころを「結合」と出し、寄与は記録されていないと言う", () => {
     const rows = pointRows([point({ origin: "coupling", contribution: null })]);
@@ -215,9 +260,13 @@ describe("evidenceTargets", () => {
     expect(result.kind === "unavailable" && result.reason).toContain("区間");
   });
 
-  it("フルーエント型でない根拠（イベント型など）は鍵にしない", () => {
+  it("API が決めたフルーエント型（fluentRefs）だけを鍵にする", () => {
+    // イベント型（ent#StopCmd）は IRI の形がフルーエントと同じ。形で判定すると信念を引けない鍵を作る
     const result = evidenceTargets(
-      discrepancy({ assertions: ["sbp-core:PhysicalEvent/ent:Running", "urn:sbp:assertion:1"] }),
+      discrepancy({
+        assertions: ["https://sbp.example/ent#StopCmd"],
+        fluentRefs: [],
+      }),
       now,
     );
     expect(result.kind).toBe("unavailable");

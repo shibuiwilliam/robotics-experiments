@@ -74,6 +74,8 @@ export interface SourceColumn {
   readonly dominantCount: number;
   /** 寄与が記録されていない点の数（記録のある点と混ざるとき）。 */
   readonly unrecordedPoints: number;
+  /** 読み出しが上限で切れて寄与を読めていない点の数（「記録されていない」とは別）。 */
+  readonly unreadPoints: number;
   /** 区間と重なる計画の数（計画の列だけ意味を持つ。他は 0）。 */
   readonly plannedSpans: number;
 }
@@ -86,7 +88,9 @@ export function sourceColumns(evidence: BeliefEvidence): readonly SourceColumn[]
     (point): point is EvidencePoint & { contribution: EvidenceContribution } =>
       point.contribution !== null,
   );
-  const unrecordedPoints = evidence.points.length - recorded.length;
+  // 読み出しが上限で切れたときの「読めていない」点は、記録されていない点に数えない
+  const unreadPoints = evidence.points.filter((point) => isUnread(point, evidence)).length;
+  const unrecordedPoints = evidence.points.length - recorded.length - unreadPoints;
   return EVIDENCE_SOURCES.map((source) => {
     const plannedSpans = source === "plan" ? evidence.planned.length : 0;
     const dominantCount = recorded.filter((p) => p.contribution.dominant === source).length;
@@ -95,6 +99,7 @@ export function sourceColumns(evidence: BeliefEvidence): readonly SourceColumn[]
       label: SOURCE_LABEL[source],
       dominantCount,
       unrecordedPoints,
+      unreadPoints,
       plannedSpans,
     };
     if (evidence.points.length === 0) {
@@ -109,7 +114,10 @@ export function sourceColumns(evidence: BeliefEvidence): readonly SourceColumn[]
       return {
         ...base,
         state: "unrecorded" as const,
-        note: "寄与は記録されていない（寄与なしではない）",
+        note:
+          unrecordedPoints === 0
+            ? "寄与を読めていない（読み出しが上限で切れた）"
+            : "寄与は記録されていない（寄与なしではない）",
         meanShare: 0,
       };
     }
@@ -118,7 +126,14 @@ export function sourceColumns(evidence: BeliefEvidence): readonly SourceColumn[]
       recorded.length;
     const total = recorded.reduce((sum, point) => sum + point.contribution[source], 0);
     if (total <= 0) {
-      return { ...base, state: "none" as const, note: "寄与なし", meanShare: 0 };
+      // 記録のある点では 0 だった。記録されていない点・読めていない点が混ざるなら、それは言い添える
+      const caveat = caveatFor(unrecordedPoints, unreadPoints);
+      return {
+        ...base,
+        state: "none" as const,
+        note: caveat === "" ? "寄与なし" : `寄与なし（記録のある点のみ。${caveat}）`,
+        meanShare: 0,
+      };
     }
     return {
       ...base,
@@ -129,6 +144,20 @@ export function sourceColumns(evidence: BeliefEvidence): readonly SourceColumn[]
   });
 }
 
+/** 上限で切れた後の点で、寄与が無いもの（「記録されていない」ではなく「読めていない」）。 */
+function isUnread(point: EvidencePoint, evidence: BeliefEvidence): boolean {
+  const after = evidence.contributionsTruncatedAfter;
+  return point.contribution === null && after !== null && point.at > after;
+}
+
+/** 記録のある点に含まれない点の言い添え。 */
+function caveatFor(unrecorded: number, unread: number): string {
+  const parts: string[] = [];
+  if (unrecorded > 0) parts.push(`記録されていない点 ${unrecorded} 件を含まない`);
+  if (unread > 0) parts.push(`読めていない点 ${unread} 件を含まない`);
+  return parts.join("・");
+}
+
 /** 時系列の表の 1 行。 */
 export interface PointRow {
   readonly assertionId: string;
@@ -137,7 +166,7 @@ export interface PointRow {
   /** 出どころ（前向きフィルタ = 更新 / 実体間の結合）。 */
   readonly origin: "更新" | "結合";
   /** 寄与の有無の表示（`null` は「記録されていない」。0 ではない）。 */
-  readonly contribution: "記録あり" | "記録されていない";
+  readonly contribution: "記録あり" | "記録されていない" | "読めていない（上限）";
   readonly shares: Shares | null;
   readonly dominant: EvidenceSource | null;
   /** 監査隔離で除外した記録の数。 */
@@ -145,13 +174,22 @@ export interface PointRow {
 }
 
 /** 信念の点を表の行にする。 */
-export function pointRows(points: readonly EvidencePoint[]): readonly PointRow[] {
+export function pointRows(
+  points: readonly EvidencePoint[],
+  evidence?: Pick<BeliefEvidence, "contributionsTruncatedAfter">,
+): readonly PointRow[] {
+  const after = evidence?.contributionsTruncatedAfter ?? null;
   return points.map((point) => ({
     assertionId: point.assertionId,
     at: point.at,
     probability: point.probability,
     origin: point.origin === "coupling" ? "結合" : "更新",
-    contribution: point.contribution === null ? "記録されていない" : "記録あり",
+    contribution:
+      point.contribution !== null
+        ? "記録あり"
+        : after !== null && point.at > after
+          ? "読めていない（上限）"
+          : "記録されていない",
     shares: point.contribution === null ? null : shares(point.contribution),
     dominant: point.contribution?.dominant ?? null,
     excludedRecords: point.contribution?.excludedRecords ?? 0,
@@ -170,14 +208,13 @@ export type EvidenceTargets =
   | { readonly kind: "targets"; readonly targets: readonly EvidenceTarget[] }
   | { readonly kind: "unavailable"; readonly reason: string };
 
-/** フルーエント型らしい IRI（`…#Running`。イベント型の `…/ent:Running` や ID は除く）。 */
-const FLUENT_IRI = /^https?:\/\/[^\s#]+#[A-Za-z0-9_]+$/;
-
 /**
  * 不一致から並置の鍵を作る。**区間やフルーエントを推測しない**——足りなければ理由を返す。
  *
  * 照合規則は `assertions` にフルーエント型（類型 1・2）やイベント型（類型 3）を入れる。
  * アサーション ID ではない（所見 125）ので、引けるのは主体 × フルーエント × 区間である。
+ * **フルーエント型かどうかは API が決める**（`fluentRefs`）。IRI の形ではイベント型
+ * （`ent#StopCmd`）と区別できず、イベント型で引くと「信念が無い」と誤読させる。
  * 終端が無い（継続中）なら `now` までを区間にする。
  */
 export function evidenceTargets(discrepancy: Discrepancy, now: string): EvidenceTargets {
@@ -187,7 +224,7 @@ export function evidenceTargets(discrepancy: Discrepancy, now: string): Evidence
   if (discrepancy.subjects.length === 0) {
     return { kind: "unavailable", reason: "主体が無い" };
   }
-  const fluents = discrepancy.assertions.filter((iri) => FLUENT_IRI.test(iri));
+  const fluents = discrepancy.fluentRefs;
   if (fluents.length === 0) {
     return {
       kind: "unavailable",

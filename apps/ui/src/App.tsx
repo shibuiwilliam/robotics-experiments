@@ -8,7 +8,7 @@
  * UI の認証方式は未決（ADR-0008 の未決）。本番の認証を決めるまでこの UI を公開しない。
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   fetchBeliefEvidence,
@@ -137,6 +137,10 @@ export function App(): React.JSX.Element {
     [apiUrl, load],
   );
 
+  // 描画のたびに変えない: 継続中の不一致の並置は `now` を区間の終端にするので、変わるたびに
+  // 並置を読み直してしまう。データを読み込み直したときだけ更新する
+  const now = useMemo(() => new Date().toISOString(), [discrepancies]);
+
   if (configError !== null) {
     return (
       <main className="fatal">
@@ -145,8 +149,6 @@ export function App(): React.JSX.Element {
       </main>
     );
   }
-
-  const now = new Date().toISOString();
 
   return (
     <main>

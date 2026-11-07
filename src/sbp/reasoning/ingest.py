@@ -143,6 +143,8 @@ class IngestOutcome:
         assertion: 書くべきアサーション（入れなかった場合は ``None``）。
         skipped: 入れなかった理由（入れた場合は ``None``）。
         is_claim: 業務記録の主張だったか（偽なら物理観測）。
+        undo: この更新が進めたフィルタの状態を元に戻す関数（更新しなかった場合は ``None``）。
+            **書き込みに失敗したら呼ぶ**——戻さずに再配送を受けると、同じ証拠を二重に数える。
     """
 
     event_id: str
@@ -152,6 +154,7 @@ class IngestOutcome:
     assertion: Assertion | None
     skipped: str | None
     is_claim: bool = False
+    undo: Callable[[], None] | None = None
 
     @property
     def applied(self) -> bool:
@@ -246,7 +249,14 @@ class BeliefIngest:
                 "(invariant 5 forbids writing IRIs in code)"
             )
 
+        existed = key in self.filters
         probe_filter = self.filter_for(entity=entity, fluent=fluent)
+        before = (
+            probe_filter.posterior,
+            probe_filter.elapsed,
+            self._last_seen.get(key),
+            self._touched.get(key),
+        )
         plan = (
             self.plan_provider(entity, predicate, event.tx_time)
             if self.plan_provider is not None
@@ -295,7 +305,33 @@ class BeliefIngest:
             assertion=assertion,
             skipped=None,
             is_claim=claim,
+            undo=lambda: self._restore(key, existed=existed, before=before),
         )
+
+    def _restore(
+        self,
+        key: tuple[str, str],
+        *,
+        existed: bool,
+        before: tuple[float | None, timedelta, datetime | None, datetime | None],
+    ) -> None:
+        """更新前のフィルタの状態に戻す（書き込みに失敗した更新の取り消し）。
+
+        Args:
+            key: ``(実体, フルーエント)``。
+            existed: 更新の前からフィルタがあったか（無ければ消す）。
+            before: ``(事後, 滞在時間, 最後の観測, 最後の更新)``。
+        """
+        if not existed:
+            self.filters.pop(key, None)
+        else:
+            restored = self.filters[key]
+            restored.posterior, restored.elapsed = before[0], before[1]
+        for table, value in ((self._last_seen, before[2]), (self._touched, before[3])):
+            if value is None:
+                table.pop(key, None)
+            else:
+                table[key] = value
 
     def handle_batch(
         self, events: Sequence[EventEnvelope], *, mask: AuditMask | None = None

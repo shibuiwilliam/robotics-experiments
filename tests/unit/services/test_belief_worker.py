@@ -641,6 +641,30 @@ class TestContributionPersistence:
         assert sink.written == [], "寄与が書けなければ文も書かない（再配送で再試行される）"
 
     @pytest.mark.asyncio
+    async def test_a_redelivery_after_a_failed_write_does_not_double_count(self) -> None:
+        """書けなかった更新はフィルタの状態に残さない（M8-17 のレビュー）。"""
+        sink = _Sink()
+        attempts = 0
+
+        async def flaky(record: ContributionRecord) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise ConnectionError("db down")
+            del record
+
+        worker = BeliefWorker(Settings(), sink=sink, contributions=flaky)
+        event = _event(at=T0, p=0.9)
+        with pytest.raises(ConnectionError):
+            await worker.handle_event(event)
+        await worker.handle_event(event)  # 再配送
+
+        clean_sink = _Sink()
+        clean = BeliefWorker(Settings(), sink=clean_sink)
+        await clean.handle_event(event)
+        assert sink.written[0].belief.p == pytest.approx(clean_sink.written[0].belief.p)  # type: ignore[union-attr]
+
+    @pytest.mark.asyncio
     async def test_the_coupling_assertions_have_no_contribution(self) -> None:
         """結合の信念は寄与を持たない（源は「結合」。表に行が無い）。"""
         fluent = str(vocab.ent.Running)

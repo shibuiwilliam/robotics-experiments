@@ -114,6 +114,11 @@ export interface Discrepancy {
   readonly intervalStart: string | null;
   /** 同じく終端（右開。`null` は継続中、または区間が記録されていない）。 */
   readonly intervalEnd: string | null;
+  /**
+   * 根拠のうちオントロジーのフルーエント型であるもの（三源並置の鍵）。**API が決める**——IRI の形では
+   * フルーエント型とイベント型（`ent#StopCmd`）を区別できない。
+   */
+  readonly fluentRefs: readonly string[];
 }
 
 /** 証拠の源（設計書 §8.2 の三源）。**様相ではなく寄与で分ける**（所見 84、ADR-0020）。 */
@@ -163,6 +168,11 @@ export interface BeliefEvidence {
   readonly end: string;
   readonly points: readonly EvidencePoint[];
   readonly planned: readonly PlannedSpan[];
+  /**
+   * 寄与の読み出しが上限で切れたとき、最後に読めた寄与の時刻。**これより後の `contribution: null` は
+   * 「記録されていない」ではなく「読めていない」。** `null` なら切れていない。
+   */
+  readonly contributionsTruncatedAfter: string | null;
 }
 
 /**

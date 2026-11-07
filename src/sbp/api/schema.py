@@ -19,15 +19,17 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Annotated, Protocol, runtime_checkable
 
 import strawberry
 
 from sbp.api.authorization import AuthorizationError, visible_rows
 from sbp.api.evidence import build_evidence
+from sbp.core import vocab
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
+from sbp.knowledge.contributions import SERIES_LIMIT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -149,6 +151,8 @@ class DiscrepancyType:
         evidence: 根拠になった証拠（イベント・記録）の IRI。
         assigneeRole: 配賦先ロールの IRI。
         ontologyVersion: 検出時のオントロジー版。
+        fluentRefs: 根拠のうち、オントロジーのフルーエント型であるもの（三源並置の鍵。イベント型は
+            含めない——信念を引けない）。
         intervalStart: 不一致が成立していた区間の始端（証拠の三源並置の鍵。M8-17）。
         intervalEnd: 同じく終端（右開。継続中は ``None``）。
     """
@@ -166,6 +170,7 @@ class DiscrepancyType:
     ontologyVersion: str  # noqa: N815
     intervalStart: datetime | None = None  # noqa: N815
     intervalEnd: datetime | None = None  # noqa: N815
+    fluentRefs: list[str] = strawberry.field(default_factory=list)  # noqa: N815
 
     @classmethod
     def from_record(cls, record: DiscrepancyRecord) -> DiscrepancyType:
@@ -191,6 +196,9 @@ class DiscrepancyType:
             ontologyVersion=str(payload.get("ontology_version", "")),
             intervalStart=_parse_time(interval.get("start")),
             intervalEnd=_parse_time(interval.get("end")),
+            fluentRefs=[
+                str(value) for value in payload.get("assertions", ()) if value in vocab.FLUENT_TYPES
+            ],
         )
 
 
@@ -201,7 +209,9 @@ def _parse_time(value: object) -> datetime | None:
         value: 文字列または ``None``。
     """
     if isinstance(value, str) and value:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
+        # 書いたのは UTC の pydantic モデルだが、古い行が offset を欠いても落とさない
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     return None
 
 
@@ -506,6 +516,9 @@ class BeliefEvidenceType:
         end: 区間の終端（含まない）。
         points: 信念の点（時刻順）。
         planned: 区間と重なる計画（開始順）。
+        contributionsTruncatedAfter: 寄与の読み出しが上限で切れたとき、最後に読めた寄与の時刻。
+            **これより後の点の「寄与なし」は「記録されていない」ではなく「読めていない」**
+            （``None`` なら切れていない）。
     """
 
     entity: str
@@ -514,6 +527,7 @@ class BeliefEvidenceType:
     end: datetime
     points: list[EvidencePointType]
     planned: list[PlannedSpanType]
+    contributionsTruncatedAfter: datetime | None = None  # noqa: N815
 
 
 @strawberry.type
@@ -551,6 +565,8 @@ class Query:
                 "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
                 "（既定は拒否、設計書 §11）"
             )
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("start / end はタイムゾーン付き（不変条件 8。naive は受けない）")
         if end <= start:
             raise ValueError("区間は start < end（右開）")
         reader = info.context.get("evidence")
@@ -574,6 +590,7 @@ class Query:
         inferred = visible(Modality.INFERRED)
         planned = visible(Modality.PLANNED)
         contributions = reader(entity, fluent, start, end)
+        truncated_after = contributions[-1].at if len(contributions) >= SERIES_LIMIT else None
         points, spans = build_evidence(inferred, planned, contributions, start=start, end=end)
         log.info(
             "api.belief_evidence_queried",
@@ -615,6 +632,7 @@ class Query:
                 PlannedSpanType(start=span.start, end=span.end, adherence=span.adherence)
                 for span in spans
             ],
+            contributionsTruncatedAfter=truncated_after,
         )
 
     # GraphQL のリゾルバは引数がそのまま並ぶため位置引数が多くなる（PLR0917 は構造上避けられ

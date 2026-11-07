@@ -23,11 +23,14 @@ if TYPE_CHECKING:
 
     from psycopg import AsyncConnection
 
-__all__ = ["ContributionRecord", "ContributionStore"]
+__all__ = ["SERIES_LIMIT", "ContributionRecord", "ContributionStore"]
 
 log = get_logger(__name__)
 
 _TABLE = "belief_contributions"
+
+SERIES_LIMIT = 1000
+"""``series`` が既定で返す件数の上限。API は超えたことを呼び出し側に伝える（黙って切らない）。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,12 +65,20 @@ class ContributionRecord:
 
     @property
     def dominant(self) -> str | None:
-        """最も事後を動かした源（``observed`` / ``record`` / ``plan``）。全部 0 なら ``None``。"""
-        best = max(
+        """最も事後を動かした源（``observed`` / ``record`` / ``plan``）。
+
+        全部 0 のとき、**最大が同点のときも** ``None``（同点で先頭の源に印を付けると、
+        観測に偏った見え方になる）。
+        """
+        ranked = sorted(
             (("observed", self.observed), ("record", self.record), ("plan", self.plan)),
             key=lambda pair: pair[1],
+            reverse=True,
         )
-        return best[0] if best[1] > 0.0 else None
+        top, runner_up = ranked[0], ranked[1]
+        if top[1] <= 0.0 or top[1] == runner_up[1]:
+            return None
+        return top[0]
 
 
 class ContributionStore:
@@ -114,7 +125,13 @@ class ContributionStore:
             )
 
     async def series(
-        self, *, entity: str, fluent: str, start: datetime, end: datetime, limit: int = 1000
+        self,
+        *,
+        entity: str,
+        fluent: str,
+        start: datetime,
+        end: datetime,
+        limit: int = SERIES_LIMIT,
     ) -> list[ContributionRecord]:
         """実体 × フルーエントの寄与を時刻順に返す（``start`` 以上 ``end`` 未満。右開）。
 

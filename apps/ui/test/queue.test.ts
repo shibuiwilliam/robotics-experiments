@@ -44,6 +44,7 @@ function discrepancy(overrides: Partial<Discrepancy> & { discrepancyId: string }
     ontologyVersion: "0.5.0",
     intervalStart: "2026-06-10T09:00:00Z",
     intervalEnd: "2026-06-10T09:10:00Z",
+    fluentRefs: [],
     ...overrides,
   };
 }
