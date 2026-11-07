@@ -72,6 +72,18 @@ class BridgeSettings(_DotenvSettings):
     identity_revoke_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     """IdentityClaim をこの確信度未満で撤回し、不一致（類型 4）を起票する。"""
 
+    probe_train_fraction: float = Field(default=0.6, gt=0.0, lt=1.0)
+    """プローブ学習の時間軸で、訓練に使う前方の割合（ADR-0024）。"""
+
+    probe_calib_fraction: float = Field(default=0.2, gt=0.0, lt=1.0)
+    """較正に使う割合（訓練の直後）。残りが評価。訓練 + 較正は 1 未満でなければならない。"""
+
+    probe_min_labelled: int = Field(default=20, ge=2)
+    """較正・評価の各枠で、弱ラベルが付いた標本の最低数（両クラスに要る）。"""
+
+    weak_label_min_half_width_s: float = Field(default=300.0, gt=0.0)
+    """弱ラベルのバッグ区間の半幅の下限（秒）。点時刻のバッグを作らない。"""
+
     probe_ids: Annotated[tuple[str, ...], NoDecode] = ()
     """接地ワーカーが走らせるプローブの IRI（版を含む）。ADR-0009。
 
@@ -110,6 +122,13 @@ class BridgeSettings(_DotenvSettings):
                 "hysteresis_low must be strictly below hysteresis_high "
                 f"(got low={self.hysteresis_low}, high={self.hysteresis_high})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _split_fits(self) -> BridgeSettings:
+        """訓練 + 較正の割合は 1 未満でなければ評価の枠が残らない。"""
+        if self.probe_train_fraction + self.probe_calib_fraction >= 1.0:
+            raise ValueError("probe_train_fraction + probe_calib_fraction must be below 1")
         return self
 
 
