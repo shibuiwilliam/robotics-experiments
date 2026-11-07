@@ -111,7 +111,26 @@ def suppressed_fingerprints(
         at: 現在時刻。
         cooldown: 却下の冷却期間。
     """
-    suppressed: set[str] = set()
+    blocking = _blocking_proposals(existing, at=at, cooldown=cooldown)
+    return frozenset(
+        signal_fingerprint(signal) for proposal in blocking for signal in proposal.signals
+    )
+
+
+def _blocking_proposals(
+    existing: Sequence[ConceptProposalRecord], *, at: datetime, cooldown: timedelta
+) -> list[ConceptProposal]:
+    """いま再提案を妨げている提案（判断待ち・採択済み・冷却中の却下）。
+
+    指紋の抑制と、提案名の重複の判定が**同じ集合**を見る——冷却を過ぎた却下の提案と同じ名前を
+    LLM が返しても、それは再提案であって重複ではない。
+
+    Args:
+        existing: 既存の提案の行。
+        at: 現在時刻。
+        cooldown: 却下の冷却期間。
+    """
+    blocking: list[ConceptProposal] = []
     now_ = ensure_utc(at)
     for record in existing:
         try:
@@ -124,12 +143,12 @@ def suppressed_fingerprints(
             )
             continue
         if proposal.status in _ALWAYS_SUPPRESSING:
-            suppressed.update(signal_fingerprint(signal) for signal in proposal.signals)
+            blocking.append(proposal)
         elif proposal.status is ProposalStatus.REJECTED:
             rejected_at = record.updated_at or record.proposed_at
             if rejected_at is None or now_ - ensure_utc(rejected_at) < cooldown:
-                suppressed.update(signal_fingerprint(signal) for signal in proposal.signals)
-    return frozenset(suppressed)
+                blocking.append(proposal)
+    return blocking
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +207,10 @@ def run_discovery(
     Returns:
         結果と内訳。
     """
-    blocked = suppressed_fingerprints(existing, at=at, cooldown=cooldown)
+    blocking = _blocking_proposals(existing, at=at, cooldown=cooldown)
+    blocked = frozenset(
+        signal_fingerprint(signal) for proposal in blocking for signal in proposal.signals
+    )
     ordered = sorted(signals, key=lambda signal: signal.strength, reverse=True)
     candidates = [signal for signal in ordered if signal_fingerprint(signal) not in blocked]
     suppressed = len(ordered) - len(candidates)
@@ -196,7 +218,7 @@ def run_discovery(
 
     routing = load_routing()[LlmTask.CONCEPT_PROPOSAL]
     template = PromptRegistry().get(LlmTask.CONCEPT_PROPOSAL, routing.prompt_version)
-    taken = {record.name.lower() for record in existing}
+    taken = {proposal.name.lower() for proposal in blocking}
     proposals: list[ConceptProposal] = []
     failed = declined = 0
     for signal in selected:

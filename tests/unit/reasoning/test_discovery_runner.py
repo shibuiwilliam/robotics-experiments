@@ -329,13 +329,24 @@ class TestRunDiscovery:
         assert report.failed == 0
         assert report.proposals == ()
 
-    def test_a_proposal_with_an_existing_name_is_not_taken(self) -> None:
-        existing = [concept_to_record(_proposal(ProposalStatus.REJECTED))]
-        existing = [replace(existing[0], updated_at=T0 - timedelta(days=90))]  # 冷却は過ぎている
+    def test_a_proposal_with_the_name_of_a_blocking_proposal_is_not_taken(self) -> None:
+        """判断待ちの提案と同じ名前を、別の signal から返されても重複として採らない。"""
+        existing = [
+            concept_to_record(_proposal(ProposalStatus.PROPOSED, signal=_signal(entity=LINE)))
+        ]
         provider = _Provider(_answer("partiallyrunning"))
         report = _run(_signals(PUMP), provider, existing=existing)
         assert report.declined == 1
         assert report.proposals == ()
+
+    def test_after_the_cooldown_the_same_name_is_a_re_proposal_not_a_duplicate(self) -> None:
+        rejected = replace(
+            concept_to_record(_proposal(ProposalStatus.REJECTED)),
+            updated_at=T0 - timedelta(days=90),
+        )
+        provider = _Provider(_answer("PartiallyRunning"))
+        report = _run(_signals(PUMP), provider, existing=[rejected])
+        assert [p.name for p in report.proposals] == ["PartiallyRunning"]
 
     def test_the_messages_are_deterministic(self) -> None:
         """fixture の鍵（内容ハッシュ）が安定する。順序や時刻が混ざらない。"""
