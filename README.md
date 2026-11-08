@@ -45,7 +45,7 @@ CI は `.github/workflows/ci.yml`。4 ジョブ（`check` / `integration` / `aud
 | `docs/TASK.md` | 開発計画・タスク管理（スコープ・品質ゲート・M0〜M8 タスク分解・運用・リスク） |
 | `docs/PROMPT.md` | 開発遂行用プロンプト集（セッション運営・タスク実行・マイルストーン別・横断・運用・リカバリ） |
 | `docs/PROGRESS.md` | 開発経過の記録（実装中に判明した事実、ADR に至らなかった判断、既知の制約） |
-| `docs/adr/` | 設計判断の記録（MADR 形式、33 件。テンプレは `0000-template.md`） |
+| `docs/adr/` | 設計判断の記録（MADR 形式、34 件。テンプレは `0000-template.md`） |
 | `docs/HITL.md` | **人の判断を待つ事項の管理簿**（優先度順。決まったら ADR を起票して本書から消す） |
 | `docs/STATUS.md` | マイルストーン進捗（M0〜M8）と規模の実測。里程の粒度はここだけに書く |
 | `.claude/rules/*.md` | 層別の詳細ルール（paths 連動で該当ファイルを開くと自動読込） |
