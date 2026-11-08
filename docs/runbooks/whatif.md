@@ -23,7 +23,7 @@ make whatif ARGS='--entity <実体 IRI> --fluent <フルーエント IRI> --prob
   --action-type <アクション型 IRI> --channel 0 --magnitude 1.0 --horizon 12 --seed 7'
 ```
 
-- 終了コード: 0 成功 / 1 潜在が無い・古い（`SBP_REASONING_FORECAST_MAX_ORIGIN_AGE_S`）/ 2 拒否（介入付きでない WM・範囲外のチャンネル・プローブが無いフルーエント）。
+- 終了コード: 0 成功 / 3 設定の誤り（プローブと WM の版の不一致など）/ 1 潜在が無い・古い（`SBP_REASONING_FORECAST_MAX_ORIGIN_AGE_S`）/ 2 拒否（介入付きでない WM・範囲外のチャンネル・プローブが無いフルーエント）。
 - 同じ問い（実体・フルーエント・WM 版・起点・アクション型・チャンネル・強さ・地平）は 2 度書かない。
 
 ## 2. 結果の読み方

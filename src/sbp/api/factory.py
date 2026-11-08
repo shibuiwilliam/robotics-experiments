@@ -33,6 +33,7 @@ from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
 from sbp.knowledge.forecasts import ForecastStore
 from sbp.knowledge.quarantine import QuarantineStore
+from sbp.knowledge.scenarios import ScenarioStore
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.forecasts import ForecastRecord
     from sbp.knowledge.quarantine import QuarantineRow
+    from sbp.knowledge.scenarios import ScenarioRecord
 
 __all__ = ["build_app", "dev_principal_resolver", "lazy_contracts"]
 
@@ -188,6 +190,27 @@ def _read_quarantine(
     """
     store = QuarantineStore(connection(), site=site)
     return _run_sync(store.recent(only_unreviewed=only_unreviewed, limit=limit))
+
+
+def _read_scenarios(
+    connection: Callable[[], Any],
+    site: str,
+    *,
+    entity: str | None = None,
+    fluent: str | None = None,
+    limit: int = 50,
+) -> list[ScenarioRecord]:
+    """What-if のシナリオを同期の形で返す（M10-04）。
+
+    Args:
+        connection: 開いている接続を返す関数（開く前なら落ちる）。
+        site: 拠点識別子。
+        entity: 実体で絞る。
+        fluent: フルーエント型で絞る。
+        limit: 返す件数の上限。
+    """
+    store = ScenarioStore(connection(), site=site)
+    return _run_sync(store.recent(entity=entity, fluent=fluent, limit=limit))
 
 
 def build_app(settings: Settings | None = None) -> FastAPI:
@@ -348,6 +371,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         proposal_reader=read_proposals,
         forecast_reader=partial(_read_forecasts, _connection, resolved.site_id),
         quarantine_reader=partial(_read_quarantine, _connection, resolved.site_id),
+        scenario_reader=partial(_read_scenarios, _connection, resolved.site_id),
         evidence_reader=read_evidence,
         action_reader=lazy_contracts(),
         decision_reader=read_decisions,

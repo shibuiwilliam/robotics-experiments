@@ -104,6 +104,9 @@ def scenario_key(
     channel: int,
     magnitude: float,
     horizon: int,
+    seed: int,
+    samples: int,
+    probe_ids: Sequence[str],
 ) -> UUID:
     """シナリオの識別子（同じ問いは同じ値。再実行で二重に積まない）。
 
@@ -117,10 +120,17 @@ def scenario_key(
         channel: 立てた介入チャンネル。
         magnitude: 介入の強さ。
         horizon: 介入を効かせた刻み数。
+        seed: 乱数シード。
+        samples: 軌道の本数。
+        probe_ids: 使ったプローブの IRI（順不同）。
+
+    結果を変える入力はすべて鍵に入れる——入れないと、別のシードやプローブでの再実行が前の結果の
+    識別子を再利用し、書き済みの古い曲線が残る。
     """
     key = (
         f"whatif|{site}|{entity}|{fluent}|{wm_version}|{origin_iso}|"
-        f"{action_type}|{channel}|{magnitude}|{horizon}"
+        f"{action_type}|{channel}|{magnitude}|{horizon}|{seed}|{samples}|"
+        f"{','.join(sorted(probe_ids))}"
     )
     return uuid5(NAMESPACE_URL, key)
 
@@ -158,6 +168,7 @@ def run_intervention_whatif(
     horizon: int,
     samples: int,
     seed: int,
+    probe_ids: Sequence[str],
 ) -> WhatIfResult:
     """介入の下の rollout と、介入なしの rollout を並べる。
 
@@ -174,6 +185,7 @@ def run_intervention_whatif(
         horizon: 介入を効かせる刻み数。
         samples: 軌道の本数。
         seed: 乱数シード（基準と介入ありで共通）。
+        probe_ids: 使ったプローブの IRI（識別子の元）。
 
     Returns:
         結果。
@@ -223,6 +235,9 @@ def run_intervention_whatif(
             channel=channel,
             magnitude=magnitude,
             horizon=horizon,
+            seed=seed,
+            samples=samples,
+            probe_ids=probe_ids,
         ),
     )
     result = WhatIfResult(

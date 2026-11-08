@@ -55,7 +55,7 @@ async def _setup(settings: Settings, site: str, topic_: str, tmp_path: Path, *, 
     probes = load_probe_set(S3ArtifactStore.from_settings(configured), probe_ids=[probe_id])
     entity = f"https://sbp.example/site/{site}/asset/P-PROBE"
     store = AssertionStore(HttpGraphStore(configured), site_id=site)
-    return configured, model, probes, entity, store
+    return configured, model, probes, entity, store, probe_id
 
 
 class TestWhatIfEndToEnd:
@@ -64,7 +64,7 @@ class TestWhatIfEndToEnd:
         self, settings: Settings, topic: tuple[str, str], tmp_path: Path
     ) -> None:
         site, topic_ = topic
-        configured, model, probes, entity, store = await _setup(
+        configured, model, probes, entity, store, probe_id = await _setup(
             settings, site, topic_, tmp_path, actions=True
         )
         assert model.action_dim == 2
@@ -81,6 +81,7 @@ class TestWhatIfEndToEnd:
                 "model": model,
                 "probes": probes,
                 "seed": 3,
+                "probe_ids": [probe_id],
                 "connection": connection,
                 "store": store,
             }
@@ -110,7 +111,7 @@ class TestWhatIfEndToEnd:
         self, settings: Settings, topic: tuple[str, str], tmp_path: Path
     ) -> None:
         site, topic_ = topic
-        configured, model, probes, entity, store = await _setup(
+        configured, model, probes, entity, store, probe_id = await _setup(
             settings, site, topic_, tmp_path, actions=False
         )
         assert model.action_dim is None
@@ -129,6 +130,7 @@ class TestWhatIfEndToEnd:
                     model=model,
                     probes=probes,
                     seed=3,
+                    probe_ids=[probe_id],
                     connection=connection,
                     store=store,
                 )

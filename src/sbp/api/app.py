@@ -52,6 +52,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.forecasts import ForecastRecord
     from sbp.knowledge.quarantine import QuarantineRow
+    from sbp.knowledge.scenarios import ScenarioRecord
 
     MetricReader = Callable[[], Awaitable[Sequence["MetricSample"]]]
     """系列ごとの最新値を返す（``MetricStore.latest`` を包む）。"""
@@ -59,6 +60,8 @@ if TYPE_CHECKING:
     ProposalReader = Callable[..., Sequence["ConceptProposalRecord"]]
     ForecastReader = Callable[..., Sequence["ForecastRecord"]]
     QuarantineReader = Callable[..., Sequence["QuarantineRow"]]
+    ScenarioReader = Callable[..., Sequence["ScenarioRecord"]]
+    """What-if のシナリオを返す（``ScenarioStore.recent`` を包む。M10-04）。"""
     """隔離の行を返す（``QuarantineStore.recent`` を包む。M10-02）。"""
     ActionReader = Callable[[], Sequence["ActionContract"]]
     """契約の一覧を返す（``ActionRegistry`` の契約。同期）。"""
@@ -118,6 +121,7 @@ def create_app(
     proposal_reader: ProposalReader | None = None,
     forecast_reader: ForecastReader | None = None,
     quarantine_reader: QuarantineReader | None = None,
+    scenario_reader: ScenarioReader | None = None,
     evidence_reader: EvidenceReader | None = None,
     action_reader: ActionReader | None = None,
     decision_reader: DecisionReader | None = None,
@@ -147,6 +151,8 @@ def create_app(
             区別できない）。
         quarantine_reader: 隔離の行を返すもの（``QuarantineStore.recent``。M10-02）。``None`` だと
             ``quarantine`` が**エラーを返す**（空を返すと「無い」と「未配線」が区別できない）。
+        scenario_reader: What-if のシナリオを返すもの（M10-04）。``None`` だと
+            ``scenarios`` が**エラーを返す**（空を返すと「無い」と「未配線」が区別できない）。
         expectation_reader: 期待ボードを返すもの（``ExpectationStore.board`` を包む。
             M8-18）。``None`` だと GraphQL の ``expectations`` が**エラーを返す**
             （空の列を返すと「期待が無い」と「配線していない」が区別できない）。
@@ -182,6 +188,7 @@ def create_app(
             "proposals": proposal_reader,
             "forecasts": forecast_reader,
             "quarantine": quarantine_reader,
+            "scenarios": scenario_reader,
             "evidence": evidence_reader,
             "actions": action_reader,
             "decisions": decision_reader,
@@ -293,6 +300,7 @@ def create_app(
         proposals=proposal_reader is not None,
         forecasts=forecast_reader is not None,
         quarantine=quarantine_reader is not None,
+        scenarios=scenario_reader is not None,
     )
     if principal_resolver is None:
         log.warning(

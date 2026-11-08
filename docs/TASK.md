@@ -478,8 +478,8 @@ M9 の目的と G9 は変えない。同一性束縛と LLM の入口は H-27 �
 
 - [x] **M10-01** 隔離キュー（書く側。2026-11-08 完了。独立レビュー 7 件を反映: 壊れた入力が書き込みを壊す・理由に入力値が入る・古い生の入力が残る・壊れた編集で直前の有効な文を閉じる・隔離の失敗で健全な行が止まる・ランタイム import 漏れ） — alembic 0015（`site`）、`knowledge/quarantine.py`（`QuarantineStore`: 冪等な `add` と `add_outcome`、`pending`、`mark_reviewed`）、取込が失敗行の生データを返し、ingest-worker が写像失敗の行と型の無い台帳の行を積む
 - [x] **M10-02** 隔離の読み書き（2026-11-08 完了。独立レビュー: 重大なし。確認コマンドにも読み出しと同じ許可を要求、同じ内容の再適用は成功（適用の途中で落ちた判断を再投入できる）、確認文の空白・長さ、UI の型と文書の列挙を直した）— GraphQL `quarantine`（ABAC）、コマンド `review_quarantine`（`reviewed_by` は要求者）、`DecisionKind.QUARANTINE_REVIEW`（alembic 0016）、learning-worker が適用
-- [x] **M10-03** What-if のジョブ（2026-11-08 実装。scripts/whatif.py、reasoning/whatif_run.py、knowledge/scenarios.py、alembic 0017、スプールの `actions`、`KoopmanModel.action_dim`、docs/runbooks/whatif.md。独立レビュー待ち）— `make whatif`。介入付きで学習された WM でだけ実行し、そうでなければ理由を示して拒否する。結果は `hypothetical` のシナリオグラフ（ADR-0036）
-- [ ] **M10-04** What-if の読み出し — GraphQL `scenarios`（`hypothetical` は ABAC で既定は見えない）
+- [x] **M10-03** What-if のジョブ（2026-11-08 実装。scripts/whatif.py、reasoning/whatif_run.py、knowledge/scenarios.py、alembic 0017、スプールの `actions`、`KoopmanModel.action_dim`、docs/runbooks/whatif.md。独立レビュー: 識別子の鍵に seed・samples・プローブを足した、設定の誤りは終了コード 3）— `make whatif`。介入付きで学習された WM でだけ実行し、そうでなければ理由を示して拒否する。結果は `hypothetical` のシナリオグラフ（ADR-0036）
+- [x] **M10-04** What-if の読み出し（2026-11-08 完了。`api/schema.py` ScenarioType / `scenarios`、`hypothetical` の許可が無い要求者には見えない。dev の resolver は hypothetical を含まない）— GraphQL `scenarios`（`hypothetical` は ABAC で既定は見えない）
 - [ ] **M10-05** ゲート G10 の統合テスト — M10-01〜04 を外界だけの模擬で通す
 
 **ゲート G10**: G9 維持 + M10-05 緑。

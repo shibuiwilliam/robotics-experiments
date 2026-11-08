@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.forecasts import ForecastRecord
     from sbp.knowledge.quarantine import QuarantineRow
+    from sbp.knowledge.scenarios import ScenarioRecord
 else:  # Protocol の注釈を実行時にも解決できるようにする
     Sequence = __import__("collections.abc", fromlist=["Sequence"]).Sequence
     AssertionRow = object
@@ -453,6 +454,93 @@ class QuarantineType:
             quarantinedAt=record.quarantined_at,
             reviewedAt=record.reviewed_at,
             resolution=record.resolution,
+        )
+
+
+@strawberry.type
+class ScenarioPointType:
+    """What-if の先行時間 1 点（M10-04、ADR-0036）。
+
+    Attributes:
+        leadTimeS: 起点からの先行時間（秒）。
+        baseline: 介入なしの成立確率。
+        intervened: 介入ありの成立確率。
+        delta: 介入による変化（介入あり − 基準）。
+    """
+
+    leadTimeS: float  # noqa: N815
+    baseline: float
+    intervened: float
+    delta: float
+
+
+@strawberry.type
+class ScenarioType:
+    """What-if のシナリオ 1 件（M10-04、ADR-0036）。
+
+    **``hypothetical`` であり、因果の主張ではない。** 効果は介入付きで学習した WM の線形な
+    制御項から出る。介入を観測した件数（妥当性）は数えていない（``note``）。
+
+    Attributes:
+        scenarioId: 識別子（シナリオグラフ ``graph`` の名前に使う）。
+        entity: 実体 IRI。
+        fluent: フルーエント型 IRI。
+        origin: 起点の時刻。
+        wmVersion: 使った WM の版。
+        actionType: 介入したアクション型 IRI。
+        channel: 立てた介入チャンネル。
+        magnitude: 介入の強さ。
+        horizon: 介入を効かせた刻み数。
+        graph: 結果の文があるシナリオ用グラフ。
+        note: 読む人への注意。
+        points: 先行時間ごとの曲線。
+    """
+
+    scenarioId: str  # noqa: N815
+    entity: str
+    fluent: str
+    origin: datetime
+    wmVersion: str  # noqa: N815
+    actionType: str  # noqa: N815
+    channel: int
+    magnitude: float
+    horizon: int
+    graph: str
+    note: str
+    points: list[ScenarioPointType]
+
+    @classmethod
+    def from_record(cls, record: ScenarioRecord) -> ScenarioType:
+        """表の行から作る。
+
+        Args:
+            record: シナリオの行（``payload`` は曲線と介入）。
+        """
+        payload = record.payload
+        return cls(
+            scenarioId=str(record.scenario_id),
+            entity=record.entity,
+            fluent=record.fluent,
+            origin=record.origin,
+            wmVersion=record.wm_version,
+            actionType=record.action_type,
+            channel=int(payload["channel"]),
+            magnitude=float(payload["magnitude"]),
+            horizon=int(payload["horizon"]),
+            graph=str(payload["graph"]),
+            note=str(payload["note"]),
+            points=[
+                ScenarioPointType(
+                    leadTimeS=float(t), baseline=float(b), intervened=float(i), delta=float(d)
+                )
+                for t, b, i, d in zip(
+                    payload["lead_times_s"],
+                    payload["baseline"],
+                    payload["intervened"],
+                    payload["delta"],
+                    strict=True,
+                )
+            ],
         )
 
 
@@ -1198,6 +1286,58 @@ class Query:
             "api.forecasts_queried", principal=principal.subject, entity=entity, rows=len(records)
         )
         return [ForecastType.from_record(record) for record in records]
+
+    @strawberry.field(
+        description="What-if のシナリオ（介入ありと基準の曲線）を新しい起点の順に返す"
+    )
+    def scenarios(
+        self,
+        info: strawberry.Info,
+        entity: str | None = None,
+        fluent: str | None = None,
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[ScenarioType]:
+        """What-if のシナリオを返す（設計書 §8.4、M10-04、ADR-0036）。
+
+        **``hypothetical`` の許可が要る。** 検討中の案が「決まった」と誤解されるので、既定の
+        要求者（observed / inferred / predicted / planned）には見えない。概念型×様相×拠点の
+        許可が無い行は返さない（行ごとに判定し、**許可で絞ってから件数を切る**）。
+
+        Args:
+            info: strawberry の文脈（``scenarios`` に読み出し関数を持つ）。
+            entity: 実体 IRI で絞る。
+            fluent: フルーエント型 IRI で絞る。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が設定されていない場合（既定は拒否）。
+            ValueError: ``limit`` が範囲外、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        reader = info.context.get("scenarios")
+        if reader is None:
+            raise ValueError(
+                "シナリオの読み出しが設定されていない（create_app に scenario_reader を渡す）"
+            )
+        site = info.context["settings"].site_id
+        records = [
+            record
+            for record in reader(entity=entity, fluent=fluent, limit=_MAX_QUEUE_LIMIT)
+            if authorize(
+                principal, concept_type=record.fluent, modality=Modality.HYPOTHETICAL, site=site
+            ).allowed
+        ][:limit]
+        log.info(
+            "api.scenarios_queried", principal=principal.subject, entity=entity, rows=len(records)
+        )
+        return [ScenarioType.from_record(record) for record in records]
 
     @strawberry.field(description="構造が壊れて隔離した入力を新しい順に返す")
     def quarantine(

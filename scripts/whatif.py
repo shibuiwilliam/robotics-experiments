@@ -44,6 +44,8 @@ from sbp.worldmodel.serialization import load_model
 from scripts._wm import split_wm_version
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sbp.bridge.runner import ProbeSet
     from sbp.worldmodel.families.koopman import KoopmanModel
 
@@ -66,6 +68,7 @@ async def whatif_once(
     model: KoopmanModel,
     probes: ProbeSet,
     seed: int,
+    probe_ids: Sequence[str],
     connection: psycopg.AsyncConnection[tuple[object, ...]],
     store: AssertionStore,
 ) -> WhatIfResult | None:
@@ -82,6 +85,7 @@ async def whatif_once(
         model: 学習済みの WM。
         probes: プローブ。
         seed: 乱数シード。
+        probe_ids: 使ったプローブの IRI（シナリオの識別子の元）。
         connection: Postgres 接続。
         store: アサーションストア。
 
@@ -122,6 +126,7 @@ async def whatif_once(
         horizon=horizon,
         samples=reasoning.forecast_samples,
         seed=(seed + int(at.timestamp())) % 2**31,
+        probe_ids=probe_ids,
     )
     scenario = result.scenario
     # 結果の文を先に、索引を後に（索引が書けなければ再実行で補完される。文は欠けた点だけ足す）
@@ -181,6 +186,7 @@ async def _run(args: argparse.Namespace) -> int:
                 model=model,
                 probes=probes,
                 seed=args.seed,
+                probe_ids=args.probe_id,
                 connection=connection,
                 store=store,
             )
@@ -198,7 +204,7 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """エントリポイント。終了コード: 0 成功 / 1 潜在が無い・古い / 2 拒否（介入付きでない WM）。"""
+    """エントリポイント。終了コード: 0 成功 / 1 潜在が無い・古い / 2 拒否 / 3 設定の誤り。"""
     parser = argparse.ArgumentParser(description="介入の下の rollout を介入なしと並べて返す")
     parser.add_argument("--entity", required=True, help="対象実体の IRI")
     parser.add_argument("--fluent", required=True, help="フルーエント型の IRI")
@@ -210,7 +216,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, required=True, help="乱数シード（必須）")
     args = parser.parse_args(argv)
     configure_logging(get_settings().log_level)
-    return asyncio.run(_run(args))
+    try:
+        return asyncio.run(_run(args))
+    except ConfigError as exc:
+        log.error("whatif.config_error", reason=str(exc))
+        return 3
 
 
 if __name__ == "__main__":

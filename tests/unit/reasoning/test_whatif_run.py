@@ -92,6 +92,7 @@ def _run(model: KoopmanModel, state: LatentState, **overrides: object) -> object
         "horizon": 6,
         "samples": 4,
         "seed": 11,
+        "probe_ids": ["p1"],
     }
     args.update(overrides)
     return run_intervention_whatif(**args)  # type: ignore[arg-type]
@@ -153,11 +154,23 @@ class TestBaselineAndIntervention:
             "channel": 0,
             "magnitude": 1.0,
             "horizon": 3,
+            "seed": 1,
+            "samples": 4,
+            "probe_ids": ["p1"],
         }
         ids = {scenario_key(**base)}  # type: ignore[arg-type]
-        for key, value in (("channel", 1), ("magnitude", 2.0), ("horizon", 4), ("entity", "e2")):
+        changes = (
+            ("channel", 1),
+            ("magnitude", 2.0),
+            ("horizon", 4),
+            ("entity", "e2"),
+            ("seed", 2),
+            ("samples", 8),
+            ("probe_ids", ["p1", "p2"]),
+        )
+        for key, value in changes:
             ids.add(scenario_key(**{**base, key: value}))  # type: ignore[arg-type]
-        assert len(ids) == 5
+        assert len(ids) == 8, "結果を変える入力はすべて識別子に効く"
 
 
 class TestIsolation:
