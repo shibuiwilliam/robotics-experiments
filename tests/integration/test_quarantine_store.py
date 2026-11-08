@@ -104,6 +104,39 @@ class TestQuarantineStore:
             await connection.rollback()
 
     @pytest.mark.asyncio
+    async def test_a_poison_payload_does_not_break_the_write(self, settings: Settings) -> None:
+        """NUL 文字・NaN を含む生の入力でも積める（書けないとワーカーが毎周期落ちる）。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = QuarantineStore(connection, site=SITE)
+            assert await store.add(
+                source=SOURCE,
+                table="asset_register",
+                subject="POISON",
+                reason="bad",
+                payload={"fields": {"name": "a\x00b", "v": float("nan")}},
+            )
+            [row] = await store.recent()
+            assert row.payload["fields"]["v"] == "nan"
+            await connection.rollback()
+
+    @pytest.mark.asyncio
+    async def test_an_unreviewed_row_keeps_the_latest_raw_input(self, settings: Settings) -> None:
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn) as connection:
+            store = QuarantineStore(connection, site=SITE)
+            await store.add(source=SOURCE, table="t", subject="S", reason="r", payload={"v": 1})
+            again = await store.add(
+                source=SOURCE, table="t", subject="S", reason="r", payload={"v": 2}
+            )
+            assert again is False
+            [row] = await store.recent()
+            assert row.payload["v"] == 2, "確認する人が古い値を見ない"
+            await store.mark_reviewed(row.event_id, resolution="ok", at=now())
+            await store.add(source=SOURCE, table="t", subject="S", reason="r", payload={"v": 3})
+            [reviewed] = await store.recent(only_unreviewed=False)
+            assert reviewed.payload["v"] == 2, "確認済みの行は触らない"
+            await connection.rollback()
+
+    @pytest.mark.asyncio
     async def test_shacl_violations_are_queued_but_warnings_are_not_passed_in(
         self, settings: Settings
     ) -> None:

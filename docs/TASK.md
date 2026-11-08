@@ -476,7 +476,7 @@ M8 の目的と G8 は変えない。ADR-0030。
 目的: 構造が壊れた入力を捨てずに人の確認へ回す経路（隔離キュー）と、介入の下での rollout を呼ぶ入口（What-if）を作る。
 M9 の目的と G9 は変えない。同一性束縛と LLM の入口は H-27 に残す。
 
-- [ ] **M10-01** 隔離キュー（書く側） — alembic 0015（`site`）、`knowledge/quarantine.py`（`QuarantineStore`: 冪等な `add` と `add_outcome`、`pending`、`mark_reviewed`）、取込が失敗行の生データを返し、ingest-worker が写像失敗の行と型の無い台帳の行を積む
+- [x] **M10-01** 隔離キュー（書く側。2026-11-08 完了。独立レビュー 7 件を反映: 壊れた入力が書き込みを壊す・理由に入力値が入る・古い生の入力が残る・壊れた編集で直前の有効な文を閉じる・隔離の失敗で健全な行が止まる・ランタイム import 漏れ） — alembic 0015（`site`）、`knowledge/quarantine.py`（`QuarantineStore`: 冪等な `add` と `add_outcome`、`pending`、`mark_reviewed`）、取込が失敗行の生データを返し、ingest-worker が写像失敗の行と型の無い台帳の行を積む
 - [ ] **M10-02** 隔離の読み書き — GraphQL `quarantine`（ABAC）、コマンド `review_quarantine`（`reviewed_by` は要求者）、`DecisionKind.QUARANTINE_REVIEW`（alembic 0016）、learning-worker が適用
 - [ ] **M10-03** What-if のジョブ — `make whatif`。介入付きで学習された WM でだけ実行し、そうでなければ理由を示して拒否する。結果は `hypothetical` のシナリオグラフ（ADR-0036）
 - [ ] **M10-04** What-if の読み出し — GraphQL `scenarios`（`hypothetical` は ABAC で既定は見えない）

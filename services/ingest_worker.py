@@ -35,9 +35,12 @@ from sbp.core.time import ensure_utc, now
 from sbp.integration import (
     IngestionPipeline,
     MasterDataResolver,
+    Rejection,
+    describe_failure,
     intended_fluent_for,
     plan_item_from_record,
 )
+from sbp.integration.master import MASTER_REGISTER_TABLE
 from services.runtime import ReadinessCheck, WorkerRuntime
 
 if TYPE_CHECKING:
@@ -52,7 +55,6 @@ if TYPE_CHECKING:
         MappingRegistry,
         MasterDataSync,
         PlanSync,
-        Rejection,
         ReliabilityRegistry,
     )
     from sbp.integration.connectors import RawRecord
@@ -71,7 +73,7 @@ log = get_logger(__name__)
 
 WORKER_NAME = "ingest-worker"
 
-MASTER_TABLE = "asset_register"
+MASTER_TABLE = MASTER_REGISTER_TABLE
 """資産台帳の表。毎周期全行を読む（消えた行を知るため）。"""
 
 PLAN_TABLE = "maintenance_plan"
@@ -234,7 +236,9 @@ class IngestWorker:
             return 0
         rows = list(await connector.pull(None))
         records, rejected = self._map(rows, table=MASTER_TABLE)
-        report = await asyncio.to_thread(self._master.sync, records, at=at)
+        # 写像に失敗した行の資産は閉じない（壊れた編集で直前の有効な文を失わない）
+        hold = [r.subject for r in rejected]
+        report = await asyncio.to_thread(self._master.sync, records, at=at, hold=hold)
         await self._quarantine_all([*rejected, *report.rejected])
         for tag in sorted(report.entities):
             self._resolver.register("asset", tag)
@@ -249,13 +253,15 @@ class IngestWorker:
             return 0
         result = self._pipeline.ingest_rows(rows)
         self._measure(result, table=table, at=at)
+        if self._sink is not None:
+            # 健全な行を先に送る（隔離に積めない行があっても、健全な行は止めない）
+            for topic, event in result.events:
+                await self._sink(topic, event)
         # カーソルを進める前に隔離へ積む。積めなければ例外でカーソルは進まず、次周期に読み直す
         await self._quarantine_all(result.rejected)
         if self._sink is None:
             # 送れないならカーソルも進めない（取り込んだことにしない）
             return 0
-        for topic, event in result.events:
-            await self._sink(topic, event)
         handled = len(result.events)
         if self._records is not None:
             # 送信の後・カーソルの前。書けなければカーソルは進まず、次周期に送り直す（冪等）
@@ -302,18 +308,35 @@ class IngestWorker:
                         source=raw.source,
                         table=raw.table,
                         subject=raw.external_id,
-                        reason=f"mapping failed: {exc}",
+                        reason=describe_failure(exc),
                         payload={"fields": dict(raw.fields)},
                     )
                 )
         return records, rejected
 
     async def _quarantine_all(self, rejections: Sequence[Rejection]) -> None:
-        """受け付けなかった入力を隔離キューに積む（冪等。積めなければ例外のまま上げる）。"""
+        """受け付けなかった入力を隔離キューに積む（冪等）。
+
+        1 件が失敗しても残りを試し、最後に最初の失敗を上げる——上げるのでカーソルは進まず、
+        次周期に読み直す。
+        """
         if self._quarantine is None:
             return
+        first: Exception | None = None
         for rejection in rejections:
-            await self._quarantine(rejection)
+            try:
+                await self._quarantine(rejection)
+            except Exception as exc:
+                log.error(
+                    "worker.quarantine_failed",
+                    worker=WORKER_NAME,
+                    subject=rejection.subject,
+                    table=rejection.table,
+                    error=str(exc)[:200],
+                )
+                first = first or exc
+        if first is not None:
+            raise first
 
     def _measure(self, result: IngestResult, *, table: str, at: datetime) -> None:
         """取込 1 回ぶんの指標（``cdc_lag``・``mapping_violations``）を記録する。"""

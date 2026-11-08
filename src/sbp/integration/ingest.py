@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sbp.core import vocab
 from sbp.core.belief import BooleanBelief
@@ -39,7 +39,13 @@ if TYPE_CHECKING:
     from sbp.integration.reliability import ReliabilityModel, ReliabilityRegistry
     from sbp.integration.resolver import EntityResolver
 
-__all__ = ["IngestResult", "IngestionPipeline", "MappingDriftDetected", "Rejection"]
+__all__ = [
+    "IngestResult",
+    "IngestionPipeline",
+    "MappingDriftDetected",
+    "Rejection",
+    "describe_failure",
+]
 
 log = get_logger(__name__)
 
@@ -75,6 +81,28 @@ class MappingDriftDetected:
         写像の版を上げる必要がある。
         """
         return bool(self.diff.get("removed") or self.diff.get("retyped"))
+
+
+def describe_failure(exc: Exception) -> str:
+    """写像の失敗を、隔離キューの理由にできる安定した短い文にする。
+
+    pydantic のエラー文は入力値（``input_value=...``）を含むので、理由に生の値を写さない
+    （値は ``payload`` だけに残す）。型と場所だけにすれば、同じ種類の失敗が同じ文になり、
+    隔離の識別子が安定する（周期ごとに行が増えない）。
+
+    Args:
+        exc: 写像で起きた例外。
+    """
+    errors: Any = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            entries = cast("list[dict[str, Any]]", errors())
+            parts = [f"{'.'.join(str(x) for x in e['loc'])}: {e['type']}" for e in entries]
+        except Exception:
+            parts = []
+        if parts:
+            return f"mapping failed ({type(exc).__name__}): " + "; ".join(parts)[:200]
+    return f"mapping failed ({type(exc).__name__}): {str(exc)[:120]}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +242,7 @@ class IngestionPipeline:
                         source=raw.source,
                         table=raw.table,
                         subject=raw.external_id,
-                        reason=f"mapping failed: {exc}",
+                        reason=describe_failure(exc),
                         payload={"fields": dict(raw.fields)},
                     )
                 )

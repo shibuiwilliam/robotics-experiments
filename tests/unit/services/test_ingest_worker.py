@@ -264,6 +264,77 @@ class TestQuarantine:
         assert (str(vocab.ent.MesSource), "operation_log") not in cursors.saved
 
     @pytest.mark.asyncio
+    async def test_a_failing_ledger_quarantine_write_stops_the_cycle_but_retries(
+        self, tmp_path: Path
+    ) -> None:
+        """台帳の経路で積めなければ周期が落ち、次の周期に同じ行を積み直せる。"""
+        failing = _Quarantine(fail=True)
+        worker, _s, _c, _g = _worker(tmp_path, quarantine=failing)
+        self._ledger_with_unknown_type(tmp_path)
+        with pytest.raises(ConnectionError):
+            await worker.step()
+        failing.fail = False
+        await worker.step()
+        assert [r.subject for r in failing.rejected] == ["X-1"]
+
+    @pytest.mark.asyncio
+    async def test_healthy_events_are_sent_even_when_a_row_is_quarantined(
+        self, tmp_path: Path
+    ) -> None:
+        quarantine = _Quarantine()
+        worker, sink, _c, _g = _worker(tmp_path, quarantine=quarantine)
+        _insert(
+            tmp_path / "mock.sqlite",
+            "INSERT INTO operation_log (log_id, asset_tag, running, shift, logged_at, "
+            "recorded_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("OL-BAD", "P-101", 1, "shift1", "not-a-time", "not-a-time", T0.isoformat()),
+        )
+        await worker.step()
+        assert len(sink.sent) == 5, "壊れた 1 行の隣の健全な行は送られる"
+        assert [r.subject for r in quarantine.rejected] == ["OL-BAD"]
+
+    @pytest.mark.asyncio
+    async def test_a_quarantine_failure_still_lets_healthy_events_go_first(
+        self, tmp_path: Path
+    ) -> None:
+        worker, sink, cursors, _g = _worker(tmp_path, quarantine=_Quarantine(fail=True))
+        _insert(
+            tmp_path / "mock.sqlite",
+            "INSERT INTO operation_log (log_id, asset_tag, running, shift, logged_at, "
+            "recorded_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("OL-BAD", "P-101", 1, "shift1", "not-a-time", "not-a-time", T0.isoformat()),
+        )
+        with pytest.raises(ConnectionError):
+            await worker.step()
+        assert sink.sent, "健全な行は隔離の失敗に巻き込まれない（送信は冪等）"
+        assert (str(vocab.ent.MesSource), "operation_log") not in cursors.saved
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("column", "value"), [("asset_type", "Gizmo"), ("recorded_at", "not-a-time")]
+    )
+    async def test_a_broken_edit_does_not_retract_the_assets_last_valid_statement(
+        self, tmp_path: Path, column: str, value: str
+    ) -> None:
+        """壊れた編集（型を未知の値にした）で、直前の有効な文を失わない。"""
+        quarantine = _Quarantine()
+        worker, _s, _c, graph = _worker(tmp_path, quarantine=quarantine)
+        await worker.step()
+        store = AssertionStore(graph, site_id=SITE)
+        before = [r for r in store.query(subject=P101) if r.predicate.endswith("type")]
+        assert before
+        _insert(
+            tmp_path / "mock.sqlite",
+            f"UPDATE asset_register SET {column} = ?, updated_at = ? WHERE asset_tag = ?",
+            (value, (T0 + timedelta(hours=1)).isoformat(), "P-101"),
+        )
+        worker._last_poll = None
+        await worker.step()
+        after = [r for r in store.query(subject=P101) if r.predicate.endswith("type")]
+        assert len(after) == len(before), "未知の型の行でも、直前の型の文は閉じない"
+        assert [r.subject for r in quarantine.rejected] == ["P-101"]
+
+    @pytest.mark.asyncio
     async def test_healthy_rows_are_not_quarantined(self, tmp_path: Path) -> None:
         quarantine = _Quarantine()
         worker, _s, _c, _g = _worker(tmp_path, quarantine=quarantine)

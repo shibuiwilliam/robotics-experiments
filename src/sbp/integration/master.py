@@ -29,7 +29,7 @@ from sbp.integration.ingest import Rejection
 from sbp.knowledge import RDF_TYPE, rebuild_master_projection
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
     from datetime import datetime
     from uuid import UUID
 
@@ -59,6 +59,7 @@ class MasterSyncReport:
         unchanged: そのまま残った文の数。
         skipped: 登録しなかった行（外部 ID と理由）。
         rejected: ``skipped`` の行を生の入力ごと持つもの（隔離キューへ渡す。ADR-0035）。
+        held: 型が無いため文を作らず、直前の文を閉じなかった資産タグ。
         entities: 台帳に載っている資産タグ（解決器に登録する）。
     """
 
@@ -67,6 +68,7 @@ class MasterSyncReport:
     unchanged: int = 0
     skipped: list[tuple[str, str]] = field(default_factory=list)
     rejected: list[Rejection] = field(default_factory=list)
+    held: list[str] = field(default_factory=list)
     entities: frozenset[str] = frozenset()
 
 
@@ -85,12 +87,20 @@ class MasterDataSync:
         self.provenance = site_iri(site_id, "prov", "asset-register")
         """台帳の文の来歴。現在の台帳の文はこれで見分ける。"""
 
-    def sync(self, records: Sequence[Record], *, at: datetime) -> MasterSyncReport:
+    def sync(
+        self,
+        records: Sequence[Record],
+        *,
+        at: datetime,
+        hold: Collection[str] = (),
+    ) -> MasterSyncReport:
         """台帳の全行を同期する。
 
         Args:
             records: ``asset_register`` 写像を通った記録（**全行**）。
             at: 同期時刻（新しい文の ``tx_from`` と、閉じる文の ``tx_to``）。
+            hold: 閉じない資産タグ（今回の読み出しで写像に失敗した行。壊れた編集で直前の有効な文を
+                失わない。隔離に積まれ、人が確認する）。
 
         Returns:
             同期の結果。
@@ -107,8 +117,9 @@ class MasterDataSync:
                 desired[statement] = record
 
         current = self._current_statements()
+        held = {site_iri(self._site_id, "asset", tag) for tag in (*hold, *report.held)}
         for statement, assertion_id in current.items():
-            if statement not in desired:
+            if statement not in desired and statement[0] not in held:
                 self._store.retract(assertion_id, at)
                 report.retracted += 1
         for statement, record in desired.items():
@@ -137,6 +148,7 @@ class MasterDataSync:
         if not isinstance(type_iri, str) or type_iri in _NOT_ASSET_TYPES:
             reason = f"asset_type {asset_type!r} is not a type in the ontology"
             report.skipped.append((record.external_id, reason))
+            report.held.append(record.external_id)
             report.rejected.append(
                 Rejection(
                     source=str(record.source),

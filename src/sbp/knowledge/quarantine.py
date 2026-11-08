@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -56,6 +57,25 @@ class ViolationLike(Protocol):
     def path(self) -> str | None:
         """違反したプロパティパス。"""
         ...
+
+
+def _jsonable(value: Any) -> Any:
+    """jsonb に入る形にする（NUL 文字・NaN / Infinity は Postgres が拒否する）。
+
+    隔離の対象は壊れた入力そのものなので、「壊れた入力が書き込みを壊す」ことを許さない
+    ——書けないと、ワーカーが毎周期同じ行で落ちる。
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "\\x00")
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if isinstance(value, dict):
+        return {str(_jsonable(k)): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_jsonable(v) for v in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return _jsonable(str(value))
 
 
 def quarantine_id(*, site: str, source: str, table: str, subject: str, reason: str) -> UUID:
@@ -124,7 +144,7 @@ class QuarantineStore:
             payload: 生の入力。
 
         Returns:
-            新しく積まれたか（既にあれば、確認済みでも偽）。
+            新しく積まれたか（既にあれば、確認済みでも偽。未確認の既存行は生の入力だけ更新する）。
         """
         event_id = quarantine_id(
             site=self.site, source=source, table=table, subject=subject, reason=reason
@@ -133,17 +153,21 @@ class QuarantineStore:
         async with self._connection.cursor() as cursor:
             await cursor.execute(
                 f"INSERT INTO {_TABLE} (event_id, site, topic, subject, reason, payload) "
-                "VALUES (%s, %s, %s, %s, %s, %s::jsonb) ON CONFLICT (event_id) DO NOTHING",
+                "VALUES (%s, %s, %s, %s, %s, %s::jsonb) "
+                # 未確認の行は最新の生の入力に更新する。確認済みは触らない
+                "ON CONFLICT (event_id) DO UPDATE SET payload = EXCLUDED.payload "
+                f"WHERE {_TABLE}.reviewed_at IS NULL RETURNING (xmax = 0)",
                 (
                     event_id,
                     self.site,
                     f"ingest:{table}",
                     subject,
                     reason,
-                    json.dumps(body, ensure_ascii=False, sort_keys=True, default=str),
+                    json.dumps(_jsonable(body), ensure_ascii=False, sort_keys=True),
                 ),
             )
-            inserted = cursor.rowcount == 1
+            returned = await cursor.fetchone()
+            inserted = returned is not None and bool(returned[0])
         log.info(
             "knowledge.quarantined",
             site=self.site,

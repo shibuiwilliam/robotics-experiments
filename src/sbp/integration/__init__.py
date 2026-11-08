@@ -17,7 +17,13 @@ from sbp.integration.extraction import (
     verify_spans,
 )
 from sbp.integration.human_answer import answer_event, answer_record_iri, answer_topic
-from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected, Rejection
+from sbp.integration.ingest import (
+    IngestionPipeline,
+    IngestResult,
+    MappingDriftDetected,
+    Rejection,
+    describe_failure,
+)
 from sbp.integration.mappings import Claim, Mapping, MappingRegistry, MappingResult
 from sbp.integration.master import MasterDataSync, MasterSyncReport
 from sbp.integration.plans import (
@@ -85,6 +91,7 @@ __all__ = [
     "answer_event",
     "answer_record_iri",
     "answer_topic",
+    "describe_failure",
     "intended_fluent_for",
     "plan_item_from_record",
     "plan_provenance",
