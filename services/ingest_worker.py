@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         MappingRegistry,
         MasterDataSync,
         PlanSync,
+        Rejection,
         ReliabilityRegistry,
     )
     from sbp.integration.connectors import RawRecord
@@ -61,6 +62,8 @@ if TYPE_CHECKING:
     """``(トピック, イベント)`` を送る（``KafkaEventProducer.send`` を包む）。"""
     RecordSink = Callable[[Sequence[Record]], Awaitable[object]]
     """送信し終えた記録の存在を投影表に追記する（``RecordIndex.add``。ADR-0017）。"""
+    QuarantineSink = Callable[[Rejection], Awaitable[object]]
+    """構造の理由で受け付けなかった入力を隔離キューに積む（``QuarantineStore.add``。ADR-0035）。"""
 
 __all__ = ["MASTER_TABLE", "PLAN_TABLE", "IngestWorker", "build_worker", "main"]
 
@@ -131,6 +134,7 @@ class IngestWorker:
         cursors: CursorStore | None = None,
         metrics: MetricRecorder | None = None,
         records: RecordSink | None = None,
+        quarantine: QuarantineSink | None = None,
     ) -> None:
         """Args:
         settings: 設定（既定は環境から読む）。
@@ -143,6 +147,7 @@ class IngestWorker:
         cursors: 取込カーソル（``None`` なら毎周期全行を読む）。
         metrics: 指標の記録先（``cdc_lag`` / ``mapping_violations``）。
         records: 記録の存在の投影（``None`` なら書かない。期待の記号側の検証が記録を引けない）。
+        quarantine: 受け付けなかった入力の隔離先（``None`` ならログだけで人の目に触れない）。
         """
         self.settings = settings or Settings()
         self.runtime = WorkerRuntime(
@@ -163,6 +168,7 @@ class IngestWorker:
         self._plans = plans
         self._cursor_store = cursors
         self._records = records
+        self._quarantine = quarantine
         self._cursors: dict[tuple[str, str], datetime] | None = None
         self._metrics = metrics
         self._last_poll: datetime | None = None
@@ -175,6 +181,7 @@ class IngestWorker:
                 ("plans", plans),
                 ("cursors", cursors),
                 ("records", records),
+                ("quarantine", quarantine),
             )
             if given is None
         )
@@ -226,8 +233,9 @@ class IngestWorker:
         if connector is None or self._master is None:
             return 0
         rows = list(await connector.pull(None))
-        records = self._map(rows, table=MASTER_TABLE)
+        records, rejected = self._map(rows, table=MASTER_TABLE)
         report = await asyncio.to_thread(self._master.sync, records, at=at)
+        await self._quarantine_all([*rejected, *report.rejected])
         for tag in sorted(report.entities):
             self._resolver.register("asset", tag)
         return report.asserted + report.retracted
@@ -241,6 +249,8 @@ class IngestWorker:
             return 0
         result = self._pipeline.ingest_rows(rows)
         self._measure(result, table=table, at=at)
+        # カーソルを進める前に隔離へ積む。積めなければ例外でカーソルは進まず、次周期に読み直す
+        await self._quarantine_all(result.rejected)
         if self._sink is None:
             # 送れないならカーソルも進めない（取り込んだことにしない）
             return 0
@@ -275,16 +285,35 @@ class IngestWorker:
             changed += outcome != "unchanged"
         return changed
 
-    def _map(self, rows: Sequence[RawRecord], *, table: str) -> list[Record]:
-        """台帳の行を写像に通す（失敗した行はログに残して飛ばす）。"""
+    def _map(
+        self, rows: Sequence[RawRecord], *, table: str
+    ) -> tuple[list[Record], list[Rejection]]:
+        """台帳の行を写像に通す。失敗した行は生の入力ごと返す（隔離キューへ渡す）。"""
         mapping = self._mappings.for_table(table)
         records: list[Record] = []
+        rejected: list[Rejection] = []
         for raw in rows:
             try:
                 records.append(mapping.apply(raw, ontology_version=vocab.ONTOLOGY_VERSION).record)
             except Exception as exc:
                 log.warning("worker.master_row_failed", external_id=raw.external_id, error=str(exc))
-        return records
+                rejected.append(
+                    Rejection(
+                        source=raw.source,
+                        table=raw.table,
+                        subject=raw.external_id,
+                        reason=f"mapping failed: {exc}",
+                        payload={"fields": dict(raw.fields)},
+                    )
+                )
+        return records, rejected
+
+    async def _quarantine_all(self, rejections: Sequence[Rejection]) -> None:
+        """受け付けなかった入力を隔離キューに積む（冪等。積めなければ例外のまま上げる）。"""
+        if self._quarantine is None:
+            return
+        for rejection in rejections:
+            await self._quarantine(rejection)
 
     def _measure(self, result: IngestResult, *, table: str, at: datetime) -> None:
         """取込 1 回ぶんの指標（``cdc_lag``・``mapping_violations``）を記録する。"""
@@ -353,6 +382,7 @@ async def build_worker(
         HttpGraphStore,
         IngestCursorStore,
         MetricStore,
+        QuarantineStore,
         RecordIndex,
     )
     from services.metrics import MetricRecorder  # noqa: PLC0415
@@ -375,6 +405,18 @@ async def build_worker(
         """送ってから戻る（送信の後にカーソルを進めるため、待つ）。"""
         return await producer.send(topic, event)
 
+    quarantine_store = QuarantineStore(connection, site=site_id)
+
+    async def quarantine(rejection: Rejection) -> object:
+        """受け付けなかった入力を隔離に積む（同じ入力・同じ理由は 1 行）。"""
+        return await quarantine_store.add(
+            source=rejection.source,
+            table=rejection.table,
+            subject=rejection.subject,
+            reason=rejection.reason,
+            payload=rejection.payload,
+        )
+
     worker = IngestWorker(
         resolved,
         connectors=connectors,
@@ -386,6 +428,7 @@ async def build_worker(
         cursors=IngestCursorStore(connection, site=site_id),
         metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
         records=RecordIndex(connection, site=site_id).add,
+        quarantine=quarantine,
     )
     log.info("worker.wired", worker=WORKER_NAME, site_id=site_id, tables=sorted(connectors))
     return worker, producer

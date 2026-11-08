@@ -17,7 +17,7 @@ from sbp.integration.extraction import (
     verify_spans,
 )
 from sbp.integration.human_answer import answer_event, answer_record_iri, answer_topic
-from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected
+from sbp.integration.ingest import IngestionPipeline, IngestResult, MappingDriftDetected, Rejection
 from sbp.integration.mappings import Claim, Mapping, MappingRegistry, MappingResult
 from sbp.integration.master import MasterDataSync, MasterSyncReport
 from sbp.integration.plans import (
@@ -70,6 +70,7 @@ __all__ = [
     "NormRule",
     "PlanSync",
     "RawRecord",
+    "Rejection",
     "ReliabilityModel",
     "ReliabilityRegistry",
     "ResolutionOutcome",

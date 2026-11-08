@@ -25,6 +25,7 @@ from sbp.core.belief import BooleanBelief
 from sbp.core.ids import site_iri
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
+from sbp.integration.ingest import Rejection
 from sbp.knowledge import RDF_TYPE, rebuild_master_projection
 
 if TYPE_CHECKING:
@@ -38,6 +39,9 @@ if TYPE_CHECKING:
 __all__ = ["MasterDataSync", "MasterSyncReport"]
 
 log = get_logger(__name__)
+
+MASTER_REGISTER_TABLE = "asset_register"
+"""台帳の表名（隔離キューの「入口」に使う。``services.ingest_worker.MASTER_TABLE`` と同じ値）。"""
 
 type Statement = tuple[str, str, str]
 """``(主語 IRI, 述語 IRI, 目的語 IRI)``。"""
@@ -54,6 +58,7 @@ class MasterSyncReport:
         retracted: ``tx_to`` を閉じた文の数。
         unchanged: そのまま残った文の数。
         skipped: 登録しなかった行（外部 ID と理由）。
+        rejected: ``skipped`` の行を生の入力ごと持つもの（隔離キューへ渡す。ADR-0035）。
         entities: 台帳に載っている資産タグ（解決器に登録する）。
     """
 
@@ -61,6 +66,7 @@ class MasterSyncReport:
     retracted: int = 0
     unchanged: int = 0
     skipped: list[tuple[str, str]] = field(default_factory=list)
+    rejected: list[Rejection] = field(default_factory=list)
     entities: frozenset[str] = frozenset()
 
 
@@ -131,6 +137,15 @@ class MasterDataSync:
         if not isinstance(type_iri, str) or type_iri in _NOT_ASSET_TYPES:
             reason = f"asset_type {asset_type!r} is not a type in the ontology"
             report.skipped.append((record.external_id, reason))
+            report.rejected.append(
+                Rejection(
+                    source=str(record.source),
+                    table=MASTER_REGISTER_TABLE,
+                    subject=record.external_id,
+                    reason=reason,
+                    payload={"fields": dict(record.payload)},
+                )
+            )
             log.warning(
                 "integration.master_row_skipped", external_id=record.external_id, reason=reason
             )

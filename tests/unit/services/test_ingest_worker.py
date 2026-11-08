@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,7 +26,13 @@ from services.ingest_worker import IngestWorker
 from sbp.core import vocab
 from sbp.core.config import IntegrationSettings, Settings
 from sbp.core.modality import Modality
-from sbp.integration import MappingRegistry, MasterDataSync, PlanSync, ReliabilityRegistry
+from sbp.integration import (
+    MappingRegistry,
+    MasterDataSync,
+    PlanSync,
+    Rejection,
+    ReliabilityRegistry,
+)
 from sbp.integration.mock import MockBusinessSystem
 from sbp.integration.mock.business_system import build_default_scenario
 from sbp.knowledge import AssertionStore, EmbeddedGraphStore
@@ -64,6 +72,20 @@ class _Records:
         return len(records)
 
 
+class _Quarantine:
+    """隔離キューの代わり（``QuarantineStore.add`` の呼び出しを数える）。"""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.rejected: list[Rejection] = []
+        self.fail = fail
+
+    async def __call__(self, rejection: Rejection) -> bool:
+        if self.fail:
+            raise ConnectionError("db down")
+        self.rejected.append(rejection)
+        return True
+
+
 class _Cursors:
     def __init__(self) -> None:
         self.saved: dict[tuple[str, str], datetime] = {}
@@ -97,6 +119,7 @@ def _worker(
     sink: _Sink | None = None,
     cursors: _Cursors | None = None,
     records: _Records | None = None,
+    quarantine: _Quarantine | None = None,
 ) -> tuple[IngestWorker, _Sink, _Cursors, EmbeddedGraphStore]:
     graph = _graph()
     assertions = AssertionStore(graph, site_id=SITE)
@@ -113,6 +136,7 @@ def _worker(
         plans=PlanSync(assertions, site_id=SITE),
         cursors=cursors,
         records=records,
+        quarantine=quarantine,
     )
     return worker, sink, cursors, graph
 
@@ -172,6 +196,81 @@ class TestRecordIndex:
         assert records.added == []
 
 
+def _insert(db: Path, sql: str, params: tuple[object, ...]) -> None:
+    """外界の模擬: 業務システムに壊れた行を直接入れる。"""
+    with closing(sqlite3.connect(db)) as connection, connection:
+        connection.execute(sql, params)
+
+
+class TestQuarantine:
+    """構造が壊れた入力は捨てずに隔離へ回す（ADR-0035）。"""
+
+    def _ledger_with_unknown_type(self, tmp_path: Path) -> None:
+        _insert(
+            tmp_path / "mock.sqlite",
+            "INSERT INTO asset_register (asset_tag, asset_type, part_of, recorded_at, updated_at) "
+            "VALUES (?, ?, NULL, ?, ?)",
+            ("X-1", "Gizmo", T0.isoformat(), T0.isoformat()),
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_ledger_row_with_an_unknown_type_is_quarantined_with_its_fields(
+        self, tmp_path: Path
+    ) -> None:
+        quarantine = _Quarantine()
+        worker, _s, _c, _g = _worker(tmp_path, quarantine=quarantine)
+        self._ledger_with_unknown_type(tmp_path)
+        await worker.step()
+        assert [r.subject for r in quarantine.rejected] == ["X-1"]
+        rejection = quarantine.rejected[0]
+        assert rejection.table == "asset_register"
+        assert "Gizmo" in rejection.reason
+        assert rejection.payload["fields"]["asset_type"] == "Gizmo", "生の入力を捨てない"
+
+    @pytest.mark.asyncio
+    async def test_a_row_that_fails_the_mapping_is_quarantined_not_lost(
+        self, tmp_path: Path
+    ) -> None:
+        quarantine = _Quarantine()
+        worker, _s, cursors, _g = _worker(tmp_path, quarantine=quarantine)
+        _insert(
+            tmp_path / "mock.sqlite",
+            "INSERT INTO operation_log (log_id, asset_tag, running, shift, logged_at, "
+            "recorded_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("OL-BAD", "P-101", 1, "shift1", "not-a-time", "not-a-time", T0.isoformat()),
+        )
+        await worker.step()
+        assert [r.subject for r in quarantine.rejected] == ["OL-BAD"]
+        assert quarantine.rejected[0].table == "operation_log"
+        assert (str(vocab.ent.MesSource), "operation_log") in cursors.saved, (
+            "隔離に積んだ行はカーソルが進んでよい（捨てたのではなく、残してある）"
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_failing_quarantine_write_does_not_advance_the_cursor(
+        self, tmp_path: Path
+    ) -> None:
+        """隔離に積めなかった行は、次の周期に読み直す（失われない）。"""
+        cursors = _Cursors()
+        worker, _s, _c, _g = _worker(tmp_path, cursors=cursors, quarantine=_Quarantine(fail=True))
+        _insert(
+            tmp_path / "mock.sqlite",
+            "INSERT INTO operation_log (log_id, asset_tag, running, shift, logged_at, "
+            "recorded_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("OL-BAD", "P-101", 1, "shift1", "not-a-time", "not-a-time", T0.isoformat()),
+        )
+        with pytest.raises(ConnectionError):
+            await worker.step()
+        assert (str(vocab.ent.MesSource), "operation_log") not in cursors.saved
+
+    @pytest.mark.asyncio
+    async def test_healthy_rows_are_not_quarantined(self, tmp_path: Path) -> None:
+        quarantine = _Quarantine()
+        worker, _s, _c, _g = _worker(tmp_path, quarantine=quarantine)
+        await worker.step()
+        assert quarantine.rejected == []
+
+
 class TestIdempotency:
     @pytest.mark.asyncio
     async def test_the_second_cycle_adds_nothing(self, tmp_path: Path) -> None:
@@ -210,7 +309,15 @@ class TestUnconfiguredPaths:
             mappings=MappingRegistry.from_directory(REPO_ROOT / "mappings"),
             reliability=ReliabilityRegistry.from_directory(REPO_ROOT / "reliability"),
         )
-        assert worker.unwired == ("connectors", "sink", "master", "plans", "cursors", "records")
+        assert worker.unwired == (
+            "connectors",
+            "sink",
+            "master",
+            "plans",
+            "cursors",
+            "records",
+            "quarantine",
+        )
         assert await worker.step() == 0
 
     @pytest.mark.asyncio

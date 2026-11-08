@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sbp.core import vocab
 from sbp.core.belief import BooleanBelief
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from sbp.integration.reliability import ReliabilityModel, ReliabilityRegistry
     from sbp.integration.resolver import EntityResolver
 
-__all__ = ["IngestResult", "IngestionPipeline", "MappingDriftDetected"]
+__all__ = ["IngestResult", "IngestionPipeline", "MappingDriftDetected", "Rejection"]
 
 log = get_logger(__name__)
 
@@ -77,6 +77,25 @@ class MappingDriftDetected:
         return bool(self.diff.get("removed") or self.diff.get("retyped"))
 
 
+@dataclass(frozen=True, slots=True)
+class Rejection:
+    """構造の理由で受け付けなかった入力 1 件（隔離キューへ渡す。ADR-0035）。
+
+    Attributes:
+        source: 情報源 IRI。
+        table: 業務システム側の表名。
+        subject: 主語（外部 ID）。
+        reason: 受け付けなかった理由（人が読む）。
+        payload: 生の入力（捨てない）。
+    """
+
+    source: str
+    table: str
+    subject: str
+    reason: str
+    payload: dict[str, Any]
+
+
 @dataclass(slots=True)
 class IngestResult:
     """取り込み 1 回の結果。
@@ -87,6 +106,7 @@ class IngestResult:
         unresolved: 解決できなかった参照（捨てずに保持する）。
         drift: 検知したスキーマ変更。
         failed: 写像に失敗した行（理由付き）。
+        rejected: ``failed`` の行を生の入力ごと持つもの（隔離キューへ渡す）。
     """
 
     records: list[Record] = field(default_factory=list)
@@ -94,6 +114,7 @@ class IngestResult:
     unresolved: list[UnresolvedRef] = field(default_factory=list)
     drift: list[MappingDriftDetected] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)
+    rejected: list[Rejection] = field(default_factory=list)
 
     @property
     def resolved_count(self) -> int:
@@ -188,6 +209,15 @@ class IngestionPipeline:
                 claims = mapping.claims_of(mapped.record)
             except Exception as exc:
                 result.failed.append((raw.external_id, str(exc)))
+                result.rejected.append(
+                    Rejection(
+                        source=raw.source,
+                        table=raw.table,
+                        subject=raw.external_id,
+                        reason=f"mapping failed: {exc}",
+                        payload={"fields": dict(raw.fields)},
+                    )
+                )
                 log.warning(
                     "integration.mapping_failed", external_id=raw.external_id, error=str(exc)
                 )
