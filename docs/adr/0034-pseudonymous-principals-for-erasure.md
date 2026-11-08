@@ -13,6 +13,7 @@
 |---|---|---|
 | イベントログ（Redpanda）・知識グラフ | 人の回答の主張の `RecordEvidence.source = answered_by`（`integration/human_answer.py`）。監査隔離の単位でもある | はい |
 | `learning_decisions`（alembic 0005） | `decided_by` の列と、`payload` の JSON に `resolved_by` / `approved_by` など | 行は書いたら変えない運用 |
+| `quarantine`（ADR-0035） | `payload` に**業務システムの生の行**（個人情報を含みうる）。確認者 `reviewed_by` は `learning_decisions` 側 | 行は消さない運用 |
 | `discrepancies` | `assignee_role`（ロールで持つ。個人を指さない） | — |
 
 主体の IRI が個人を直接指す（氏名・社員番号・メールを含む）形だと、消去要求のたびに追記専用の層を書き換えることになり、as-of の再構成も壊れる。
