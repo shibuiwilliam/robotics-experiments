@@ -136,11 +136,11 @@ class QuarantineReviewCommand(BaseModel):
         reviewed_by: 確認した主体の IRI。
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
 
     decision_id: str = Field(min_length=1)
     quarantine_id: UUID
-    resolution: str = Field(min_length=1)
+    resolution: str = Field(min_length=1, max_length=2000)
     reviewed_by: str = Field(min_length=1)
 
 
@@ -271,7 +271,7 @@ class QuarantineStore:
         ]
 
     async def mark_reviewed(self, event_id: UUID, *, resolution: str, at: datetime) -> bool:
-        """確認済みにする（一度だけ。既に確認済みの行は変えない）。
+        """確認済みにする（一度だけ。既に確認済みの行は変えない。同じ内容の再適用は成功）。
 
         Args:
             event_id: 隔離の識別子。
@@ -279,12 +279,15 @@ class QuarantineStore:
             at: 確認した時刻。
 
         Returns:
-            更新したか（無い・確認済みなら偽）。
+            反映したか（無い・別の内容で確認済みなら偽）。
         """
         async with self._connection.cursor() as cursor:
             await cursor.execute(
-                f"UPDATE {_TABLE} SET reviewed_at = %s, resolution = %s "
-                "WHERE event_id = %s AND site = %s AND reviewed_at IS NULL",
-                (ensure_utc(at), resolution, event_id, self.site),
+                f"UPDATE {_TABLE} SET reviewed_at = COALESCE(reviewed_at, %s), resolution = %s "
+                # 同じ確認の再適用は成功にする（適用の途中で落ちた判断を再投入できる）。
+                # 別の内容での確認は拒否する（確認済みは変えない）
+                "WHERE event_id = %s AND site = %s "
+                "AND (reviewed_at IS NULL OR resolution = %s)",
+                (ensure_utc(at), resolution, event_id, self.site, resolution),
             )
             return cursor.rowcount == 1

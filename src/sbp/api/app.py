@@ -29,10 +29,12 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from sbp.api.authorization import authorize
 from sbp.api.commands import bind_principal
 from sbp.api.schema import BeliefSource, build_schema
 from sbp.core.logging import get_logger
 from sbp.core.metrics import prometheus_exposition
+from sbp.core.modality import Modality
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
@@ -271,7 +273,7 @@ def create_app(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="コマンド API は設定されていない",
             )
-        payload = await _command_payload(name, request, principal_resolver)
+        payload = await _command_payload(name, request, principal_resolver, settings.site_id)
         try:
             result = command_handler(name, payload)
         except Exception as exc:
@@ -354,6 +356,7 @@ async def _command_payload(
     name: str,
     request: Request,
     resolver: Callable[[Request], Principal | None] | None,
+    site: str,
 ) -> dict[str, Any]:
     """コマンドの引数を読み、主体の欄を認証済みの要求者に結びつける。
 
@@ -361,12 +364,24 @@ async def _command_payload(
         name: コマンド名。
         request: HTTP リクエスト。
         resolver: リクエスト → 要求者。
+        site: 自拠点の識別子（隔離の確認は読み出しと同じ許可を要る）。
 
     Raises:
         HTTPException: 要求者が解決できない・エージェント・引数が JSON オブジェクトでない・
             本文の主体が要求者と食い違う場合。
     """
     principal = _command_principal(resolver, request)
+    if (
+        name == "review_quarantine"
+        and not authorize(
+            principal, concept_type="*", modality=Modality.OBSERVED, site=site
+        ).allowed
+    ):
+        # 隔離は生の業務記録を指す。読めない者に確認させない（`quarantine` クエリと同じ許可）
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="隔離の確認は自拠点の全概念（observed）の許可を持つ要求者だけ",
+        )
     try:
         payload = await request.json()
     except ValueError as exc:

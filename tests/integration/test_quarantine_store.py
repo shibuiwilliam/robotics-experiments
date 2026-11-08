@@ -85,6 +85,9 @@ class TestQuarantineStore:
             await _add(store)
             [row] = await store.recent()
             assert await store.mark_reviewed(row.event_id, resolution="first", at=now())
+            assert await store.mark_reviewed(row.event_id, resolution="first", at=now()), (
+                "同じ内容の再適用は成功（適用の途中で落ちた判断を再投入できる）"
+            )
             assert not await store.mark_reviewed(row.event_id, resolution="second", at=now())
             [reviewed] = await store.recent(only_unreviewed=False)
             assert reviewed.resolution == "first"

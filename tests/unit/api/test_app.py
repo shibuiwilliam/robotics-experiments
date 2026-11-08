@@ -321,7 +321,6 @@ class TestCommandIdentity:
             ("curate_concept", "decided_by"),
             ("execute_action", "approved_by"),
             ("answer_observation", "answered_by"),
-            ("review_quarantine", "reviewed_by"),
         ],
     )
     def test_the_actor_field_is_filled_from_the_principal(self, name: str, fieldname: str) -> None:
@@ -336,7 +335,6 @@ class TestCommandIdentity:
             ("curate_concept", "decided_by"),
             ("execute_action", "approved_by"),
             ("answer_observation", "answered_by"),
-            ("review_quarantine", "reviewed_by"),
         ],
     )
     def test_naming_someone_else_is_refused(self, name: str, fieldname: str) -> None:

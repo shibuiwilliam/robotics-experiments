@@ -293,7 +293,7 @@ M6-04 の決定）。追跡するなら「採択したが未実装」という�
 
 **2026-11-08**: 「誰が」の置き場所を本文の自称から認証の層（`principal_resolver`）へ移した（ADR-0029。本文と要求者の食い違いは 403、解決できなければ 401）。**ただし resolver は開発用ヘッダだけで、偽装は本番の認証方式が決まるまで防げない。** 以下の本文は移す前の事実で、**残り**: コマンドの認可、`decision_id` が主体を含まない件（誰が何を判断してよいか）と回答者ごとの確信度（ADR-0018）、本番の認証方式（H-02）。
 
-`/commands/*`（`resolve_discrepancy` / `curate_concept` / `execute_action` / `answer_observation`）は
+`/commands/*`（`resolve_discrepancy` / `curate_concept` / `execute_action` / `answer_observation` / `review_quarantine`）は
 `principal_resolver` も ABAC も通らず、`resolved_by` / `decided_by` / `approved_by` / `answered_by` は
 **呼び出し側が自由に名乗る**。M8-29 の独立レビューが指摘した（2026-11-07）。人の回答は
 `observed` の主張として確信度 0.98 で信念に入り、`answered_by` は監査隔離の単位でもあるので、

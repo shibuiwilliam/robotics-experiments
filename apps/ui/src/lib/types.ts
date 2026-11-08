@@ -307,7 +307,7 @@ export interface ActionType {
 /** 人の判断 1 件の状態（GraphQL の `decisions`）。 */
 export interface DecisionStatus {
   readonly decisionId: string;
-  readonly kind: "resolution" | "curation" | "action" | "answer";
+  readonly kind: "resolution" | "curation" | "action" | "answer" | "quarantine_review";
   readonly subject: string;
   readonly decidedBy: string;
   /** `failed` は自動では再試行されない。理由を読み、新しい判断として再投入する。 */

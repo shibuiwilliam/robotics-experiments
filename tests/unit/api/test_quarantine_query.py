@@ -125,3 +125,54 @@ class TestQuarantineQuery:
     def test_an_unwired_reader_is_an_error_not_an_empty_list(self) -> None:
         body = _post(_client(None, _admin))
         assert body["errors"]
+
+
+class TestReviewCommandAuthorization:
+    """確認コマンドは読み出しと同じ許可を要る（書く側にも ABAC）。"""
+
+    def _commands(self, resolver: Any) -> tuple[TestClient, list[str]]:
+        seen: list[str] = []
+        bound: list[dict[str, Any]] = []
+        self.bound = bound
+
+        def handler(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+            seen.append(name)
+            bound.append(payload)
+            return {"accepted": True}
+
+        client = TestClient(
+            create_app(
+                settings=Settings(),
+                assertion_store=_Store(),  # type: ignore[arg-type]
+                command_handler=handler,
+                principal_resolver=resolver,
+            )
+        )
+        return client, seen
+
+    def test_a_wildcard_reader_may_review(self) -> None:
+        client, seen = self._commands(_admin)
+        assert client.post("/commands/review_quarantine", json={}).status_code == 200
+        assert seen == ["review_quarantine"]
+        assert self.bound[0]["reviewed_by"] == "https://sbp.example/id/person/op1", (
+            "確認者は要求者から決まる（ADR-0029）"
+        )
+
+    @pytest.mark.parametrize("resolver", [_one_concept, _inferred_only])
+    def test_a_narrow_principal_cannot_review(self, resolver: Any) -> None:
+        client, seen = self._commands(resolver)
+        assert client.post("/commands/review_quarantine", json={}).status_code == 403
+        assert seen == []
+
+
+def test_a_blank_or_oversized_resolution_is_refused() -> None:
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from sbp.knowledge.quarantine import QuarantineReviewCommand  # noqa: PLC0415
+
+    base = {"decision_id": "d", "quarantine_id": str(uuid4()), "reviewed_by": "p"}
+    for bad in ("   ", "x" * 2001):
+        with pytest.raises(ValidationError):
+            QuarantineReviewCommand.model_validate({**base, "resolution": bad})
+    ok = QuarantineReviewCommand.model_validate({**base, "resolution": "  対応不要  "})
+    assert ok.resolution == "対応不要"
