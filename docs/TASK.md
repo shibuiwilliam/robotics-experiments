@@ -471,6 +471,21 @@ M8 の目的と G8 は変えない。ADR-0030。
 
 ---
 
+### M10 運用の入口 その 2 — 隔離キューと What-if（H-27 の (3)(4)、ADR-0035・0036）
+
+目的: 構造が壊れた入力を捨てずに人の確認へ回す経路（隔離キュー）と、介入の下での rollout を呼ぶ入口（What-if）を作る。
+M9 の目的と G9 は変えない。同一性束縛と LLM の入口は H-27 に残す。
+
+- [ ] **M10-01** 隔離キュー（書く側） — alembic 0015（`site`）、`knowledge/quarantine.py`（`QuarantineStore`: 冪等な `add` と `add_outcome`、`pending`、`mark_reviewed`）、取込が失敗行の生データを返し、ingest-worker が写像失敗の行と型の無い台帳の行を積む
+- [ ] **M10-02** 隔離の読み書き — GraphQL `quarantine`（ABAC）、コマンド `review_quarantine`（`reviewed_by` は要求者）、`DecisionKind.QUARANTINE_REVIEW`（alembic 0016）、learning-worker が適用
+- [ ] **M10-03** What-if のジョブ — `make whatif`。介入付きで学習された WM でだけ実行し、そうでなければ理由を示して拒否する。結果は `hypothetical` のシナリオグラフ（ADR-0036）
+- [ ] **M10-04** What-if の読み出し — GraphQL `scenarios`（`hypothetical` は ABAC で既定は見えない）
+- [ ] **M10-05** ゲート G10 の統合テスト — M10-01〜04 を外界だけの模擬で通す
+
+**ゲート G10**: G9 維持 + M10-05 緑。
+
+---
+
 ## 4. 横断・継続タスク（マイルストーンに属さない）
 
 - [x] **X-01** CI 整備 — `.github/workflows/ci.yml`。3 ジョブ（`check` / `integration` / `ui`）。`check` が落ちたら `integration` を走らせない（型が通らないのに Compose の起動を待っても情報が増えない）。`integration` は `.env.example` の既定ポートを使い、**healthy の期待件数を明示して待つ**——「healthy でないものが 0 件」を成功条件にすると、コンテナが 1 つも起きていないときも通る
