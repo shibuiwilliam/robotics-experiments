@@ -14,13 +14,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from scripts._wm import split_wm_version, spool_path
-from scripts.train_koopman import longest_series, train_from_spool
+from scripts.train_koopman import longest_series, series_with_actions, train_from_spool
 
 from sbp.core.config import BridgeSettings, Settings
 from sbp.core.errors import ArtifactImmutableError, ConfigError
 from sbp.knowledge.artifacts import LocalArtifactStore
 from sbp.testing import SynthConfig, SynthWorld
-from sbp.worldmodel.encoding import ObservationWindow
+from sbp.worldmodel.encoding import JsonlObservationSource, ObservationWindow
 from sbp.worldmodel.serialization import load_model
 
 if TYPE_CHECKING:
@@ -152,3 +152,98 @@ class TestTrain:
                 rank=None,
                 seed=1,
             )
+
+
+class TestActions:
+    """介入付きの学習（What-if の前提。ADR-0036）。"""
+
+    def _window(self, world: SynthWorld, *, actions: bool, n: int = 80) -> ObservationWindow:
+        steps = np.zeros((n, 2))
+        steps[::7, 0] = 1.0  # 介入チャンネル 0 を時々印加
+        return ObservationWindow(
+            entity=PUMP,
+            channels=tuple(world.channels),
+            timestamps=tuple(world.timestamps[:n]),
+            values=world.observations[:n],
+            actions=steps if actions else None,
+        )
+
+    def test_actions_come_back_aligned_with_the_rows(self, world: SynthWorld) -> None:
+        _c, stamps, values, actions = series_with_actions([self._window(world, actions=True)])
+        assert actions is not None
+        assert actions.shape == (len(stamps), 2) and values.shape[0] == len(stamps)
+
+    def test_a_spool_without_actions_gives_none(self, world: SynthWorld) -> None:
+        *_rest, actions = series_with_actions([self._window(world, actions=False)])
+        assert actions is None
+
+    def test_actions_on_only_some_rows_are_refused(self, world: SynthWorld) -> None:
+        with_actions = self._window(world, actions=True, n=60)
+        without = ObservationWindow(
+            entity=PUMP,
+            channels=tuple(world.channels),
+            timestamps=tuple(world.timestamps[40:100]),
+            values=world.observations[40:100],
+        )
+        with pytest.raises(ConfigError, match="only some rows"):
+            series_with_actions([with_actions, without])
+
+    def test_the_spool_reader_checks_the_action_shape(self, tmp_path: Path) -> None:
+        base = {
+            "entity": PUMP,
+            "channels": ["a"],
+            "timestamps": ["2026-01-01T00:00:00+00:00", "2026-01-01T00:01:00+00:00"],
+            "values": [[1.0], [2.0]],
+        }
+        good = json.dumps({**base, "actions": [[0.0], [1.0]]})
+        bad = json.dumps({**base, "actions": [[0.0]]})
+        (tmp_path / "a.jsonl").write_text(good + "\n" + bad + "\n", encoding="utf-8")
+        source = JsonlObservationSource(tmp_path)
+        windows = list(source.windows())
+        assert len(windows) == 1
+        assert windows[0].actions is not None and windows[0].actions.shape == (2, 1)
+        assert len(source.rejected) == 1 and "actions shape" in source.rejected[0]
+
+    def test_training_with_actions_gives_a_model_that_accepts_interventions(
+        self, tmp_path: Path, world: SynthWorld
+    ) -> None:
+        spool = tmp_path / "spool"
+        spool.mkdir()
+        window = self._window(world, actions=True, n=len(world.timestamps))
+        line = {
+            "entity": window.entity,
+            "channels": list(window.channels),
+            "timestamps": [t.isoformat() for t in window.timestamps],
+            "values": window.values.tolist(),
+            "actions": None if window.actions is None else window.actions.tolist(),
+        }
+        (spool / "a.jsonl").write_text(json.dumps(line) + "\n", encoding="utf-8")
+        settings = Settings(_env_file=None, bridge=BridgeSettings(wm_version=WM))  # type: ignore[call-arg]
+        model, _key = train_from_spool(
+            settings,
+            spool,
+            store=LocalArtifactStore(tmp_path / "store"),
+            domain="d",
+            delays=6,
+            rank=None,
+            seed=1,
+        )
+        assert model.action_dim == 2
+
+    def test_a_model_trained_without_actions_has_no_action_dim(
+        self, tmp_path: Path, world: SynthWorld
+    ) -> None:
+        spool = tmp_path / "spool"
+        spool.mkdir()
+        _write_spool(spool / "a.jsonl", world)
+        settings = Settings(_env_file=None, bridge=BridgeSettings(wm_version=WM))  # type: ignore[call-arg]
+        model, _key = train_from_spool(
+            settings,
+            spool,
+            store=LocalArtifactStore(tmp_path / "store"),
+            domain="d",
+            delays=6,
+            rank=None,
+            seed=1,
+        )
+        assert model.action_dim is None

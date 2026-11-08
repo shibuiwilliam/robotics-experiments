@@ -242,6 +242,11 @@ class KoopmanModel:
         control = 0 if self._control is None else self._control.size
         return dim * dim + control + 2 * len(self.channels)
 
+    @property
+    def action_dim(self) -> int | None:
+        """介入の次元（介入付きで学習していなければ ``None``。What-if を拒否する）。"""
+        return None if self._control is None else int(self._control.shape[1])
+
     def fit(
         self,
         observations: NDArray[np.float64],

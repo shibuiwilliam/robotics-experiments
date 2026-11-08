@@ -80,6 +80,11 @@ reground: ## 新しい版で過去の信念を再計算する（既定は dry-ru
 forecast: ## 予測を作って書き、期限の来た予測を採点する（ARGS='--entity … --fluent … --probe-id … --seed N [--watch 300]'）
 	$(UV) python -m scripts.forecast $(ARGS)
 
+# ---- What-if（ADR-0036）------------------------------------------------------
+.PHONY: whatif
+whatif: ## 介入の下の rollout を介入なしと並べる（ARGS='--entity … --fluent … --probe-id … --action-type … [--channel 0 --magnitude 1] --seed N'。介入付きの WM でなければ拒否=終了コード 2）
+	$(UV) python -m scripts.whatif $(ARGS)
+
 # ---- 開発 -------------------------------------------------------------------
 .PHONY: dev
 dev: ## API（:8000、ホットリロード）を起動。ワーカーは uv run python -m scripts.dev --workers belief,reconcile で選ぶ

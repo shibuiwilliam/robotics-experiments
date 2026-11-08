@@ -84,7 +84,7 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 | オントロジー | 0.6.0（M9 では変更なし。945 トリプル、注釈検査対象 108 語、FluentType 7 / EventType 9） |
 | ADR | 36 件（0001〜0036。10-25 以降: 0017〜0027 は M8、0028 シークレットは `.env` のみ、0029 コマンドの主体、0030〜0032 は M9、0033 は `/stream` の削除と UI の localhost 限定、0034 は消去要求への方針案（提案・法務確認待ち）） |
 | ワーカー | 6（bridge / belief / reconcile / scheduler / learning / ingest）。ほかに周期ジョブ `make reground`（既定 dry-run）・`make forecast`（M9）。指標を書くのは各ワーカーとジョブ |
-| DB マイグレーション | 16（`0001_initial_projections` … `0015_quarantine_site`、`0016_quarantine_review_decisions`） |
+| DB マイグレーション | 17（`0001_initial_projections` … `0016_quarantine_review_decisions`、`0017_scenarios`） |
 | 指標 | 6 領域 25 指標。**書き込み配線済みは 23**（2026-11-08。M8-15 で 20、M9 で `regrounding_duration` / `forecast_crps` / `forecast_coverage`）。残り 2（`identity_bind_rate` / `identity_revoke_rate`）は同一性束縛の運用経路が無いため未配線（H-27）。`suppression_rate` は運用では構造的に 0（所見 113） |
 | Compose サービス | 4（+ 任意 profile: ui / console / observability）。イメージは seaweedfs 3.80 / oxigraph 0.5.11 ほか固定版 |
 | API | GraphQL の Query 6（beliefs / discrepancies / expectations / proposals / forecasts / health）、Mutation 0、コマンド 3（resolve_discrepancy / curate_concept / execute_action）。`/stream` は無い（ADR-0033 で削除） |

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.artifacts import ArtifactStore
     from sbp.worldmodel.encoding import ObservationWindow
 
-__all__ = ["longest_series", "main", "train_from_spool"]
+__all__ = ["longest_series", "main", "series_with_actions", "train_from_spool"]
 
 log = get_logger(__name__)
 
@@ -51,12 +51,39 @@ def longest_series(
         windows: スプールの窓。
 
     Returns:
-        ``(チャンネル, 時刻, 値)``。
+        ``(チャンネル, 時刻, 値)``。介入の列は :func:`series_with_actions` が返す。
 
     Raises:
         ConfigError: 窓が無い、またはチャンネルが実体の窓の間で食い違う場合。
     """
-    per_entity: dict[str, tuple[tuple[str, ...], dict[datetime, NDArray[np.float64]]]] = {}
+    channels, stamps, values, _actions = series_with_actions(windows)
+    return channels, stamps, values
+
+
+def series_with_actions(
+    windows: Iterable[ObservationWindow],
+) -> tuple[tuple[str, ...], list[datetime], NDArray[np.float64], NDArray[np.float64] | None]:
+    """:func:`longest_series` に、介入の列（あれば）を添えて返す（ADR-0036）。
+
+    介入は全行にあるか全行に無いかのどちらかだけを受ける。一部の行にしか無い列を黙って
+    欠測として扱うと、介入の効果が「介入しなかった」行に薄まって学習される。
+
+    Args:
+        windows: スプールの窓。
+
+    Returns:
+        ``(チャンネル, 時刻, 値, 介入または None)``。
+
+    Raises:
+        ConfigError: 窓が無い、チャンネルが食い違う、介入が一部の行にしか無い・次元が食い違う場合。
+    """
+    per_entity: dict[
+        str,
+        tuple[
+            tuple[str, ...],
+            dict[datetime, tuple[NDArray[np.float64], NDArray[np.float64] | None]],
+        ],
+    ] = {}
     for window in windows:
         channels, rows = per_entity.setdefault(window.entity, (window.channels, {}))
         if window.channels != channels:
@@ -64,15 +91,27 @@ def longest_series(
                 f"entity {window.entity} has windows with different channels "
                 f"({list(channels)} vs {list(window.channels)}); refusing to join them"
             )
-        for at, row in zip(window.timestamps, window.values, strict=True):
-            rows[at] = row
+        for index, (at, row) in enumerate(zip(window.timestamps, window.values, strict=True)):
+            rows[at] = (row, None if window.actions is None else window.actions[index])
     if not per_entity:
         raise ConfigError("the spool has no readable window; nothing to learn from")
     entity = max(per_entity, key=lambda name: len(per_entity[name][1]))
     channels, rows = per_entity[entity]
     stamps = sorted(rows)
     log.info("train_wm.series_chosen", entity=entity, rows=len(stamps), entities=len(per_entity))
-    return channels, stamps, np.vstack([rows[at] for at in stamps])
+    values = np.vstack([rows[at][0] for at in stamps])
+    given = [rows[at][1] for at in stamps]
+    if all(action is None for action in given):
+        return channels, stamps, values, None
+    if any(action is None for action in given):
+        raise ConfigError(
+            f"entity {entity}: actions are present for only some rows; refusing to treat the "
+            "missing ones as 'no intervention' (it would dilute the learned effect)"
+        )
+    dims = {int(action.size) for action in given if action is not None}
+    if len(dims) != 1:
+        raise ConfigError(f"entity {entity}: actions have different dimensions {sorted(dims)}")
+    return channels, stamps, values, np.vstack([a for a in given if a is not None])
 
 
 def train_from_spool(
@@ -105,14 +144,14 @@ def train_from_spool(
     """
     model_id, version = split_wm_version(settings.bridge.wm_version)
     source = JsonlObservationSource(spool)
-    channels, _stamps, values = longest_series(source.windows())
+    channels, _stamps, values, actions = series_with_actions(source.windows())
     model = KoopmanModel.untrained(
         model_id=model_id,
         version=version,
         domain=domain,
         channels=channels,
         config=KoopmanConfig(delays=delays, rank=rank),
-    ).fit(values, seed=seed)
+    ).fit(values, actions=actions, seed=seed)
     key = save_model(store, model)
     return model, key
 

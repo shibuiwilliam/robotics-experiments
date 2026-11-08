@@ -67,12 +67,15 @@ class ObservationWindow:
         channels: チャンネル名（モデルの入力順と一致すること）。
         timestamps: 各行の時刻（timezone-aware UTC、厳密に増加）。
         values: 観測値（``(時刻, チャンネル)``、有限）。
+        actions: 各行で印加した介入（``(時刻, 介入次元)``、有限）。現場のエッジが置く任意の列で、
+            あれば介入付きの学習（What-if の前提。ADR-0036）に使う。無ければ ``None``。
     """
 
     entity: str
     channels: tuple[str, ...]
     timestamps: tuple[datetime, ...]
     values: NDArray[np.float64]
+    actions: NDArray[np.float64] | None = None
 
 
 class ObservationSource(Protocol):
@@ -92,7 +95,8 @@ class JsonlObservationSource:
     """スプール（JSONL）から窓を読む参照実装。
 
     1 行 = 1 窓: ``{"entity": IRI, "channels": [...], "timestamps": [ISO8601...],
-    "values": [[...], ...]}``。ファイル 1 つ、またはディレクトリ（``*.jsonl`` を名前順）を渡す。
+    "values": [[...], ...], "actions": [[...], ...]}``（``actions`` は任意。時刻と同じ長さの
+    行 × 介入次元）。ファイル 1 つ、またはディレクトリ（``*.jsonl`` を名前順）を渡す。
     **読み取り専用**——現場のエッジが書く場所を変更しない。
     """
 
@@ -145,7 +149,19 @@ def _parse_window(line: str) -> ObservationWindow:
     entity = str(raw["entity"])
     if not entity:
         raise ValueError("entity is empty")
-    return ObservationWindow(entity=entity, channels=channels, timestamps=stamps, values=values)
+    actions: NDArray[np.float64] | None = None
+    if raw.get("actions") is not None:
+        actions = np.asarray(raw["actions"], dtype=np.float64)
+        if actions.ndim != 2 or actions.shape[0] != len(stamps) or actions.shape[1] < 1:
+            raise ValueError(
+                f"actions shape {actions.shape} does not match {len(stamps)} timestamps "
+                "(expected (timestamps, action_dim))"
+            )
+        if not np.all(np.isfinite(actions)):
+            raise ValueError("actions contain non-finite numbers")
+    return ObservationWindow(
+        entity=entity, channels=channels, timestamps=stamps, values=values, actions=actions
+    )
 
 
 class LatentSink(Protocol):

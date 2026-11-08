@@ -21,6 +21,7 @@ from contextlib import suppress
 from datetime import UTC, timedelta
 from typing import TYPE_CHECKING
 
+import numpy as np
 import psycopg
 import pytest
 from confluent_kafka.admin import AdminClient
@@ -102,6 +103,7 @@ async def _prepare(
     tmp_path: Path,
     *,
     bridge: BridgeSettings | None = None,
+    with_actions: bool = False,
 ) -> tuple[Settings, str]:
     """学習済み WM → 潜在索引 → 主張イベント。戻りは (設定, プローブ IRI)。"""
     stamp = int(time.time())
@@ -132,6 +134,11 @@ async def _prepare(
         "timestamps": [at.astimezone(UTC).isoformat() for at in world.timestamps],
         "values": world.observations.tolist(),
     }
+    if with_actions:
+        # 現場のエッジが置く介入の列（M10-03、ADR-0036）。チャンネル 0 を時々印加する
+        pulses = np.zeros((len(world.timestamps), 2))
+        pulses[::9, 0] = 1.0
+        window["actions"] = pulses.tolist()
     (spool / "a.jsonl").write_text(json.dumps(window) + "\n", encoding="utf-8")
     store = LocalArtifactStore(tmp_path / "wm")
     train_from_spool(configured, spool, store=store, domain="d", delays=8, rank=None, seed=31)

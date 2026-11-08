@@ -62,6 +62,7 @@ from sbp.knowledge.relations import (
     part_whole_edges,
     situation_members,
 )
+from sbp.knowledge.scenarios import ScenarioRecord, ScenarioStore
 from sbp.knowledge.store import EmbeddedGraphStore, GraphStore, HttpGraphStore
 from sbp.knowledge.watermarks import Watermark, WatermarkStore
 
@@ -109,6 +110,8 @@ __all__ = [
     "RegroundingReport",
     "RegroundingTrigger",
     "S3ArtifactStore",
+    "ScenarioRecord",
+    "ScenarioStore",
     "ScopeEstimate",
     "Selectivity",
     "Watermark",
