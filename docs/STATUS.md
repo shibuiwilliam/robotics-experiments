@@ -20,7 +20,7 @@ M8「配線」は、M7 までで「型と判定は実装済み、供給元と周
 
 | G8 の条件 | 状態 |
 |---|---|
-| G0〜G7 を維持 | ✅ 2026-11-08 に `make check` 1896 件・**統合 223 件（実行）**・UI 126 件が緑（M9 完了後も維持） |
+| G0〜G7 を維持 | ✅ 2026-11-08 に `make check` 1904 件・**統合 223 件（実行）**・UI 126 件が緑（M9 完了後も維持） |
 | `TODO(question)` が 0 件 | ✅ コードに 0 件（2026-10-25 に再走査。解決先は ADR-0009〜0015） |
 | M8-11（外界だけを模擬し、運用コードの連鎖で 6 ワーカーが非ゼロの `step()` を返す） | ✅ `tests/integration/test_g8_workers.py`（ADR-0025）。連鎖の契約 6 件を修正（ADR-0026） |
 
@@ -79,10 +79,10 @@ G0〜G7 の「完了」は**ライブラリとして組めることを統合テ�
 
 | 項目 | 値 |
 |---|---|
-| テスト | 単体 1803 / 性質 25 / 契約 68（`make check` で 1896）/ **統合 223（実行）** / UI 126。棚卸し時点（10-17）は 1332 / 21 / 67 = 1420、統合 187 |
+| テスト | 単体 1803 / 性質 25 / 契約 76（`make check` で 1904）/ **統合 223（実行）** / UI 126。棚卸し時点（10-17）は 1332 / 21 / 67 = 1420、統合 187 |
 | `make check` の内訳 | ruff・pyright strict（0 errors）・import-linter 契約 7 本 KEPT・ontology-check 7 項目・シークレット走査。警告 2 件（依存の非推奨警告 1・意図的なソケット遮断 1） |
 | オントロジー | 0.6.0（M9 では変更なし。945 トリプル、注釈検査対象 108 語、FluentType 7 / EventType 9） |
-| ADR | 32 件（0001〜0032。10-25 以降: 0017〜0027 は M8、0028 シークレットは `.env` のみ、0029 コマンドの主体、0030〜0032 は M9） |
+| ADR | 33 件（0001〜0033。10-25 以降: 0017〜0027 は M8、0028 シークレットは `.env` のみ、0029 コマンドの主体、0030〜0032 は M9、0033 は `/stream` の削除と UI の localhost 限定） |
 | ワーカー | 6（bridge / belief / reconcile / scheduler / learning / ingest）。ほかに周期ジョブ `make reground`（既定 dry-run）・`make forecast`（M9）。指標を書くのは各ワーカーとジョブ |
 | DB マイグレーション | 14（`0001_initial_projections` … `0013_belief_contributions`、`0014_forecasts`） |
 | 指標 | 6 領域 25 指標。**書き込み配線済みは 23**（2026-11-08。M8-15 で 20、M9 で `regrounding_duration` / `forecast_crps` / `forecast_coverage`）。残り 2（`identity_bind_rate` / `identity_revoke_rate`）は同一性束縛の運用経路が無いため未配線（H-27）。`suppression_rate` は運用では構造的に 0（所見 113） |

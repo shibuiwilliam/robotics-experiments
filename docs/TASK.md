@@ -480,7 +480,7 @@ M8 の目的と G8 は変えない。ADR-0030。
 - [ ] **X-04** `docs/STATUS.md` 更新 — ゲート通過時のみ（§2 の更新手順）
 - [x] **X-05** 依存更新・脆弱性対応 — `make audit`（pip-audit）と CI の専用ジョブを用意し、2026-10-03 に実施。`uv lock --upgrade` は差分なし（既に最新解）、既知の脆弱性 0 件。**`make check` には入れない**（脆弱性 DB の照会にネットワークが要り、`make check` は無ネットワークで通る方針）。`--strict` は使えないので（sbp 自身が editable で必ず skip される）、**skip されたのが sbp だけであることを検査する**——skip を数えずに「脆弱性なし」と読むと、照会できなかったパッケージが緑に見える。npm 側（`make ui-audit`）では **5 件の実在の脆弱性を検出**（critical 1 / high 1 / moderate 3。すべて開発ツール側）し、`vitest` を 5 系に上げて 0 件にした。以後は月次で `make audit` と `make ui-audit`。コンテナイメージは未照会。**2026-11-08 の月次（予定の 11-03 から 5 日遅れ）**: Python は 5 パッケージ 18 件（filelock 13 / certifi 2 / setuptools / opentelemetry-api / graphql-core）、npm は vite 1 件（high）を検出。`uv lock -P`（該当 5 つだけ。全体の `--upgrade` は 66 パッケージで torch ほかに及ぶので避けた）と `npm audit fix` で両方 0 件。`make check` 1896・統合 223・UI 126 が更新後も緑。**`uv sync` は extras を外すと `pip-audit` を消す**（`make audit` の前に `uv sync --all-extras`）
 - [ ] **X-06** development-rules.md / 本書の保守 — 規約・計画の変更はコード PR と同じレビューを通す
-- [ ] **X-07** ドキュメントの数値の自動検査 — 2026-10-04 の棚卸しで、ドキュメントの数値が実装から
+- [x] **X-07** ドキュメントの数値の自動検査（2026-11-08 完了。`tests/contract/test_docs_numbers.py` 8 件: ADR・マイグレーションの連番と鎖、STATUS の ADR 数・マイグレーション数・ワーカー数・指標数と配線済み数・オントロジー版・HITL の状態別件数、README の ADR 数、全文書の ADR 参照の実在。**書いたその日に、ADR-0033 を足したのに数を直し忘れた STATUS / README を落とした**。テスト件数は検査しない）— 2026-10-04 の棚卸しで、ドキュメントの数値が実装から
   **静かに乖離していた**ことが分かった（所見 99）: `docs/PROGRESS.md` のテスト件数は 1151 / 108 / 61
   （実際は 1420 / 187 / 77）、ADR 件数は同じ節の中で「7 件」と「6 件」の両方が書かれていた（実際は 15）、
   M8 の行が無い。**人が書いた数値は人が直すまで古い。** 契約テストで検査できるものを検査する:
