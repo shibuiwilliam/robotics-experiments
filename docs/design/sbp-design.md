@@ -875,7 +875,7 @@ ActionType: ent:CreateEmergencyInspection
 |---|---|
 | GraphQL over ontology | ObjectType/LinkType/FunctionType を型として公開。時制・様相はフィールド引数（`asOf`, `validAt`, `modality`, `minConfidence`） |
 | SPARQL endpoint | 分析・監査。§6.6 の拡張 SERVICE 付き |
-| ストリーム購読 | イベントログのトピック購読（不一致・期待・予測） |
+| ストリーム購読 | イベントログのトピック購読（不一致・期待・予測）。**撤回（ADR-0033、2026-11-08）。使い手が居ないので置かない** |
 | コマンド API | ActionType の実行、承認、補償 |
 
 ### 10.2 エージェント向けツール

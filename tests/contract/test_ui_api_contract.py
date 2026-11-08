@@ -313,8 +313,8 @@ def test_the_ui_does_not_read_proposals_from_the_stream() -> None:
 def test_the_ui_reads_no_stream_at_all() -> None:
     """**UI にストリームの読み出しが 1 つも残っていない**（M8-18 / M8-19）。
 
-    4 ビューすべてが GraphQL の資源を読む。`/stream/{topic}` の購読方式は未決のまま
-    （ADR-0008 の未決）で、いまは消費者が 1 人も居ない——残っていると「動くはず」と読まれる。
+    4 ビューすべてが GraphQL の資源を読む。`/stream/{topic}` は ADR-0033 で消した。
+    UI に読み出しが残っていれば存在しない経路を読んでいる。
     """
     source = _strip_comments(_source(UI_API))
 

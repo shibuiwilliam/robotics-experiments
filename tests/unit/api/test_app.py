@@ -85,7 +85,6 @@ def client(store: _FakeStore) -> TestClient:
         settings=Settings(),
         assertion_store=store,  # type: ignore[arg-type]
         sparql_reader=lambda query: {"query": query, "results": []},
-        stream_reader=lambda topic, limit: [{"topic": topic} for _ in range(min(limit, 2))],
         command_handler=lambda name, payload: {"command": name, "echo": payload},
         principal_resolver=_site_a_reader,
     )
@@ -252,16 +251,10 @@ class TestAbacAtTheApi:
 
 
 class TestStreamAndCommands:
-    def test_the_stream_only_reads(self, client: TestClient) -> None:
-        """投入の経路を API に作らない（外から任意のイベントを流し込めると来歴が無意味になる）。"""
-        response = client.get("/stream/siteA.bridge.physical", params={"limit": 2})
-        assert response.status_code == 200
-        assert response.json()["count"] == 2
-        assert client.post("/stream/siteA.bridge.physical", json={}).status_code == 405
-
-    def test_an_out_of_range_limit_is_refused(self, client: TestClient) -> None:
-        assert client.get("/stream/t", params={"limit": 0}).status_code == 400
-        assert client.get("/stream/t", params={"limit": 10_000}).status_code == 400
+    def test_there_is_no_stream_endpoint(self, client: TestClient) -> None:
+        """購読も投入も API に無い（ADR-0033。外からイベントを流し込ませない）。"""
+        assert client.get("/stream/siteA.bridge.physical").status_code == 404
+        assert client.post("/stream/siteA.bridge.physical", json={}).status_code == 404
 
     def test_commands_go_through_their_own_path(self, client: TestClient) -> None:
         response = client.post("/commands/execute_action", json={"action_type": "x"})
@@ -290,7 +283,6 @@ class TestStreamAndCommands:
         assert (
             client.post("/sparql", json={"query": "SELECT * WHERE {?s ?p ?o}"}).status_code == 503
         )
-        assert client.get("/stream/t").status_code == 503
         assert client.post("/commands/x", json={}).status_code == 503
 
 

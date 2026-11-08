@@ -1,12 +1,11 @@
 """FastAPI アプリ（設計書 §10.1、M5-07）。
 
-公開するのは 4 形態（設計書 §10.1 の表）:
+公開するのは 3 形態（設計書 §10.1 の表）:
 
 | 経路 | 用途 |
 |---|---|
 | ``/graphql`` | オントロジー上の読み取り。時制・様相はフィールド引数 |
 | ``/sparql`` | 分析・監査（読み取り専用のプロキシ） |
-| ``/stream/{topic}`` | イベントログの購読（不一致・期待・予測） |
 | ``/commands/*`` | ActionType の実行・承認・補償 |
 
 **SPARQL プロキシは読み取り専用にする。** ``UPDATE`` を通すと、二時制 API（``assert_`` /
@@ -17,8 +16,9 @@
 **コマンド API は GraphQL と分ける。** mutation として出すと、読み取りと同じ経路で副作用が
 出せるようになり、承認フロー（設計書 §9.2）の迂回が容易になる。
 
-**ストリームは購読だけ。** 投入（produce）の経路を API に作らない。イベントの発生源は接地層・
-統合層・推論層であり、外から任意のイベントを流し込めると来歴が意味を失う。
+**イベントの投入（produce）の経路を API に作らない。** イベントの発生源は接地層・統合層・
+推論層であり、外から任意のイベントを流し込めると来歴が意味を失う。購読の経路（``/stream``）は
+使い手が居ないので置かない（ADR-0033）。
 """
 
 from __future__ import annotations
@@ -105,7 +105,6 @@ def create_app(
     settings: Settings,
     assertion_store: BeliefReader,
     sparql_reader: Callable[[str], dict[str, Any]] | None = None,
-    stream_reader: Callable[[str, int], list[dict[str, Any]]] | None = None,
     command_handler: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
     principal_resolver: Callable[[Request], Principal | None] | None = None,
     metric_reader: MetricReader | None = None,
@@ -127,7 +126,6 @@ def create_app(
         settings: 設定。
         assertion_store: 二時制クエリを提供するもの（``AssertionStore`` が満たす Protocol）。
         sparql_reader: SPARQL クエリの実行関数（``None`` ならプロキシを無効にする）。
-        stream_reader: ``(トピック, 最大件数)`` → イベントの列。
         command_handler: ``(コマンド名, 引数)`` → 結果。
         principal_resolver: リクエスト → 要求者（ABAC、M7-06）。``None`` だと信念クエリは
             **すべて拒否される**（既定は拒否）。認証の実装は運用環境に依るのでここでは受け取る
@@ -251,23 +249,6 @@ def create_app(
             )
         return JSONResponse(sparql_reader(query))
 
-    @app.get("/stream/{topic}", summary="イベントログの購読")
-    async def stream(topic: str, limit: int = 20) -> dict[str, Any]:
-        """トピックの直近イベントを返す（購読のみ、投入はしない）。
-
-        Raises:
-            HTTPException: 購読が設定されていない、または ``limit`` が範囲外の場合。
-        """
-        if stream_reader is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="ストリーム購読は設定されていない",
-            )
-        if not 1 <= limit <= 500:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="limit は 1〜500")
-        events = stream_reader(topic, limit)
-        return {"topic": topic, "count": len(events), "events": events}
-
     @app.post("/commands/{name}", summary="コマンド（アクションの実行・承認・補償）")
     async def command(name: str, request: Request) -> dict[str, Any]:
         """コマンドを実行する。
@@ -296,7 +277,6 @@ def create_app(
         "api.app_created",
         ontology_version=ontology_version,
         sparql=sparql_reader is not None,
-        stream=stream_reader is not None,
         commands=command_handler is not None,
         abac=principal_resolver is not None,
         discrepancies=discrepancy_reader is not None,

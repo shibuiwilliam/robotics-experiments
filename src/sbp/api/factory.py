@@ -314,9 +314,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         settings=resolved,
         assertion_store=beliefs,
         sparql_reader=lambda query: {"results": store.query(query)},
-        # **購読とコマンドは渡さない。** 購読の方式は未決（ADR-0008）、コマンドのハンドラは
-        # 学習信号の適用（M8-08）が決める。None なら create_app が 503 を返す
-        stream_reader=None,
         command_handler=build_command_handler(enqueue_decision),
         principal_resolver=(dev_principal_resolver(resolved) if resolved.env == "dev" else None),
         metric_reader=read_metrics,
