@@ -24,6 +24,7 @@ from sbp.actions.requests import ExecutionCommand
 from sbp.core.logging import get_logger
 from sbp.integration.human_answer import AnswerCommand
 from sbp.knowledge.decisions import DecisionKind, DecisionRow
+from sbp.knowledge.quarantine import QuarantineReviewCommand
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -36,6 +37,7 @@ __all__ = [
     "AnswerCommand",
     "CurationCommand",
     "ExecutionCommand",
+    "QuarantineReviewCommand",
     "ResolutionCommand",
     "bind_principal",
     "build_command_handler",
@@ -48,6 +50,7 @@ IDENTITY_FIELDS: dict[str, str] = {
     "curate_concept": "decided_by",
     "execute_action": "approved_by",
     "answer_observation": "answered_by",
+    "review_quarantine": "reviewed_by",
 }
 """コマンドごとの「誰がやったか」の欄。来歴と監査隔離の単位なので、本文の自称を受けない（H-25）。"""
 
@@ -246,5 +249,14 @@ def _to_row(name: str, payload: dict[str, Any]) -> DecisionRow:
             subject=answer.entity,
             decided_by=answer.answered_by,
             payload=answer.model_dump(mode="json"),
+        )
+    if name == "review_quarantine":
+        review = QuarantineReviewCommand.model_validate(payload)
+        return DecisionRow(
+            decision_id=review.decision_id,
+            kind=DecisionKind.QUARANTINE_REVIEW,
+            subject=str(review.quarantine_id),
+            decided_by=review.reviewed_by,
+            payload=review.model_dump(mode="json"),
         )
     raise ValueError(f"unknown command {name!r}; known commands: {', '.join(IDENTITY_FIELDS)}")

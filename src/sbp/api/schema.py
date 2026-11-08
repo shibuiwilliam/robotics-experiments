@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
     from sbp.knowledge.forecasts import ForecastRecord
+    from sbp.knowledge.quarantine import QuarantineRow
 else:  # Protocol の注釈を実行時にも解決できるようにする
     Sequence = __import__("collections.abc", fromlist=["Sequence"]).Sequence
     AssertionRow = object
@@ -407,6 +408,52 @@ class ForecastPointType:
     lower: float
     upper: float
     sampleCount: int  # noqa: N815
+
+
+@strawberry.type
+class QuarantineType:
+    """隔離した入力 1 件（M10-02、ADR-0035）。
+
+    **生の入力（``payload``）は業務システムの行そのもの**で、個人情報を含みうる。読めるのは
+    自拠点の全概念の許可を持つ要求者だけ（``quarantine`` クエリ）。
+
+    Attributes:
+        eventId: 識別子（確認コマンドの ``quarantine_id``）。
+        topic: 入口（``ingest:<表>``）。
+        subject: 主語（外部 ID）。
+        reason: 隔離の理由（人が読む）。
+        payload: 生の入力（JSON 文字列）。
+        quarantinedAt: 隔離した時刻。
+        reviewedAt: 確認した時刻（未確認は ``None``）。
+        resolution: 確認の結果。
+    """
+
+    eventId: str  # noqa: N815
+    topic: str
+    subject: str
+    reason: str
+    payload: str
+    quarantinedAt: datetime | None  # noqa: N815
+    reviewedAt: datetime | None  # noqa: N815
+    resolution: str | None
+
+    @classmethod
+    def from_record(cls, record: QuarantineRow) -> QuarantineType:
+        """表の行から作る。
+
+        Args:
+            record: 隔離の行。
+        """
+        return cls(
+            eventId=str(record.event_id),
+            topic=record.topic,
+            subject=record.subject,
+            reason=record.reason,
+            payload=json.dumps(record.payload, ensure_ascii=False, sort_keys=True),
+            quarantinedAt=record.quarantined_at,
+            reviewedAt=record.reviewed_at,
+            resolution=record.resolution,
+        )
 
 
 @strawberry.type
@@ -1151,6 +1198,58 @@ class Query:
             "api.forecasts_queried", principal=principal.subject, entity=entity, rows=len(records)
         )
         return [ForecastType.from_record(record) for record in records]
+
+    @strawberry.field(description="構造が壊れて隔離した入力を新しい順に返す")
+    def quarantine(
+        self,
+        info: strawberry.Info,
+        onlyUnreviewed: bool = True,  # noqa: N803 — GraphQL は camelCase
+        limit: int = _DEFAULT_QUEUE_LIMIT,
+    ) -> list[QuarantineType]:
+        """隔離キューを返す（設計書 §3.9 / §5.7、ADR-0035）。
+
+        **自拠点の全概念の許可を要求する。** 隔離の行は業務システムの生の行で、概念型で
+        絞れない（壊れた入力は型を持たない）。個別の概念の許可だけの要求者には見せない。
+
+        Args:
+            info: strawberry の文脈（``quarantine`` に読み出し関数を持つ）。
+            onlyUnreviewed: 未確認だけを返すか。
+            limit: 返す件数の上限。
+
+        Raises:
+            AuthorizationError: 要求者が無い、または自拠点の全概念の許可が無い場合。
+            ValueError: ``limit`` が範囲外、または読み出しが未設定の場合。
+        """
+        principal = info.context.get("principal")
+        if principal is None:
+            raise AuthorizationError(
+                "ABAC が設定されていない。create_app に principal_resolver を渡すこと"
+                "（既定は拒否、設計書 §11）"
+            )
+        if not 1 <= limit <= _MAX_QUEUE_LIMIT:
+            raise ValueError(f"limit は 1〜{_MAX_QUEUE_LIMIT}")
+        site = info.context["settings"].site_id
+        # 生の業務記録は observed。全概念（"*"）の許可を持つ要求者にだけ見せる
+        if not authorize(
+            principal, concept_type="*", modality=Modality.OBSERVED, site=site
+        ).allowed:
+            raise AuthorizationError(
+                "quarantine は自拠点の全概念（observed）の許可を持つ要求者だけが読める"
+                "（生の業務記録を含む）"
+            )
+        reader = info.context.get("quarantine")
+        if reader is None:
+            raise ValueError(
+                "隔離の読み出しが設定されていない（create_app に quarantine_reader を渡す）"
+            )
+        records = reader(only_unreviewed=onlyUnreviewed, limit=limit)
+        log.info(
+            "api.quarantine_queried",
+            principal=principal.subject,
+            only_unreviewed=onlyUnreviewed,
+            rows=len(records),
+        )
+        return [QuarantineType.from_record(record) for record in records]
 
     @strawberry.field(description="curation 待ちの概念提案を支持の多い順に返す")
     def proposals(

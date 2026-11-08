@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +31,8 @@ from sbp.api.authorization import Permission, Principal
 from sbp.core.config import Settings
 from sbp.core.logging import get_logger
 from sbp.core.modality import Modality
+from sbp.knowledge.forecasts import ForecastStore
+from sbp.knowledge.quarantine import QuarantineStore
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
@@ -43,6 +46,8 @@ if TYPE_CHECKING:
     from sbp.knowledge.decisions import DecisionKind, DecisionRow, DecisionStatus
     from sbp.knowledge.discrepancies import DiscrepancyRecord
     from sbp.knowledge.expectations import ExpectationRecord
+    from sbp.knowledge.forecasts import ForecastRecord
+    from sbp.knowledge.quarantine import QuarantineRow
 
 __all__ = ["build_app", "dev_principal_resolver", "lazy_contracts"]
 
@@ -149,6 +154,42 @@ def lazy_contracts() -> Callable[[], list[ActionContract]]:
     return read
 
 
+def _read_forecasts(
+    connection: Callable[[], Any],
+    site: str,
+    *,
+    entity: str | None = None,
+    fluent: str | None = None,
+    limit: int = 50,
+) -> list[ForecastRecord]:
+    """予測を同期の形で返す（M9-03）。
+
+    Args:
+        connection: 開いている接続を返す関数（開く前なら落ちる）。
+        site: 拠点識別子。
+        entity: 実体で絞る。
+        fluent: フルーエント型で絞る。
+        limit: 返す件数の上限。
+    """
+    store = ForecastStore(connection(), site=site)
+    return _run_sync(store.recent(entity=entity, fluent=fluent, limit=limit))
+
+
+def _read_quarantine(
+    connection: Callable[[], Any], site: str, *, only_unreviewed: bool = True, limit: int = 50
+) -> list[QuarantineRow]:
+    """隔離の行を同期の形で返す（M10-02）。
+
+    Args:
+        connection: 開いている接続を返す関数（開く前なら落ちる）。
+        site: 拠点識別子。
+        only_unreviewed: 未確認だけを返すか。
+        limit: 返す件数の上限。
+    """
+    store = QuarantineStore(connection(), site=site)
+    return _run_sync(store.recent(only_unreviewed=only_unreviewed, limit=limit))
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """実物の依存で API を組む。
 
@@ -177,8 +218,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         DecisionQueue,
         DiscrepancyStore,
         ExpectationStore,
-        ForecastRecord,
-        ForecastStore,
         HttpGraphStore,
         MetricStore,
     )
@@ -251,19 +290,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         store = ConceptProposalStore(_connection(), site=resolved.site_id)
         return _run_sync(store.queue(include_curated=include_curated, limit=limit))
 
-    def read_forecasts(
-        *, entity: str | None = None, fluent: str | None = None, limit: int = 50
-    ) -> list[ForecastRecord]:
-        """予測を同期の形で返す（M9-03）。
-
-        Args:
-            entity: 実体で絞る。
-            fluent: フルーエント型で絞る。
-            limit: 返す件数の上限。
-        """
-        store = ForecastStore(_connection(), site=resolved.site_id)
-        return _run_sync(store.recent(entity=entity, fluent=fluent, limit=limit))
-
     def read_evidence(
         entity: str, fluent: str, start: datetime, end: datetime
     ) -> list[ContributionRecord]:
@@ -320,7 +346,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         discrepancy_reader=read_discrepancies,
         expectation_reader=read_expectations,
         proposal_reader=read_proposals,
-        forecast_reader=read_forecasts,
+        forecast_reader=partial(_read_forecasts, _connection, resolved.site_id),
+        quarantine_reader=partial(_read_quarantine, _connection, resolved.site_id),
         evidence_reader=read_evidence,
         action_reader=lazy_contracts(),
         decision_reader=read_decisions,

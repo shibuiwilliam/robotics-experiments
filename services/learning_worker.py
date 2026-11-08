@@ -64,6 +64,7 @@ from sbp.core.logging import get_logger
 from sbp.core.time import Interval, now
 from sbp.integration.human_answer import AnswerCommand, answer_event, answer_topic
 from sbp.knowledge.decisions import DecisionKind
+from sbp.knowledge.quarantine import QuarantineReviewCommand, QuarantineStore
 from sbp.reasoning.concept_store import to_record as concept_to_record
 from sbp.reasoning.discovery import ProposalStatus
 from sbp.reasoning.discovery_runner import resolution_signals, run_discovery
@@ -88,6 +89,8 @@ from services.runtime import ReadinessCheck, WorkerRuntime
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Sequence
     from datetime import datetime
+
+    from psycopg import AsyncConnection
 
     from sbp.actions import ActionRegistry
     from sbp.core.events import EventEnvelope
@@ -180,6 +183,10 @@ class AnswerPath:
     satisfy: RequestSatisfier
 
 
+type QuarantineReviewer = Callable[[UUID, str, datetime], Awaitable[bool]]
+"""隔離の行に確認の記録を立てる（``QuarantineStore.mark_reviewed`` を包む。ADR-0035）。"""
+
+
 @dataclass(frozen=True, slots=True)
 class ConceptDiscovery:
     """概念発見の周期実行に要る依存（ADR-0019）。
@@ -260,6 +267,7 @@ class LearningWorker:
         proposals: ProposalCurator | None = None,
         verification: ExpectationVerification | None = None,
         answers: AnswerPath | None = None,
+        quarantine: QuarantineReviewer | None = None,
         discovery: ConceptDiscovery | None = None,
         metrics: MetricRecorder | None = None,
         period_s: float = _DEFAULT_PERIOD_S,
@@ -307,6 +315,7 @@ class LearningWorker:
         self._proposals = proposals
         self._verification = verification
         self._answers = answers
+        self._quarantine = quarantine
         self._discovery = discovery
         self._metrics = metrics
         self.resolved_total = 0
@@ -678,6 +687,8 @@ class LearningWorker:
             return await self._apply_action(row, at=at)
         if row.kind is DecisionKind.ANSWER:
             return await self._apply_answer(row)
+        if row.kind is DecisionKind.QUARANTINE_REVIEW:
+            return await self._apply_quarantine_review(row, at=at)
         raise ValueError(f"unknown decision kind {row.kind!r}")
 
     async def _apply_resolution(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
@@ -877,6 +888,44 @@ class LearningWorker:
                 await closer()
             except Exception as exc:  # 停止処理の失敗で他の後始末を止めない
                 log.warning("worker.close_failed", worker=WORKER_NAME, error=str(exc))
+
+    async def _apply_quarantine_review(self, row: DecisionRow, *, at: datetime) -> dict[str, Any]:
+        """隔離の確認を隔離の行に反映する（M10-02、ADR-0035）。
+
+        **無い・確認済み・他拠点の隔離への確認は失敗させる**（誤った識別子の可能性が高く、
+        黙って成功にすると「確認した」と読める）。
+
+        Args:
+            row: 確認の判断。
+            at: 処理時刻。
+
+        Returns:
+            何を適用したかの要約。
+
+        Raises:
+            ValueError: 確認を反映する依存が無い、または隔離の行が未確認で存在しない場合。
+        """
+        if self._quarantine is None:
+            raise ValueError(
+                "cannot apply a quarantine review: the quarantine store is not wired; "
+                "marking it done would leave the row unreviewed"
+            )
+        command = QuarantineReviewCommand.model_validate(row.payload)
+        reviewed = await self._quarantine(
+            command.quarantine_id, command.resolution, row.received_at or at
+        )
+        if not reviewed:
+            raise ValueError(
+                f"quarantine {command.quarantine_id} is unknown, already reviewed, or belongs to "
+                "another site"
+            )
+        log.info(
+            "worker.quarantine_reviewed",
+            worker=WORKER_NAME,
+            correlation_id=command.decision_id,
+            quarantine_id=str(command.quarantine_id),
+        )
+        return {"quarantine_id": str(command.quarantine_id), "resolution": command.resolution}
 
     async def _apply_answer(self, row: DecisionRow) -> dict[str, Any]:
         """人の確認回答を主張イベントにして送り、観測要求を満たす（M8-29、ADR-0018）。
@@ -1226,6 +1275,22 @@ def reconstruct_discrepancy(
     )
 
 
+def quarantine_reviewer(connection: AsyncConnection, site_id: str) -> QuarantineReviewer:
+    """隔離の確認を反映する関数（``QuarantineStore.mark_reviewed`` を包む）。
+
+    Args:
+        connection: Postgres 接続。
+        site_id: 拠点識別子。
+    """
+    store = QuarantineStore(connection, site=site_id)
+
+    async def review(event_id: UUID, resolution: str, at: datetime) -> bool:
+        """隔離の行に確認の記録を立てる。"""
+        return await store.mark_reviewed(event_id, resolution=resolution, at=at)
+
+    return review
+
+
 async def build_worker(
     settings: Settings | None = None, *, site_id: str
 ) -> tuple[LearningWorker, DecisionQueue]:
@@ -1360,6 +1425,7 @@ async def build_worker(
             proposals=curate_proposal,
             verification=verification,
             answers=AnswerPath(events=send_event, request=get_request, satisfy=satisfy_request),
+            quarantine=quarantine_reviewer(connection, site_id),
             discovery=discovery,
             metrics=MetricRecorder(site=site_id, sink=MetricStore(connection, site=site_id).write),
         )

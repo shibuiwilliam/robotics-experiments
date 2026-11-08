@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from sbp.core.logging import get_logger
 from sbp.core.time import ensure_utc
 
@@ -25,7 +27,14 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from psycopg import AsyncConnection
-__all__ = ["QuarantineRow", "QuarantineStore", "ViolationLike", "jsonable", "quarantine_id"]
+__all__ = [
+    "QuarantineReviewCommand",
+    "QuarantineRow",
+    "QuarantineStore",
+    "ViolationLike",
+    "jsonable",
+    "quarantine_id",
+]
 
 log = get_logger(__name__)
 
@@ -114,6 +123,25 @@ class QuarantineRow:
     quarantined_at: datetime | None = None
     reviewed_at: datetime | None = None
     resolution: str | None = None
+
+
+class QuarantineReviewCommand(BaseModel):
+    """隔離した入力の確認（`/commands/review_quarantine`。M10-02、ADR-0035）。
+
+    Attributes:
+        decision_id: 冪等の鍵。
+        quarantine_id: 対象の隔離（``quarantine`` クエリの ``eventId``）。
+        resolution: 確認の結果（人が書く。例: 「業務側で修正済み」「対応不要」）。
+            **空を許さない**——根拠の無い確認は監査で読めない。
+        reviewed_by: 確認した主体の IRI。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    decision_id: str = Field(min_length=1)
+    quarantine_id: UUID
+    resolution: str = Field(min_length=1)
+    reviewed_by: str = Field(min_length=1)
 
 
 class QuarantineStore:

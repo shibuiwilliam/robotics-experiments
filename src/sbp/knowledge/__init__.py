@@ -37,7 +37,12 @@ from sbp.knowledge.latent import LatentIndex, LatentNeighbour, LatentRegistratio
 from sbp.knowledge.master import RDF_TYPE, rebuild_master_projection
 from sbp.knowledge.metrics_store import MetricStore
 from sbp.knowledge.observations import ObservationQueue, ObservationRow
-from sbp.knowledge.quarantine import QuarantineRow, QuarantineStore, quarantine_id
+from sbp.knowledge.quarantine import (
+    QuarantineReviewCommand,
+    QuarantineRow,
+    QuarantineStore,
+    quarantine_id,
+)
 from sbp.knowledge.records import RecordIndex
 from sbp.knowledge.regrounding import (
     CompatibilityMatrix,
@@ -96,6 +101,7 @@ __all__ = [
     "ObservationRow",
     "PartWholeEdge",
     "PlanStrategy",
+    "QuarantineReviewCommand",
     "QuarantineRow",
     "QuarantineStore",
     "RecordIndex",

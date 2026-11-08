@@ -51,6 +51,8 @@ class DecisionKind(StrEnum):
     **承認は判断であり、実行はその適用である。** `riskClass >= medium` は承認必須なので
     （設計書 §9.3）、実行はここを通る。アクションの二重実行を `decision_id` の冪等で防ぐ。
     """
+    QUARANTINE_REVIEW = "quarantine_review"
+    """隔離した入力の確認（ADR-0035）。適用は隔離の行に確認の記録を立てること。"""
     ANSWER = "answer"
     """人の確認回答（ADR-0018）。観測要求への回答で、適用は主張イベントの送信と要求の充足。"""
 

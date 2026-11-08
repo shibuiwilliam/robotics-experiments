@@ -19,7 +19,7 @@ from uuid import UUID
 
 import psycopg
 import pytest
-from services.learning_worker import LearningWorker
+from services.learning_worker import LearningWorker, quarantine_reviewer
 
 from sbp.actions import ActionRegistry
 from sbp.core import vocab
@@ -32,6 +32,7 @@ from sbp.knowledge import (
     DiscrepancyStore,
     ExpectationStore,
     ObservationQueue,
+    QuarantineStore,
 )
 from sbp.reasoning.reconciliation import (
     Discrepancy,
@@ -111,6 +112,47 @@ class TestQueueSemantics:
             assert await queue.enqueue(row) is True
             assert [item.kind for item in await queue.pending()] == [DecisionKind.ANSWER]
             await _cleanup(connection)
+
+    @pytest.mark.asyncio
+    async def test_a_quarantine_review_reaches_the_quarantine_row(self, settings: Settings) -> None:
+        """``kind = quarantine_review``（ADR-0035、alembic 0016）を、実物の隔離の行に適用する。"""
+        async with await psycopg.AsyncConnection.connect(settings.pg_dsn, autocommit=True) as conn:
+            quarantine = QuarantineStore(conn, site=SITE)
+            await quarantine.add(
+                source="https://sbp.example/ent#CmmsSource",
+                table="asset_register",
+                subject="X-9",
+                reason="bad type",
+                payload={"fields": {"asset_type": "Gizmo"}},
+            )
+            [row] = await quarantine.recent()
+            queue = DecisionQueue(conn, site=SITE)
+            await queue.enqueue(
+                DecisionRow(
+                    decision_id="qr-1",
+                    kind=DecisionKind.QUARANTINE_REVIEW,
+                    subject=str(row.event_id),
+                    decided_by=OPERATOR,
+                    payload={
+                        "decision_id": "qr-1",
+                        "quarantine_id": str(row.event_id),
+                        "resolution": "業務側で修正済み",
+                        "reviewed_by": OPERATOR,
+                    },
+                )
+            )
+            worker = LearningWorker(
+                Settings(site_id=SITE),
+                decisions=queue,
+                quarantine=quarantine_reviewer(conn, SITE),
+            )
+            assert await worker.step() == 1
+            assert await quarantine.recent() == []
+            [reviewed] = await quarantine.recent(only_unreviewed=False)
+            assert reviewed.resolution == "業務側で修正済み"
+            await _cleanup(conn)
+            async with conn.cursor() as cursor:
+                await cursor.execute("DELETE FROM quarantine WHERE site = %s", (SITE,))
 
     @pytest.mark.asyncio
     async def test_history_returns_every_state_for_a_subject_newest_first(
