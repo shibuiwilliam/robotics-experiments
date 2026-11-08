@@ -7,11 +7,11 @@ import json
 import pytest
 
 from sbp.integration import describe_failure
-from sbp.knowledge.quarantine import _jsonable, quarantine_id
+from sbp.knowledge.quarantine import jsonable, quarantine_id
 
 
 def test_nul_and_non_finite_floats_become_postgres_safe() -> None:
-    body = _jsonable({"a": "x\x00y", "b": float("nan"), "c": [float("inf"), 1.5], "d": b"raw"})
+    body = jsonable({"a": "x\x00y", "b": float("nan"), "c": [float("inf"), 1.5], "d": b"raw"})
     text = json.dumps(body, allow_nan=False)
     assert "\\x00" in text and "\u0000" not in text
     assert body["b"] == "nan"

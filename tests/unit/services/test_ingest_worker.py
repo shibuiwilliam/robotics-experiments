@@ -328,7 +328,6 @@ class TestQuarantine:
             f"UPDATE asset_register SET {column} = ?, updated_at = ? WHERE asset_tag = ?",
             (value, (T0 + timedelta(hours=1)).isoformat(), "P-101"),
         )
-        worker._last_poll = None
         await worker.step()
         after = [r for r in store.query(subject=P101) if r.predicate.endswith("type")]
         assert len(after) == len(before), "未知の型の行でも、直前の型の文は閉じない"

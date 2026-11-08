@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from psycopg import AsyncConnection
-__all__ = ["QuarantineRow", "QuarantineStore", "ViolationLike", "quarantine_id"]
+__all__ = ["QuarantineRow", "QuarantineStore", "ViolationLike", "jsonable", "quarantine_id"]
 
 log = get_logger(__name__)
 
@@ -59,7 +59,7 @@ class ViolationLike(Protocol):
         ...
 
 
-def _jsonable(value: Any) -> Any:
+def jsonable(value: Any) -> Any:
     """jsonb に入る形にする（NUL 文字・NaN / Infinity は Postgres が拒否する）。
 
     隔離の対象は壊れた入力そのものなので、「壊れた入力が書き込みを壊す」ことを許さない
@@ -70,12 +70,12 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, float) and not math.isfinite(value):
         return repr(value)
     if isinstance(value, dict):
-        return {str(_jsonable(k)): _jsonable(v) for k, v in value.items()}
+        return {str(jsonable(k)): jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
-        return [_jsonable(v) for v in value]
+        return [jsonable(v) for v in value]
     if value is None or isinstance(value, (bool, int, float)):
         return value
-    return _jsonable(str(value))
+    return jsonable(str(value))
 
 
 def quarantine_id(*, site: str, source: str, table: str, subject: str, reason: str) -> UUID:
@@ -163,7 +163,7 @@ class QuarantineStore:
                     f"ingest:{table}",
                     subject,
                     reason,
-                    json.dumps(_jsonable(body), ensure_ascii=False, sort_keys=True),
+                    json.dumps(jsonable(body), ensure_ascii=False, sort_keys=True),
                 ),
             )
             returned = await cursor.fetchone()
