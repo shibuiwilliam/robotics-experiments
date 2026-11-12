@@ -27,3 +27,13 @@ htmlcov/
 .DS_Store
 /data/
 /models/
+
+# ---- 公開不要（ローカルの作業物・エディタ・キャッシュ）------------------------
+.import_linter_cache/
+.claude/settings.local.json
+.idea/
+.vscode/
+*.sqlite
+*.sqlite3
+.coverage.*
+node_modules/
