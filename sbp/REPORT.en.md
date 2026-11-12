@@ -177,7 +177,7 @@ These items are here so that the results are not over-read.
 
 | Item | Content | Owner |
 |---|---|---|
-| **H-01** | Rotation of the real keys. A plaintext real key remains in the development machine's `.envrc`. The procedure is `docs/runbooks/secret-rotation.md`. It has not been done since it was recorded as overdue on 2026-10-04. | User |
+| **H-01** | Rotation of the real keys. A plaintext real key remains in the development machine's `.envrc`. The procedure is the rotation runbook (kept locally, not published). It has not been done since it was recorded as overdue on 2026-10-04. | User |
 | **H-23** | Create the remote, push, and run CI for the first time. Preferably after H-01. | User |
 | H-05 | Legal review of ADR-0034 (pseudonymization for erasure requests) | User |
 | Remainder of H-25 | Command authorization, collisions because `decision_id` must be a globally unique primary key (there is no subject namespace), production authentication (H-02) | After the user's decision |

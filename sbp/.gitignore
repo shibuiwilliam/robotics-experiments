@@ -37,3 +37,7 @@ htmlcov/
 *.sqlite3
 .coverage.*
 node_modules/
+
+# ---- 非公開の運用手順書（履歴からも除去済み）----
+docs/runbooks/secret-rotation.md
+docs/en/runbooks/secret-rotation.md

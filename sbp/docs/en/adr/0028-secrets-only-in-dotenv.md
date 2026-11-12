@@ -14,7 +14,7 @@ because the file was displayed in the 2026-10-04 session, the values passed thro
 1. **Rotate all three keys** (invalidate the old keys and issue new ones). Even "merely passed through" is treated as a leak. The effort of reissuing is smaller than the cost of tracking usage history.
 2. **Keys are kept only in `.env`.** Neither keys nor settings are placed in `.envrc`. Since X-11 made nested settings also read `.env`, moving them causes no problem.
 3. The deny list in `.claude/settings.json` includes reads of `.env`, `.env.local`, `.envrc`, and `.envrc.*`, so they cannot be read from a session. In the rotation procedure, do not paste new keys into the conversation.
-4. The procedure is `docs/runbooks/secret-rotation.md`. Once executed, remove H-01 from `docs/HITL.md` (done by a human).
+4. The procedure is the rotation runbook (kept locally, not published). Once executed, remove H-01 from `docs/HITL.md` (done by a human).
 
 ## Consequences
 

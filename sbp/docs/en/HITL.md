@@ -35,7 +35,7 @@
 
 ### H-01 A real key is placed in plaintext in the development machine's `.envrc` `決定済み・実行待ち` (decided, awaiting execution)
 
-**Decided 2026-11-08: option A (rotate all 3; keys only in `.env`). ADR-0028; the procedure is `docs/runbooks/secret-rotation.md`. Rotation is an operation on the provider side, performed by a human. Remove this item once completed.**
+**Decided 2026-11-08: option A (rotate all 3; keys only in `.env`). ADR-0028; the procedure is the rotation runbook (kept locally, not published). Rotation is an operation on the provider side, performed by a human. Remove this item once completed.**
 
 **Fact.** The API keys of 3 LLM providers are in plaintext in `.envrc` (direnv). It is excluded by line 6 of `.gitignore`
 and does not appear in `git ls-files` either (**it has never been committed**). However,

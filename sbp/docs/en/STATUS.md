@@ -92,7 +92,7 @@ reconciliation of types 1, 3, 4, 5; `suppression_rate` is structurally 0 in oper
 
 ## What to do next (recommended order)
 
-**Items needing the user's confirmation or decision**: H-01 (rotation of the real keys. Decided; the procedure is `docs/runbooks/secret-rotation.md`, execution is by a human), H-23 (create the remote and push),
+**Items needing the user's confirmation or decision**: H-01 (rotation of the real keys. Decided; the procedure is the rotation runbook (kept locally, not published), execution is by a human), H-23 (create the remote and push),
 the remainder of H-25 (command authorization, `decision_id` not including the subject. The production authentication method was decided in H-02 as "not published", so re-file before publishing), the remainder of H-27 (identity binding and entrances for LLM-based features. The SHACL quarantine and the What-if entrance went in with M10).
 
 **M8, M9, and M10 are complete** (2026-11-08). M10 is the quarantine queue (write side M10-01, read/write M10-02), the What-if job (M10-03) and read path (M10-04), and G10 (M10-05). M9 is the execution of re-grounding (M9-01), forecasting and scoring (M9-02), the `forecasts` GraphQL (M9-03), and G9 (M9-04).
