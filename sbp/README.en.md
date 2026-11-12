@@ -1,66 +1,165 @@
 # SBP — Semantic Bridge Platform
 
-[日本語](README.md) | English (this file)
+[日本語](README.md) | English
 
-> English translation of the Japanese original (snapshot of 2026-11-12). The Japanese file is canonical; numbers may lag behind it.
+> English version of README.md (the Japanese file is canonical; numbers may lag behind it).
 
-A "belief-maintenance system" that uses a world model (WM) × an ontology to line up observations of the physical world (sensors, cameras, equipment) against records in business systems (ERP/MES/WMS/CMMS, plans, regulations) on the same vocabulary, the same time axis, and the same confidence scale. It manages beliefs (claims carrying confidence, provenance, and modality) rather than truth, and treats discrepancies between the physical and business sides as first-class objects: detect → raise a ticket → resolve → learn.
+**A belief-maintenance system that puts physical-world observations and business-system records on the same footing.**
 
-This repository covers the platform core only. Use-case validation (real devices, sandbox experiments) is done in a separate repository.
+In factories and warehouses, the "reality" seen by sensors and cameras and the "books" kept in ERP / MES / WMS / CMMS often drift apart.
+SBP finds that drift, raises it as a ticket, lets a person resolve it, and learns from the result.
 
-## Quick start
+- **It holds beliefs, not truth.** Every claim carries a confidence, provenance, and a modality (observed / inferred / predicted / planned / normative / hypothetical).
+- **It compares the physical and the business on one scale.** A world model (WM) and an ontology align vocabulary, time axis, and confidence.
+- **Discrepancies are first-class objects.** The platform owns the flow detect → raise → resolve → learn.
 
-Prerequisites: macOS 14+ / Apple Silicon, Docker Desktop or OrbStack, Homebrew, uv, Python 3.12.
+> This repository contains **the platform core only**. Use-case validation on real machines or in sandboxes happens in a separate repository (ADR-0001).
 
-```sh
-make bootstrap   # uv sync → generate .env → docker compose pull (install the Homebrew dependencies by hand; there is no Brewfile)
-make up          # start Compose (redpanda / postgres / oxigraph / objectstore). Profiles: PROFILES=ui,observability
-make seed        # load the ontology, create topics, run migrations
-make dev         # API (:8000, hot reload). Workers: uv run python -m scripts.dev --workers belief,reconcile
-make check       # lint + types + layer dependencies + ontology-check + secret scan + unit tests (must be green before every commit)
-make test-int    # integration tests (Compose required)
+## Contents
+
+[How it works](#how-it-works) · [Getting started](#getting-started) · [Common commands](#common-commands) · [Layout](#layout) · [Status](#status) · [Documentation](#documentation) · [Contributing](#contributing)
+
+## How it works
+
+```
+ Physical      ──► encode ──► latent index ──► probes ──► event promotion ──┐
+ observations      (WM)       (pgvector)      (calibrated)                  │
+ (sensors…)                                                                 ▼
+                                                                 ┌── belief update ──┐ ──► knowledge graph
+ Business      ──► ingest ──► mapping ──► business events ──────►│  merges 3 sources │      (Oxigraph)
+ systems           (DSL)                                         └─────────┬─────────┘
+ Plans, norms ─────────────────────────────────────────────────────────────┘
+                                                                           │
+                              discrepancy detection (reconciliation) ◄─────┘
+                                          │
+                    resolved by people (API / UI) ◄┘──► forecasts / What-if / actions
 ```
 
-When working on the UI (`apps/ui`, Node 20+), run `make ui-install` → `make check-all`
-(`make check` + UI type checking and tests). The UI is not part of `make check`
-so that `make check` stays in a state that **always runs without any additional installation**.
+- Three data paths: **record** (business system → events), **estimation** (observation → latent → probe → event), **belief update** (merge the three sources).
+- Four Docker Compose services underneath: Redpanda (event log), Postgres + Timescale + pgvector, Oxigraph (knowledge graph), SeaweedFS (object store).
+- Layer dependencies run one way only (checked mechanically with import-linter):
 
-See `CLAUDE.md` for the command list and development conventions, and `docs/development-rules.md` for details.
+  ```
+  core ← eventlog ← knowledge ← {integration, worldmodel} ← bridge ← reasoning ← actions ← api
+  ```
 
-> Current status: **M0–M9 complete** (gates G0–G9 passed) / **M9 "entrances to operation" 4 / 4** (2026-11-08).
-> Gate G8 (ADR-0025): the integration test that drives the 6 workers through operational code, simulating only the outside world (`test_g8_workers.py`), is green.
-> Gate G9 (ADR-0030): the integration test that drives re-grounding execution, forecasting and scoring, and the API's forecasts through the operational entrances (`test_g9_entrances.py`), is green.
-> Gate G10 (ADR-0035, 0036): the integration test covering the quarantine queue (broken input → API → review) and What-if (WM with interventions → index → not visible to the default requester) (`test_g10_entrances.py`), is green.
-> The recording path (business system → ingest worker → event log and knowledge graph) went into operation on 2026-10-25 (ADR-0016).
-> What remains is **23 items awaiting a human decision (excluding those already decided)**
-> (`docs/HITL.md`), and constraints of the kind that "cannot be verified until applied to real data" (`docs/STATUS.md`,
-> and the known constraints in `docs/PROGRESS.md`).
+For details, see `docs/design/sbp-design.md` (canonical); read only the chapters you need.
 
-CI is `.github/workflows/ci.yml`. It is split into 4 jobs (`check` / `integration` / `audit` / `ui`); if `check` (no Compose needed)
-fails, `integration` (Compose required) does not run — waiting 5 minutes adds no information when the types don't even pass.
-**It has never been run because there is no remote** (`docs/HITL.md` H-23).
+## Getting started
 
-## Documentation map
+**Prerequisites**: macOS 14+ / Apple Silicon (Intel: `SBP_PLATFORM=linux/amd64`), Docker Desktop or OrbStack, Homebrew, [uv](https://docs.astral.sh/uv/), Python 3.12. Node 20+ only when working on the UI.
+
+```sh
+make bootstrap   # sync dependencies → generate .env from .env.example → pull images
+make up          # start Compose (redpanda / postgres / oxigraph / objectstore)
+make seed        # load the ontology, create topics, run migrations, create buckets
+make dev         # start the API (http://localhost:8000, hot reload)
+```
+
+Check that it works:
+
+```sh
+make ps                          # are the 4 services healthy?
+curl -s localhost:8000/health    # API response
+make check                       # lint + types + layering + ontology + secret scan + unit tests
+```
+
+Workers are not started by default. Pick the ones you need:
+
+```sh
+uv run python -m scripts.dev --workers belief,reconcile
+```
+
+Stop with `make down` (data is kept). To delete the data too, use `make nuke` (the only deletion path).
+
+> **Secrets**: put API keys and the like only in `.env` (gitignored). Never in code, tests, logs, or fixtures. The LLM runs in `replay` mode (fixtures only) by default; `live` runs only when you ask for it explicitly.
+
+## Common commands
+
+| I want to… | Command |
+|---|---|
+| Run the full pre-commit check (must be green) | `make check` |
+| Include the UI | `make ui-install` → `make check-all` |
+| Unit tests (no Compose or network) | `make test` |
+| Integration tests (Compose required) | `make test-int` |
+| Regenerate `vocab.py` / `schemas/` from the ontology | `make gen` → `make ontology-check` |
+| Encode observations into latents and index them | `make encode` |
+| Train the WM (Koopman) | `make train-wm SEED=…` |
+| Train a probe (stored only if it passes the gate) | `make train-probe FLUENT=… PROBE_ID=… SEED=…` |
+| Recompute past beliefs under a new version (dry-run by default) | `make reground ARGS='--entity … --apply'` |
+| Produce and score forecasts | `make forecast ARGS='--entity … --fluent … --probe-id … --seed N'` |
+| Compare rollouts with and without an intervention (What-if) | `make whatif ARGS='--entity … --action-type … --seed N'` |
+| Check dependencies for vulnerabilities | `make audit` / `make ui-audit` |
+| List all commands | `make help` |
+
+Operational procedures are in `docs/runbooks/` (local setup, re-grounding, version promotion, What-if, incident response, backup).
+
+## Layout
+
+```
+ontology/    ontology (core / domain / shapes=SHACL / process=clingo / norms)
+schemas/     generated: JSON Schema derived from EventType (do not edit by hand)
+src/sbp/     core library (core, eventlog, knowledge, integration, worldmodel, bridge,
+             reasoning, actions, llm, api, testing)
+services/    6 workers (bridge / belief / reconcile / scheduler / learning / ingest)
+scripts/     jobs (encode, train-*, reground, forecast, whatif)
+apps/ui/     UI (discrepancy queue, belief view, expectation board, concept curation). localhost only
+infra/       compose.yaml, DB migrations (alembic)
+mappings/ reliability/ …   mapping, reliability and other configuration
+docs/        design, ADRs, runbooks, progress, items awaiting human decision
+tests/       unit / integration / contract / property
+```
+
+## Status
+
+**M0–M10 complete** (gates G0–G10 passed, 2026-11-08).
+
+| Item | State |
+|---|---|
+| Automated tests | `make check` 1952, integration 236, UI 126 — all green |
+| Operational entrances | record, estimation, belief update, reconciliation, re-grounding, forecasting, quarantine queue, and What-if all run through the API / jobs |
+| Not validated | **Not validated on real data** (synthetic data and a mock business system only) |
+| Remaining | 23 items awaiting human decision (`docs/HITL.md`); identity binding, LLM-backed entrances, etc. |
+
+CI is defined in `.github/workflows/ci.yml` (`check` → `integration`, `audit`, `ui`), but **it has never run**:
+this project lives under `sbp/` in a repository that holds other projects, and GitHub Actions reads only the repository-root `.github/` (`docs/HITL.md` H-23).
+
+For the history and the numbers, see [`REPORT.en.md`](REPORT.en.md) (development and verification summary) and `docs/en/STATUS.md`.
+
+## Documentation
+
+| Read first | Contents |
+|---|---|
+| [`REPORT.en.md`](REPORT.en.md) | Summary of development and verification so far |
+| `docs/en/design/sbp-design.md` | The **canonical** detailed design (18 chapters + appendices). Read only the chapters you need |
+| `docs/en/STATUS.md` | Milestone progress and measured size |
+| `docs/en/HITL.md` | Register of **items awaiting a human decision** |
+| `docs/en/adr/` | Design decision records (MADR format, 37 files including the template) |
+| `docs/en/runbooks/` | Operational procedures |
+
+English translations live in `README.en.md`, `REPORT.en.md`, and `docs/en/`. **The Japanese originals are canonical**; numbers may lag behind them.
+
+<details>
+<summary>Other development documents (Japanese only)</summary>
 
 | Path | Contents |
 |---|---|
-| `docs/design/sbp-design.md` | The **canonical** detailed design document (v0.1, 18 chapters + appendices). Read only the relevant chapter before implementing |
-| `CLAUDE.md` | Core rules loaded every session (layer dependencies, the 12 invariants, conventions) |
-| `docs/development-rules.md` | Consolidated overview of directory layout, file roles, and development conventions |
-| `docs/TASK.md` | Development plan and task management (scope, quality gates, M0–M8 task breakdown, operations, risks) |
-| `docs/PROMPT.md` | Prompt collection for driving development (session management, task execution, per-milestone, cross-cutting, operations, recovery) |
-| `docs/PROGRESS.md` | Record of the development course (facts found during implementation, decisions that did not rise to an ADR, known constraints) |
-| `docs/adr/` | Records of design decisions (MADR format, 36 entries. The template is `0000-template.md`) |
-| `docs/HITL.md` | **Register of items awaiting a human decision** (in priority order. Once decided, file an ADR and remove the item from this document) |
-| `docs/STATUS.md` | Milestone progress (M0–M8) and measured scale. The granularity of milestones is written only here |
-| `.claude/rules/*.md` | Per-layer detailed rules (linked to paths; loaded automatically when a matching file is opened) |
-| `.claude/settings.json` | Claude Code guardrails |
-| `docs/runbooks/` | Operating procedures (re-grounding / version promotion / incident response / backup and restore / local environment) |
-| `apps/ui/` | UI (discrepancy queue, belief view, expectation board, concept curation. ADR-0008) |
-| `.env.example` | List of all environment variables (do not commit `.env`) |
+| `CLAUDE.md` | Core rules loaded every session (layering, the 12 invariants, conventions) |
+| `docs/development-rules.md` | Directory structure, file roles, consolidated development conventions |
+| `docs/TASK.md` | Development plan and task management (quality gates, task breakdown) |
+| `docs/PROMPT.md` | Prompt collection for driving development |
+| `docs/PROGRESS.md` | Development log (facts discovered, known constraints) |
+| `.claude/rules/*.md` | Per-layer detailed rules (loaded automatically when you open matching files) |
+| `.env.example` | List of all environment variables |
 
-Order of precedence: if documents contradict each other, follow the design document → CLAUDE.md → other documents.
+Precedence when documents conflict: design document → `CLAUDE.md` → everything else.
 
-## Development with Claude Code
+</details>
 
-Setup check: start Claude Code and run `/context`; `CLAUDE.md` should appear under Memory files. When `.claude/settings.json` is in effect, reading `.env` and editing generated files (`schemas/`, `src/sbp/core/vocab.py`) are automatically denied.
+## Contributing
+
+- One task per branch. Commits follow Conventional Commits (`feat(bridge): …`). Get `make check` green before committing.
+- A decision that departs from the design is written up first as an ADR in `docs/adr/`. Ontology changes come before code (procedure in `CLAUDE.md`).
+- Invariants to respect (excerpt): assertions are append-only, never UPDATE or DELETE; `modality` has exactly six values, and output of LLMs, rules, and probes is always `inferred`; never call an LLM from the belief-update path; reference IRIs only through `sbp.core.vocab`. All 12 are in `CLAUDE.md`.
+- Never hand-edit generated files (`schemas/`, `src/sbp/core/vocab.py`, `ontology/imports/`); produce them with `make gen`.
+- Developing with Claude Code: start it and run `/context`; confirm `CLAUDE.md` appears under Memory files. With `.claude/settings.json` active, reading `.env` and editing generated files are denied automatically.
