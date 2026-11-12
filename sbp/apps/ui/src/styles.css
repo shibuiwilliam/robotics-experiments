@@ -1,0 +1,641 @@
+/* M7-04 の最小の見た目。UI ライブラリを入れていない（ADR-0008）。
+   色は「深刻度」と「状態」にだけ使う。装飾の色を増やすと、意味のある色が埋もれる。 */
+
+:root {
+  --ink: #16191d;
+  --ink-soft: #5a6270;
+  --paper: #fbfbfa;
+  --line: #d9dbe0;
+  --card: #ffffff;
+  --accent: #1f5f8b;
+  --violated: #a4362c;
+  --warn: #8a6410;
+  --ok: #2c6e49;
+  --empty: #8e94a0;
+  font-family: "Helvetica Neue", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e8e9ec;
+    --ink-soft: #a0a7b4;
+    --paper: #15171a;
+    --line: #2f333a;
+    --card: #1d2024;
+    --accent: #6fb2d9;
+    --violated: #e0776c;
+    --warn: #d9a93f;
+    --ok: #6cbf90;
+    --empty: #767c88;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+main {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+h1 {
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+nav {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.tab,
+.reload {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tab.active {
+  color: var(--ink);
+  border-color: var(--line);
+  background: var(--card);
+}
+
+.reload {
+  border-color: var(--line);
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem;
+}
+
+.count {
+  color: var(--ink-soft);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.empty,
+.empty-column,
+.none {
+  color: var(--empty);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.error,
+.notice {
+  padding: 0.6rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.error {
+  border: 1px solid var(--violated);
+  color: var(--violated);
+}
+
+.notice {
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+
+.error-note,
+.toggle-note,
+.axis-note,
+.hint,
+.note {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  margin-top: 0.3rem;
+}
+
+/* ---- 不一致キュー ---- */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 2fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.queue ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 4rem 3.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.row:hover {
+  border-color: var(--line);
+}
+
+.row.active {
+  background: var(--card);
+  border-color: var(--accent);
+}
+
+.severity {
+  font-variant-numeric: tabular-nums;
+  color: var(--violated);
+}
+
+.kind {
+  color: var(--ink-soft);
+}
+
+.stale {
+  font-size: 0.7rem;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 2px;
+  padding: 0 0.25rem;
+}
+
+.detail {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+}
+
+.meta {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  margin: 0 0 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+caption {
+  text-align: left;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  padding-bottom: 0.4rem;
+  line-height: 1.6;
+}
+
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.evidence th {
+  width: 4rem;
+  color: var(--ink-soft);
+}
+
+.row-empty td {
+  color: var(--empty);
+}
+
+.evidence ul,
+.beliefs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.conf,
+.valid {
+  color: var(--ink-soft);
+  margin-left: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.superseded {
+  color: var(--empty);
+  text-decoration: line-through;
+}
+
+/* ---- 解決フォーム ---- */
+
+.resolve {
+  margin-top: 1.25rem;
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+}
+
+legend {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  padding: 0 0.3rem;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.5rem;
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.choice-effect {
+  grid-column: 2;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.reason {
+  display: block;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+
+textarea,
+select,
+input[type="range"] {
+  font: inherit;
+  width: 100%;
+  margin-top: 0.3rem;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.35rem;
+}
+
+.problems {
+  margin: 0 0 0.6rem;
+  padding-left: 1.1rem;
+  color: var(--warn);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+button[type="submit"],
+.decide button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+button:disabled {
+  border-color: var(--line);
+  color: var(--empty);
+  cursor: not-allowed;
+}
+
+.decide .reject {
+  border-color: var(--line);
+  color: var(--ink-soft);
+}
+
+/* ---- 信念ビュー ---- */
+
+.axes {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 860px) {
+  .axes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.axis-name {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+output {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.source-list {
+  list-style: none;
+  display: flex;
+  gap: 1.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.source-name {
+  color: var(--ink-soft);
+  margin-right: 0.4rem;
+}
+
+.source-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle {
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+/* ---- 期待ボード ---- */
+
+.due-soon {
+  font-size: 0.85rem;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.column {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.7rem;
+  background: var(--card);
+}
+
+.column.violated h3 {
+  color: var(--violated);
+}
+
+.column.fulfilled h3 {
+  color: var(--ok);
+}
+
+.column.undetermined h3 {
+  color: var(--warn);
+}
+
+.column ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.card-title {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+}
+
+.card-deadline {
+  margin: 0 0 0.4rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.verdicts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.5rem;
+  margin: 0;
+}
+
+.verdicts dt {
+  color: var(--ink-soft);
+}
+
+.verdicts dd {
+  margin: 0;
+}
+
+.blame {
+  margin: 0.4rem 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--line);
+  line-height: 1.6;
+}
+
+.blame-symbolic,
+.blame-action {
+  color: var(--violated);
+}
+
+.blame-worldmodel {
+  color: var(--warn);
+}
+
+/* ---- 概念 curation ---- */
+
+.proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.proposal {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.9rem 1.1rem;
+  background: var(--card);
+}
+
+.rationale {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  margin: 0 0 0.5rem;
+}
+
+.stats {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 0.6rem;
+}
+
+details summary {
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+details ul {
+  font-size: 0.82rem;
+  line-height: 1.7;
+  padding-left: 1.1rem;
+}
+
+.decide {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+code {
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.fatal {
+  max-width: 40rem;
+  padding: 3rem 1.5rem;
+}
+
+.fatal p {
+  color: var(--violated);
+  line-height: 1.7;
+}
+
+/* 証拠の三源並置（M8-17）。どの列も空欄にしない。「記録されていない」と「寄与なし」は見た目も分ける */
+.juxtaposition {
+  margin: 1rem 0;
+}
+
+.juxtaposition h4 {
+  margin: 0.8rem 0 0.3rem;
+}
+
+.juxtaposition-columns td.state-unrecorded,
+.juxtaposition-columns td.state-no-beliefs {
+  color: var(--empty);
+  font-style: italic;
+}
+
+.juxtaposition-columns td.state-none {
+  color: var(--ink-soft);
+}
+
+.juxtaposition-points {
+  margin-top: 0.5rem;
+  font-size: 0.9em;
+}
+
+.juxtaposition .none {
+  color: var(--empty);
+}
+
+/* アクションの承認（M8-22）。失敗は理由をそのまま、再投入の案内を添える */
+.actions {
+  margin: 1rem 0;
+}
+
+.contract dl {
+  margin: 0.4rem 0;
+}
+
+.contract dt {
+  color: var(--ink-soft);
+}
+
+.contract dd {
+  margin: 0 0 0.3rem 0;
+}
+
+.decisions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.decisions li {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.decision-failed .decision-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.decision-pending {
+  color: var(--ink-soft);
+}
+
+.hint {
+  color: var(--empty);
+}

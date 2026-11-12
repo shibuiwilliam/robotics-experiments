@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sbp.example/schemas/events/stop-cmd.schema.json",
+  "title": "StopCmd",
+  "description": "停止指令。設備の計画停止指令。Running を終了し、停止により人が近づけるようになるため Accessible を開始する（遅延 LogNormal(ln 10s, 0.4)）。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.6.0。",
+  "allOf": [
+    {
+      "$ref": "../event-envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "https://sbp.example/ent#StopCmd"
+    }
+  },
+  "required": [
+    "type"
+  ]
+}

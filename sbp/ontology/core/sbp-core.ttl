@@ -1,0 +1,705 @@
+# SBP 中核オントロジー（L1）— 物理世界と業務世界を結ぶための「接続概念」のみを定義する。
+#
+# 設計原則 P10（標準優先・独自最小）に従い、上位区分・観測・来歴・時間・空間・単位は標準
+# （BFO / IAO / SOSA / PROV / OWL-Time / GeoSPARQL / QUDT）を採用し、ここで再定義しない。
+# 独自定義は Situation / Discrepancy / Expectation / IdentityClaim / Track / Anchor / Probe /
+# ModelVersion / DataSource といった接続概念に限る（設計書 §3.1, §3.3）。
+#
+# 全クラス・全プロパティに rdfs:label（ja / en）、skos:definition、sbp:layer、sbp:owner を
+# 付けること（`make ontology-check` が欠落を検出する）。
+
+@prefix sbp:     <https://sbp.example/core#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix bfo:     <http://purl.obolibrary.org/obo/> .
+@prefix iao:     <http://purl.obolibrary.org/obo/> .
+@prefix sosa:    <http://www.w3.org/ns/sosa/> .
+@prefix prov:    <http://www.w3.org/ns/prov#> .
+@prefix time:    <http://www.w3.org/2006/time#> .
+@prefix geo:     <http://www.opengis.net/ont/geosparql#> .
+@prefix qudt:    <http://qudt.org/schema/qudt/> .
+
+<https://sbp.example/core>
+    a owl:Ontology ;
+    rdfs:label "SBP 中核オントロジー"@ja , "SBP core ontology"@en ;
+    owl:versionInfo "0.6.0" ;
+    skos:definition "物理世界の観測と業務世界の記録を同じ語彙・時間軸・確信度で突き合わせるための接続概念を定義する。"@ja ;
+    dcterms:publisher "sbp-platform-team" .
+
+# =============================================================================
+# 注釈プロパティ（オントロジー自体のメタデータ）
+# =============================================================================
+
+sbp:layer
+    a owl:AnnotationProperty ;
+    rdfs:label "層"@ja , "layer"@en ;
+    skos:definition "概念が属するオントロジー層（L1 中核 / L2 ドメイン標準 / L3 企業 / L4 アプリ）。変更頻度とオーナーを規定する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:owner
+    a owl:AnnotationProperty ;
+    rdfs:label "オーナー"@ja , "owner"@en ;
+    skos:definition "概念の定義・採否・非推奨に責任を持つ主体。L1 は基盤オントロジスト、L2/L3 は概念オーナー（設計書 §11.3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 物理実体（continuant）
+# =============================================================================
+
+sbp:PhysicalEntity
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000040 ;   # material entity
+    rdfs:label "物理実体"@ja , "Physical entity"@en ;
+    skos:definition "物理的に存在し、時間を通じて同一性を保つ実体の総称。観測の対象であり、業務記録が指す対象でもある。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Asset
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity ;
+    rdfs:label "資産"@ja , "Asset"@en ;
+    skos:definition "設備・機器。業務側では資産台帳の資産 ID で識別される。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:MaterialItem
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity ;
+    rdfs:label "物品"@ja , "Material item"@en ;
+    skos:definition "部品・製品・在庫単位。SKU とロットで識別され、数量は QUDT の量で表す。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Person
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity , prov:Agent ;
+    rdfs:label "人"@ja , "Person"@en ;
+    skos:definition "人。役割は Situation 内で付与し、個人特定属性は原則保持しない（設計書 §11.1、不変条件 9）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Carrier
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity ;
+    rdfs:label "搬送体"@ja , "Carrier"@en ;
+    skos:definition "パレット・コンテナ・車両など、物品を載せて動く物理実体。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:UnidentifiedPhysicalObject
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity ;
+    rdfs:label "未同定物理個体"@ja , "Unidentified physical object"@en ;
+    skos:definition "知覚されたが業務 ID に束縛されていない物理個体。「業務が知らない物」を表現するために必要（設計書 §5.4）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Location
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000029 ;   # site
+    rdfs:label "場所"@ja , "Location"@en ;
+    skos:definition "施設・建屋・ライン・セル・ドック・棚。施設座標系の上で幾何を持つ。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Zone
+    a owl:Class ;
+    rdfs:subClassOf sbp:Location ;
+    rdfs:label "区域"@ja , "Zone"@en ;
+    skos:definition "述語的な領域（危険区域、保管区画）。位置分布との包含確率から locatedIn を導く（設計書 §5.5）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Anchor
+    a owl:Class ;
+    rdfs:subClassOf sbp:PhysicalEntity , sosa:Sensor ;
+    rdfs:label "アンカー"@ja , "Anchor"@en ;
+    skos:definition "同一性束縛の基準点。固定（較正済みカメラ・ゲート・リーダ）／可搬（タグ）／推論（時空間連続性＋業務文脈）の 3 種（設計書 §5.4）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 生起物（occurrent）
+# =============================================================================
+
+sbp:PhysicalEvent
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000015 ;   # process
+    rdfs:label "物理事象"@ja , "Physical event"@en ;
+    skos:definition "観測または推定された物理世界の事象。接地層の事象昇格が生成し、様相は inferred（不変条件 3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:BusinessEvent
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000015 ;
+    rdfs:label "業務事象"@ja , "Business event"@en ;
+    skos:definition "業務システムのトランザクション。業務統合層が Record から変換し、信頼性メタを伴う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:ActionEvent
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000015 ;
+    rdfs:label "アクション事象"@ja , "Action event"@en ;
+    skos:definition "基盤経由で実行されたアクション。実行時に Expectation を生成し、効果が自動検証される（設計書 §9.2）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Situation
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000015 ;
+    rdfs:label "状況"@ja , "Situation"@en ;
+    skos:definition "時空間領域・参加者・関係・解決状態を束ねる単位。イベント群の相関 ID の対象であり、類似状況検索の単位でもある。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 情報内容実体（ICE）— すべての「主張」はここに属する
+# =============================================================================
+
+sbp:Assertion
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;   # information content entity
+    rdfs:label "アサーション"@ja , "Assertion"@en ;
+    skos:definition "二時制・様相・確信度・来歴を備えた信念文。基盤が所有する唯一のもの（不変条件 1）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:FluentType
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "フルーエント型"@ja , "Fluent type"@en ;
+    skos:definition "時間とともに成立・不成立が変わる状態述語の型（Running, Present, Occupied）。事象計算の holdsAt の対象。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:EventType
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "事象型"@ja , "Event type"@en ;
+    skos:definition "事象の型（StartCmd, Fault, GoodsReceipt）。initiates / terminates でフルーエントの変化を規定し、JSON Schema の生成元になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Record
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "業務記録"@ja , "Record"@en ;
+    skos:definition "伝票・作業指示・検査票など業務システムの記録。誤りうる主張として扱い、信頼性モデルを適用する（設計書 §7.3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:PlanItem
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "計画項目"@ja , "Plan item"@en ;
+    skos:definition "計画・スケジュールの項目。様相 planned のアサーションになり、確信度は当該計画種の遵守率事前分布を用いる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Norm
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "規範"@ja , "Norm"@en ;
+    skos:definition "規程・契約条項・安全規則。Datalog / SHACL 規則にコンパイルされ、違反は様相 normative のアサーションになる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:ActionType
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "アクション型"@ja , "Action type"@en ;
+    skos:definition "実行可能なアクションの型。前提・期待効果・リスク級・必要承認・補償を持つ意味契約（設計書 §9.1）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Expectation
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "期待"@ja , "Expectation"@en ;
+    skos:definition "アクション実行時に生成される、期待効果の分布と期限を持つ検証対象。満たされれば介入データ、満たされなければ不一致になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Discrepancy
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "不一致"@ja , "Discrepancy"@en ;
+    skos:definition "物理と業務の食い違いを表す一級オブジェクト。五類型（存在・状態・時間・同一性・規範）を持ち、解決結果が学習信号になる（設計原則 P5）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:IdentityClaim
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "同一性主張"@ja , "Identity claim"@en ;
+    skos:definition "物理トラックと業務 ID の束縛主張。証拠・確信度・有効期間を持ち、撤回可能（撤回時は不一致類型 4 を起票する）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Track
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "トラック"@ja , "Track"@en ;
+    skos:definition "知覚が生成する時空間軌跡と外観埋め込み。Person のトラックを個人識別に用いてはならない（設計書 §5.4）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Probe
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 , prov:Agent ;
+    rdfs:label "プローブ"@ja , "Probe"@en ;
+    skos:definition "潜在状態から概念成立確率または属性値分布を出力する学習器の登録。昇格には AUROC・ECE・整合残差の AND 条件を要する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:WorldModelVersion
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 , prov:Agent ;
+    rdfs:label "ワールドモデル版"@ja , "World model version"@en ;
+    skos:definition "WM の版。潜在仕様と学習来歴を持ち、プローブとの互換性行列で管理する。ロードは版指定必須。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:OntologyVersion
+    a owl:Class ;
+    rdfs:subClassOf iao:IAO_0000030 ;
+    rdfs:label "オントロジー版"@ja , "Ontology version"@en ;
+    skos:definition "オントロジーの版。semver で管理し、MAJOR は ADR と再接地計画を要する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:DataSource
+    a owl:Class ;
+    rdfs:subClassOf prov:Agent ;
+    rdfs:label "情報源"@ja , "Data source"@en ;
+    skos:definition "業務システムまたはセンサ群。時刻ずれ分布・誤記率・系統誤差からなる信頼性モデルと時計プロファイルを持つ。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Forecast
+    a owl:Class ;
+    rdfs:subClassOf sosa:Observation ;
+    rdfs:label "予測"@ja , "Forecast"@en ;
+    skos:definition "地平付きの予測。起点（horizonOrigin）と先行時間（leadTime）を持ち、様相は predicted。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 関係（設計書 §3.4）
+# =============================================================================
+
+sbp:hasParticipant
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Situation ;
+    rdfs:range sbp:PhysicalEntity ;
+    rdfs:label "参加者を持つ"@ja , "has participant"@en ;
+    skos:definition "Situation または事象に参加する物理実体。役割付きで修飾できる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:locatedIn
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:PhysicalEntity ;
+    rdfs:range sbp:Location ;
+    rdfs:label "位置する"@ja , "located in"@en ;
+    skos:definition "物理実体の空間位置。位置分布と Zone 幾何の包含確率から導かれる確率的述語（設計書 §5.5）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:containedIn
+    a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:domain sbp:Location ;
+    rdfs:range sbp:Location ;
+    rdfs:label "含まれる"@ja , "contained in"@en ;
+    skos:definition "場所の包含階層（棚 → 区画 → 建屋）。locatedIn の推移的導出に用いる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:initiates
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:EventType ;
+    rdfs:range sbp:FluentType ;
+    rdfs:label "開始する"@ja , "initiates"@en ;
+    skos:definition "事象型がフルーエント型を成立させる事象計算の規則。条件と遅延分布は ontology/process/*.lp に書く。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:terminates
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:EventType ;
+    rdfs:range sbp:FluentType ;
+    rdfs:label "終了する"@ja , "terminates"@en ;
+    skos:definition "事象型がフルーエント型を不成立にする事象計算の規則。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Role
+    a owl:Class ;
+    rdfs:subClassOf bfo:BFO_0000023 ;
+    rdfs:label "ロール"@ja , "Role"@en ;
+    skos:definition "承認・配賦の宛先になる業務ロール。BFO の role の下位クラスとして宣言し、再定義しない（設計原則 P10）。承認者を個人ではなくロールで指定するのは、担当交代でアクションが実行不能にならないようにするためである（設計書 §9.3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:compensatedBy
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:ActionType ;
+    rdfs:range sbp:ActionType ;
+    rdfs:label "補償される"@ja , "compensated by"@en ;
+    skos:definition "このアクション型を取り消すアクション型。補償が宣言されていないアクション型は登録を拒否する（設計書 §9.1、アクション層ルール）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:partOf
+    a owl:ObjectProperty , owl:TransitiveProperty ;
+    rdfs:subPropertyOf bfo:BFO_0000050 ;
+    rdfs:domain sbp:PhysicalEntity ;
+    rdfs:range sbp:PhysicalEntity ;
+    rdfs:label "部分である"@ja , "part of"@en ;
+    skos:definition "物理実体の部分−全体関係。BFO の part of の下位プロパティとして宣言し、再定義しない（設計原則 P10）。信念更新では「強い関係」として実体間結合の因子になる（設計書 §8.1）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:aggregatesAs
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:FluentType ;
+    rdfs:range sbp:AggregationRule ;
+    rdfs:label "集約規則"@ja , "aggregates as"@en ;
+    skos:definition "部分のフルーエントが全体のフルーエントへどう集約されるか。all（全部分が成立して初めて全体が成立）または any（いずれかの部分で全体が成立）。設計書 §8.1 の関係制約の因子ポテンシャルを決める。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregationRule
+    a owl:Class ;
+    rdfs:label "集約規則"@ja , "Aggregation rule"@en ;
+    skos:definition "部分−全体の集約の型。個体は sbp:AggregateAll と sbp:AggregateAny の 2 つのみ。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregateAll
+    a sbp:AggregationRule ;
+    rdfs:label "全部分集約"@ja , "aggregate all"@en ;
+    skos:definition "全部分で成立して初めて全体で成立する（稼働のような「全系が揃って初めて成り立つ」状態）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:AggregateAny
+    a sbp:AggregationRule ;
+    rdfs:label "部分和集約"@ja , "aggregate any"@en ;
+    skos:definition "いずれかの部分で成立すれば全体で成立する（故障・異常のような「どこか一つ壊れれば全体が壊れている」状態）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:mutuallyExclusiveWith
+    a owl:ObjectProperty , owl:SymmetricProperty ;
+    rdfs:domain sbp:FluentType ;
+    rdfs:range sbp:FluentType ;
+    rdfs:label "排他である"@ja , "mutually exclusive with"@en ;
+    skos:definition "同一有効時間に共に成立できないフルーエント型の対。衝突は拒否ではなく不一致候補（類型 2）の証拠になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:subjectType
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:FluentType ;
+    rdfs:range owl:Class ;
+    rdfs:label "主体型"@ja , "subject type"@en ;
+    skos:definition "フルーエント型が述語として適用される実体のクラス。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:groundedBy
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:FluentType ;
+    rdfs:range sbp:Probe ;
+    rdfs:label "接地される"@ja , "grounded by"@en ;
+    skos:definition "概念または属性を潜在状態に接地するプローブ。接地の実装を指す。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:evidenceFor
+    a owl:ObjectProperty ;
+    rdfs:range sbp:Assertion ;
+    rdfs:label "根拠である"@ja , "evidence for"@en ;
+    skos:definition "アサーションの根拠。説明サービスが 3 ホップ以内で到達できるようにする（非機能要求の監査性）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:concerns
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Discrepancy ;
+    rdfs:label "対象とする"@ja , "concerns"@en ;
+    skos:definition "不一致が対象とするアサーションまたは物理実体。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:boundTo
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Track ;
+    rdfs:range sbp:PhysicalEntity ;
+    rdfs:label "束縛される"@ja , "bound to"@en ;
+    skos:definition "トラックが束縛された物理実体。必ず IdentityClaim を経由し、撤回可能であること。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:expects
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:ActionEvent ;
+    rdfs:range sbp:Expectation ;
+    rdfs:label "期待する"@ja , "expects"@en ;
+    skos:definition "アクション実行が生成する期待。期限までに検証される。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:conditionedOn
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Forecast ;
+    rdfs:label "条件とする"@ja , "conditioned on"@en ;
+    skos:definition "予測が条件付けられた計画項目またはアサーション。計画変更時の再予測トリガに使う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:targets
+    a owl:ObjectProperty ;
+    rdfs:range sbp:PhysicalEntity ;
+    rdfs:label "対象とする"@ja , "targets"@en ;
+    skos:definition "アクションまたは業務記録が対象とする物理実体。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# データプロパティ（信念メタデータ以外の最小限）
+# =============================================================================
+
+sbp:assetId
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Asset ;
+    rdfs:range xsd:string ;
+    rdfs:label "資産 ID"@ja , "asset id"@en ;
+    skos:definition "業務側の資産台帳における識別子。安定 IRI の派生元になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:sku
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:MaterialItem ;
+    rdfs:range xsd:string ;
+    rdfs:label "SKU"@ja , "sku"@en ;
+    skos:definition "在庫管理単位の識別子。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:discrepancyKind
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Discrepancy ;
+    rdfs:range xsd:integer ;
+    rdfs:label "不一致類型"@ja , "discrepancy kind"@en ;
+    skos:definition "五類型の番号（1 存在 / 2 状態 / 3 時間 / 4 同一性 / 5 規範）。設計書 §8.2 の検出規則に対応する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:probeStatus
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Probe ;
+    rdfs:range xsd:string ;
+    rdfs:label "プローブ状態"@ja , "probe status"@en ;
+    skos:definition "プローブの身分（candidate / active / deprecated）。active 化は昇格ゲートの AND 条件を要する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:geometry
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Location ;
+    rdfs:range geo:Geometry ;
+    rdfs:label "幾何"@ja , "geometry"@en ;
+    skos:definition "施設座標系上のポリゴンまたはボリューム。GeoSPARQL の幾何を用いる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:quantity
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:MaterialItem ;
+    rdfs:range qudt:QuantityValue ;
+    rdfs:label "数量"@ja , "quantity"@en ;
+    skos:definition "単位付きの数量。QUDT の QuantityValue を用い、裸の数値を使わない。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:validInterval
+    a owl:ObjectProperty ;
+    rdfs:range time:Interval ;
+    rdfs:label "有効区間"@ja , "valid interval"@en ;
+    skos:definition "主張が有効な時間区間。右開 [start, end) として扱う（不変条件 8）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# =============================================================================
+# 信念メタデータの述語（設計書 §3.5、付録 A.1、ADR-0005）
+# =============================================================================
+# アサーション 1 件は「reifier IRI + rdf:reifies による triple term + これらの述語」で表す。
+# 開いている区間は validTo / txTo のトリプルを置かないことで表す（null リテラルを使わない）。
+
+sbp:validFrom
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "有効開始"@ja , "valid from"@en ;
+    skos:definition "現実にそうであった期間の始端（この時刻を含む）。右開区間 [valid_from, valid_to) の左端。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:validTo
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "有効終了"@ja , "valid to"@en ;
+    skos:definition "現実にそうであった期間の終端（この時刻を含まない）。継続中はこのトリプルを置かない。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:txFrom
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "記録開始"@ja , "transaction from"@en ;
+    skos:definition "基盤がそう信じ始めた時刻。as-of クエリはこの値で絞る。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:txTo
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "記録終了"@ja , "transaction to"@en ;
+    skos:definition "基盤がそう信じるのをやめた時刻。訂正はこのトリプルの追加で表し、文を削除しない（不変条件 2）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:modality
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "様相"@ja , "modality"@en ;
+    skos:definition "事実の身分。observed / inferred / predicted / planned / normative / hypothetical の 6 値のみ（不変条件 3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:confidence
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:double ;
+    rdfs:label "確信度"@ja , "confidence"@en ;
+    skos:definition "較正済みの確信度。真偽フルーエントでは成立確率。生スコアは証拠側に置く（不変条件 7）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:provenance
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "来歴"@ja , "provenance"@en ;
+    skos:definition "生成活動・エージェント・モデル版・証拠集合をまとめた PROV バンドルの参照。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:sourceReliability
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "情報源信頼性"@ja , "source reliability"@en ;
+    skos:definition "適用した信頼性モデルの参照。記録由来の確信度の根拠になる。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:ontologyVersion
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:string ;
+    rdfs:label "オントロジー版"@ja , "ontology version"@en ;
+    skos:definition "この文を作ったときのオントロジー版。版を無視した比較を防ぐためクエリは必ずこれを返す。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:horizonOrigin
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:dateTime ;
+    rdfs:label "予測起点"@ja , "horizon origin"@en ;
+    skos:definition "予測を行った時点。同一対象・同一有効時間に異なる起点の予測が共存する（設計書 §6.4）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:leadTime
+    a owl:DatatypeProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range xsd:duration ;
+    rdfs:label "先行時間"@ja , "lead time"@en ;
+    skos:definition "予測起点から対象時刻までの長さ。地平別の精度追跡に使う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:scenario
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:label "シナリオ"@ja , "scenario"@en ;
+    skos:definition "What-if シナリオの識別子。hypothetical の文はこれを必ず持ち、主信念から隔離される（不変条件 3）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:inSituation
+    a owl:ObjectProperty ;
+    rdfs:domain sbp:Assertion ;
+    rdfs:range sbp:Situation ;
+    rdfs:label "所属状況"@ja , "in situation"@en ;
+    skos:definition "この文が属する Situation。類似状況検索と説明の文脈に使う。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+# 様相の個体（sbp:modality の値域）。不変条件 3 の 6 値と一対一に対応する。
+
+sbp:Observed
+    a owl:NamedIndividual ;
+    rdfs:label "観測"@ja , "Observed"@en ;
+    skos:definition "センサまたは人が直接観測した。最上位の事実性。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Inferred
+    a owl:NamedIndividual ;
+    rdfs:label "推定"@ja , "Inferred"@en ;
+    skos:definition "プローブ・規則・LLM・エージェント・信念更新の出力。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Predicted
+    a owl:NamedIndividual ;
+    rdfs:label "予測"@ja , "Predicted"@en ;
+    skos:definition "地平付きの予測。horizonOrigin と leadTime を必須とする。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Planned
+    a owl:NamedIndividual ;
+    rdfs:label "計画"@ja , "Planned"@en ;
+    skos:definition "計画・スケジュール（こうする予定）。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Normative
+    a owl:NamedIndividual ;
+    rdfs:label "規範"@ja , "Normative"@en ;
+    skos:definition "規程・契約・安全規則（こうあるべき）。事実性の鎖と直交する。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .
+
+sbp:Hypothetical
+    a owl:NamedIndividual ;
+    rdfs:label "仮説"@ja , "Hypothetical"@en ;
+    skos:definition "What-if シナリオ。promote_scenario() 以外で主信念に入らない。"@ja ;
+    sbp:layer "L1" ;
+    sbp:owner "sbp-platform-team" .

@@ -1,0 +1,29 @@
+# CMMS の保全計画 → ent:MaintenancePlan
+#
+# 計画は様相 planned のアサーションになり、確信度は計画種ごとの遵守率の事前分布から
+# 与える（設計書 §7.4）。計画区間は右開 [window_start, window_end)。
+mapping: maintenance_plan
+version: 1.0.0
+source: ent:CmmsSource
+table: maintenance_plan
+record_type: ent:MaintenancePlan
+
+key:
+  columns: [plan_id]
+  external_id: "{plan_id}"
+
+subject_ref:
+  column: asset_tag
+  kind: asset
+
+required: [plan_id, asset_tag, plan_type, window_start, window_end, recorded_at]
+cardinality: one_to_one
+
+time:
+  recorded_at: recorded_at
+  occurred_at: window_start
+
+fields:
+  plan_type: plan_type
+  window_start: window_start
+  window_end: window_end

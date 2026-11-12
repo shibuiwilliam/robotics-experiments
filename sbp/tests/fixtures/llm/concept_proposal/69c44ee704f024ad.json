@@ -1,0 +1,22 @@
+{
+  "content": {
+    "definition": "同じ設備について、物理も記録も誤りと判定される解決が繰り返される状態（既存の語彙では原因を区別できない）",
+    "initiates": [],
+    "mutually_exclusive_with": [],
+    "name": "UnexplainedStateMismatch",
+    "rejected_alternatives": [
+      "Running は稼働の有無だけを表し、物理と記録の双方が誤る状況を区別しない",
+      "Faulted は停止を伴う故障であり、稼働表示の不整合を含まない"
+    ],
+    "superclass": "FluentType",
+    "terminates": []
+  },
+  "model": "recorded-stub",
+  "prompt_hash": "b121bcbf3e78c178",
+  "prompt_version": "1.0.0",
+  "provider": "anthropic",
+  "usage": {
+    "completion": 120,
+    "prompt": 640
+  }
+}

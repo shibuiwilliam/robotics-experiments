@@ -1,0 +1,29 @@
+# ERP の予備品在庫 → ent:SparePart についての記録
+#
+# 「在庫が N 個ある」という業務側の主張。物理観測（カメラ由来の present 確率）と
+# 食い違えば存在不一致（類型 1、幽霊在庫）になる。
+# 月末一括計上の系統誤差を持つため、信頼性モデルで抑制規則の対象になりうる。
+mapping: spare_part_stock
+version: 1.0.0
+source: ent:ErpSource
+table: spare_part_stock
+record_type: ent:SparePart
+
+key:
+  columns: [sku, location]
+  external_id: "{sku}@{location}"
+
+subject_ref:
+  column: sku
+  kind: material
+
+required: [sku, location, quantity, counted_at, recorded_at]
+cardinality: one_to_one
+
+time:
+  recorded_at: recorded_at
+  occurred_at: counted_at
+
+fields:
+  quantity: quantity
+  location: location

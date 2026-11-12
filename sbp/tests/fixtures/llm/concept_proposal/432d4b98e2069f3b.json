@@ -1,0 +1,26 @@
+{
+  "content": {
+    "definition": "停止・低負荷の運転帯で振動が平常域を外れている状態",
+    "initiates": [
+      "AnomalyOnset"
+    ],
+    "mutually_exclusive_with": [],
+    "name": "VibrationExcursion",
+    "rejected_alternatives": [
+      "Running は稼働の有無だけを表し、振動の逸脱を区別しない",
+      "Faulted は停止を伴う故障であり、稼働継続中の逸脱を含まない"
+    ],
+    "superclass": "FluentType",
+    "terminates": [
+      "AnomalyCleared"
+    ]
+  },
+  "model": "recorded-stub",
+  "prompt_hash": "b121bcbf3e78c178",
+  "prompt_version": "1.0.0",
+  "provider": "anthropic",
+  "usage": {
+    "completion": 190,
+    "prompt": 820
+  }
+}

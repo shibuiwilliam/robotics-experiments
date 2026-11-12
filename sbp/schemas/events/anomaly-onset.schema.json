@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sbp.example/schemas/events/anomaly-onset.schema.json",
+  "title": "AnomalyOnset",
+  "description": "異常発現。振動異常の発現。VibrationAnomaly を開始する。 生成物（make gen）であり手編集しない。生成元オントロジー版 0.6.0。",
+  "allOf": [
+    {
+      "$ref": "../event-envelope.schema.json"
+    }
+  ],
+  "properties": {
+    "type": {
+      "const": "https://sbp.example/ent#AnomalyOnset"
+    }
+  },
+  "required": [
+    "type"
+  ]
+}

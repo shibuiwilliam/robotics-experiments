@@ -1,0 +1,348 @@
+# 設備保全ドメイン（L2 / L3）— 初期ドメイン（ADR-0002）。
+#
+# 設計書 §3.8 の事象計算の例と §14 のワークドエグザンプル（ライン 3 のポンプ P-101）に対応する。
+# 設計原則 P6「最小オントロジー・観測駆動成長」に従い 20〜30 型から始め、概念発見ループで育てる。
+#
+# フルーエント型と事象型は ontology/process/equipment-maintenance.lp の initiates / terminates と
+# 対応が取れていること（`make ontology-check` が未参照・未定義を検出する）。
+
+@prefix sbp:     <https://sbp.example/core#> .
+@prefix ent:     <https://sbp.example/ent#> .
+@prefix owl:     <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
+@prefix skos:    <http://www.w3.org/2004/02/skos/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix sosa:    <http://www.w3.org/ns/sosa/> .
+
+<https://sbp.example/ent>
+    a owl:Ontology ;
+    rdfs:label "設備保全ドメインオントロジー"@ja , "Equipment maintenance domain ontology"@en ;
+    owl:versionInfo "0.6.0" ;
+    owl:imports <https://sbp.example/core> ;
+    skos:definition "回転機の稼働・保全と、その業務記録（CMMS 作業指示・MES 稼働実績・保全計画）を結ぶ概念。"@ja ;
+    dcterms:publisher "maintenance-domain-owner" .
+
+# =============================================================================
+# 物理実体（L2）
+# =============================================================================
+
+ent:RotatingEquipment
+    a owl:Class ;
+    rdfs:subClassOf sbp:Asset ;
+    rdfs:label "回転機"@ja , "Rotating equipment"@en ;
+    skos:definition "回転部を持つ設備。振動・電流から状態を推定でき、Koopman 作用素モデルの対象になる（設計書 §4.2）。"@ja ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Pump
+    a owl:Class ;
+    rdfs:subClassOf ent:RotatingEquipment ;
+    rdfs:label "ポンプ"@ja , "Pump"@en ;
+    skos:definition "流体を移送する回転機。設計書 §14 のワークドエグザンプルの対象（P-101）。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:ProductionLine
+    a owl:Class ;
+    rdfs:subClassOf sbp:Location ;
+    rdfs:label "生産ライン"@ja , "Production line"@en ;
+    skos:definition "設備が設置される生産ラインの区画。停止コストの算定単位であり深刻度モデルに影響する。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:SparePart
+    a owl:Class ;
+    rdfs:subClassOf sbp:MaterialItem ;
+    rdfs:label "予備品"@ja , "Spare part"@en ;
+    skos:definition "保全に用いる部品。在庫記録とカメラ観測の食い違い（幽霊在庫、不一致類型 1）の対象になる。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# =============================================================================
+# 業務記録（L3）
+# =============================================================================
+
+ent:WorkOrder
+    a owl:Class ;
+    rdfs:subClassOf sbp:Record ;
+    rdfs:label "作業指示"@ja , "Work order"@en ;
+    skos:definition "CMMS の作業指示。完了記録は弱ラベル（UnderMaintenance の時間バッグ）の生成元になる（設計書 §5.2）。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:OperationLog
+    a owl:Class ;
+    rdfs:subClassOf sbp:Record ;
+    rdfs:label "稼働実績"@ja , "Operation log"@en ;
+    skos:definition "MES の稼働実績。時刻ずれを持つ主張として扱う（既定の許容プロファイルは ±5 分）。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:MaintenancePlan
+    a owl:Class ;
+    rdfs:subClassOf sbp:PlanItem ;
+    rdfs:label "保全計画"@ja , "Maintenance plan"@en ;
+    skos:definition "計画保全の予定項目。様相 planned のアサーションになり、遵守率の事前分布を伴う。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:AssetRegisterEntry
+    a owl:Class ;
+    rdfs:subClassOf sbp:Record ;
+    rdfs:label "資産台帳の行"@ja , "Asset register entry"@en ;
+    skos:definition "資産台帳（設計書 §7.1 のマスタ）の 1 行。設備の型と部分−全体の関係を主張する記録で、知識グラフでは observed のアサーションと、その投影（素の三つ組）になる（ADR-0016）。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# =============================================================================
+# 観測可能量（SOSA）
+# =============================================================================
+
+ent:VibrationRms
+    a sosa:ObservableProperty ;
+    rdfs:label "振動実効値"@ja , "Vibration RMS"@en ;
+    skos:definition "振動加速度の実効値。異常の早期指標であり、停止原因（StopCmd か Fault か）の切り分けに使う。"@ja ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:MotorCurrent
+    a sosa:ObservableProperty ;
+    rdfs:label "電動機電流"@ja , "Motor current"@en ;
+    skos:definition "電動機の電流。稼働・停止の主要な観測量。"@ja ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:BearingTemperature
+    a sosa:ObservableProperty ;
+    rdfs:label "軸受温度"@ja , "Bearing temperature"@en ;
+    skos:definition "軸受の温度。劣化の遅い時間スケール（L-slow 潜在）に対応する。"@ja ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# =============================================================================
+# フルーエント型（状態述語）— .lp の holdsAt に対応
+# =============================================================================
+
+ent:Running
+    a sbp:FluentType ;
+    rdfs:label "稼働中"@ja , "Running"@en ;
+    skos:definition "設備が稼働している状態。UnderMaintenance と排他（設計書 §3.8）。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:mutuallyExclusiveWith ent:UnderMaintenance ;
+    sbp:aggregatesAs sbp:AggregateAll ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:UnderMaintenance
+    a sbp:FluentType ;
+    rdfs:label "保全中"@ja , "Under maintenance"@en ;
+    skos:definition "設備が保全作業中の状態。作業指示の完了記録が弱ラベルになる。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:mutuallyExclusiveWith ent:Running ;
+    sbp:aggregatesAs sbp:AggregateAny ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Faulted
+    a sbp:FluentType ;
+    rdfs:label "故障中"@ja , "Faulted"@en ;
+    skos:definition "設備が故障して停止している状態。StopCmd による計画停止と区別する。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAny ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:VibrationAnomaly
+    a sbp:FluentType ;
+    rdfs:label "振動異常"@ja , "Vibration anomaly"@en ;
+    skos:definition "振動が正常域を外れている状態。設計書 §14 で停止原因の切り分けに用いられる補助フルーエント。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAny ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Accessible
+    a sbp:FluentType ;
+    rdfs:label "接近可能"@ja , "Accessible"@en ;
+    skos:definition "人が安全に接近できる状態。アクションの物理前提（設計書 §9.1）に用いる。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAll ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Inspected
+    a sbp:FluentType ;
+    rdfs:label "点検済み"@ja , "Inspected"@en ;
+    skos:definition "点検が完了した状態。緊急点検アクションの期待効果（Expectation）の対象。"@ja ;
+    sbp:subjectType ent:RotatingEquipment ;
+    sbp:aggregatesAs sbp:AggregateAll ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Present
+    a sbp:FluentType ;
+    rdfs:label "存在する"@ja , "Present"@en ;
+    skos:definition "物品が指定の場所に存在する状態。存在不一致（類型 1、幽霊在庫）の判定対象。"@ja ;
+    sbp:subjectType sbp:MaterialItem ;
+    sbp:aggregatesAs sbp:AggregateAll ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# =============================================================================
+# 事象型 — .lp の initiates / terminates に対応し、JSON Schema の生成元になる
+# =============================================================================
+
+ent:StartCmd
+    a sbp:EventType ;
+    rdfs:label "起動指令"@ja , "Start command"@en ;
+    skos:definition "設備の起動指令。UnderMaintenance でないときに限り Running を開始する（遅延 LogNormal(ln 30s, 0.5)）。稼働中は人が近づけないため Accessible を終了する。"@ja ;
+    sbp:initiates ent:Running ;
+    sbp:terminates ent:Accessible ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:StopCmd
+    a sbp:EventType ;
+    rdfs:label "停止指令"@ja , "Stop command"@en ;
+    skos:definition "設備の計画停止指令。Running を終了し、停止により人が近づけるようになるため Accessible を開始する（遅延 LogNormal(ln 10s, 0.4)）。"@ja ;
+    sbp:terminates ent:Running ;
+    sbp:initiates ent:Accessible ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:Fault
+    a sbp:EventType ;
+    rdfs:label "故障"@ja , "Fault"@en ;
+    skos:definition "設備の故障。Running を終了し Faulted と Accessible を開始する（遅延 Exponential(1/5s)）。停止指令との区別は振動と業務文脈の尤度で行う。"@ja ;
+    sbp:terminates ent:Running ;
+    sbp:initiates ent:Faulted , ent:Accessible ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:MaintStart
+    a sbp:EventType ;
+    rdfs:label "保全開始"@ja , "Maintenance start"@en ;
+    skos:definition "保全作業の開始。UnderMaintenance と Accessible を開始する。"@ja ;
+    sbp:initiates ent:UnderMaintenance , ent:Accessible ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:MaintEnd
+    a sbp:EventType ;
+    rdfs:label "保全終了"@ja , "Maintenance end"@en ;
+    skos:definition "保全作業の終了。UnderMaintenance を終了し、Faulted も解消して Inspected を開始する。"@ja ;
+    sbp:terminates ent:UnderMaintenance , ent:Faulted ;
+    sbp:initiates ent:Inspected ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:AnomalyOnset
+    a sbp:EventType ;
+    rdfs:label "異常発現"@ja , "Anomaly onset"@en ;
+    skos:definition "振動異常の発現。VibrationAnomaly を開始する。"@ja ;
+    sbp:initiates ent:VibrationAnomaly ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:AnomalyCleared
+    a sbp:EventType ;
+    rdfs:label "異常解消"@ja , "Anomaly cleared"@en ;
+    skos:definition "振動異常の解消。VibrationAnomaly を終了する。"@ja ;
+    sbp:terminates ent:VibrationAnomaly ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:GoodsIssue
+    a sbp:EventType ;
+    rdfs:label "出庫"@ja , "Goods issue"@en ;
+    skos:definition "予備品の出庫。Present を終了する。在庫記録と物理観測の食い違いの起点になる。"@ja ;
+    sbp:terminates ent:Present ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:GoodsReceipt
+    a sbp:EventType ;
+    rdfs:label "入庫"@ja , "Goods receipt"@en ;
+    skos:definition "予備品の入庫。Present を開始する。"@ja ;
+    sbp:initiates ent:Present ;
+    sbp:layer "L2" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# =============================================================================
+# 情報源（信頼性モデルの付与対象）
+# =============================================================================
+
+ent:CmmsSource
+    a sbp:DataSource ;
+    rdfs:label "CMMS"@ja , "CMMS"@en ;
+    skos:definition "保全管理システム。作業指示の完了記録は実作業より遅れて入力されることがある。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:MesSource
+    a sbp:DataSource ;
+    rdfs:label "MES"@ja , "MES"@en ;
+    skos:definition "製造実行システム。稼働実績の時刻ずれは ±5 分程度（設計書 §3.6）。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:ErpSource
+    a sbp:DataSource ;
+    rdfs:label "ERP"@ja , "ERP"@en ;
+    skos:definition "基幹システム。予備品在庫を管理する。入庫は同日内に計上されるが月末一括計上の系統誤差を持つ。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# ---- アクション型（設計書 §9.1）---------------------------------------------
+# 意味契約の本体（前提・期待効果・リスク級・承認・補償）は actions/*.yaml に書く。
+# オントロジーに置くのは「このアクション型が存在する」という宣言と、補償関係である。
+# 契約の細部を TTL に持つと、閾値の調整がオントロジーの版上げになってしまう。
+
+ent:CreateEmergencyInspection
+    a sbp:ActionType ;
+    rdfs:label "緊急点検の起票"@ja , "Create emergency inspection"@en ;
+    skos:definition "不一致の解決のために点検作業指示を CMMS に起票する。物理的に近づけること（Accessible）が前提で、補償は作業指示の取消し（設計書 §9.1 の例）。"@ja ;
+    sbp:compensatedBy ent:CancelWorkOrder ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:CancelWorkOrder
+    a sbp:ActionType ;
+    rdfs:label "作業指示の取消し"@ja , "Cancel work order"@en ;
+    skos:definition "起票済みの作業指示を取り消す。緊急点検起票の補償アクション。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:CorrectOperationLog
+    a sbp:ActionType ;
+    rdfs:label "稼働実績の訂正"@ja , "Correct operation log"@en ;
+    skos:definition "物理観測が正しいと判断された不一致に対し、MES の稼働実績を訂正する。補償は訂正の差し戻し。"@ja ;
+    sbp:compensatedBy ent:RevertOperationLogCorrection ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:RevertOperationLogCorrection
+    a sbp:ActionType ;
+    rdfs:label "稼働実績訂正の差し戻し"@ja , "Revert operation log correction"@en ;
+    skos:definition "稼働実績の訂正を元に戻す。訂正アクションの補償。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+# ---- ロール（承認の宛先）-----------------------------------------------------
+# riskClass ≥ medium のアクションは承認が要る（設計書 §9.3）。承認者はロールで指定する
+# ——個人を指定すると、担当交代でアクションが実行不能になる。
+
+ent:MaintenanceLead
+    a sbp:Role ;
+    rdfs:label "保全リーダ"@ja , "Maintenance lead"@en ;
+    skos:definition "保全作業の承認権限を持つロール。緊急点検の起票を承認する。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .
+
+ent:ProductionSupervisor
+    a sbp:Role ;
+    rdfs:label "生産監督"@ja , "Production supervisor"@en ;
+    skos:definition "生産ラインの停止・再開を承認するロール。"@ja ;
+    sbp:layer "L3" ;
+    sbp:owner "maintenance-domain-owner" .

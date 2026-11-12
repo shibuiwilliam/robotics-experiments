@@ -1,0 +1,84 @@
+# 情報源信頼性モデルの初期値（設計書 §7.3、§3.6）。
+#
+# 値は担当者ヒアリング相当の見積りであり、解決済み不一致から継続推定して更新する
+# （update_from_resolution）。「観測が増えるほど動きを小さくする」ため observations を持つ。
+#
+# 設計書 §3.6 の許容プロファイルの例をそのまま初期値にしている:
+#   MES ±5 分 / ERP 入庫は同日内 / 手書き日報 ±1 シフト
+
+models:
+  # ---- MES の稼働実績 ----
+  # 自動連携なので時刻ずれは小さい（±5 分）。ただし「稼働中」のテンプレ入力が残る
+  # ことがあり、停止していても稼働と記録されうる（false_positive がやや高い）。
+  - source: ent:MesSource
+    record_type: ent:OperationLog
+    time_offset:
+      mean_s: 60.0
+      stddev_s: 150.0        # ±5 分が概ね 2σ に入る
+      max_plausible_s: 3600.0
+    confusion:
+      true_positive: 0.95    # 稼働していれば稼働と記録する
+      false_positive: 0.25   # 停止していても稼働と記録されることがある（テンプレ入力）
+      missing_rate: 0.02
+    systematic_biases:
+      - kind: shift_boundary
+        description: シフト境界で稼働実績がシフト単位に丸められる
+        magnitude: 8.0
+    observations: 0
+
+  # ---- CMMS の作業指示 ----
+  # 完了記録は現場作業の後にまとめて入力されるため、遅れが大きく分散も大きい。
+  - source: ent:CmmsSource
+    record_type: ent:WorkOrder
+    time_offset:
+      mean_s: 43200.0        # 平均 12 時間遅れ
+      stddev_s: 43200.0
+      max_plausible_s: 604800.0   # 1 週間を超える遅れはあり得ないとみなす
+    confusion:
+      true_positive: 0.92    # 作業したら完了記録は入る
+      false_positive: 0.05   # 未実施なのに完了と記録されることは少ない
+      missing_rate: 0.08     # 作業したのに記録が無い（未起票）
+    systematic_biases:
+      - kind: month_end_batch
+        description: 月末に未入力の作業指示を一括で完了入力する運用がある
+        magnitude: 31.0
+    observations: 0
+
+  # ---- CMMS の保全計画 ----
+  # 計画は事前に登録されるので時刻ずれは負（先付け）。真偽の主張ではないため混同行列は持たない。
+  - source: ent:CmmsSource
+    record_type: ent:MaintenancePlan
+    time_offset:
+      mean_s: -604800.0      # 平均 1 週間前に登録
+      stddev_s: 604800.0
+      max_plausible_s: 7776000.0
+    observations: 0
+
+  # ---- CMMS の設備台帳（ADR-0016）----
+  # マスタは日々の取引より遅れて直される（新設・撤去の登録が現場作業の後になる）。型の誤記は稀だが
+  # 無いとは言えないので混同行列は持たず、時刻ずれだけを置く（台帳の主張は信念更新の尤度に入れない）。
+  - source: ent:CmmsSource
+    record_type: ent:AssetRegisterEntry
+    time_offset:
+      mean_s: 86400.0        # 平均 1 日遅れで登録
+      stddev_s: 172800.0
+      max_plausible_s: 2592000.0   # 30 日を超える遅れはあり得ないとみなす
+    observations: 0
+
+  # ---- ERP の予備品在庫 ----
+  # 数量の記録。丸めと月末一括計上の系統誤差を持つ。
+  - source: ent:ErpSource
+    record_type: ent:SparePart
+    time_offset:
+      mean_s: 3600.0
+      stddev_s: 21600.0      # 同日内に収まる
+      max_plausible_s: 86400.0
+    numeric_error_stddev: 1.5   # 数量の記録誤差（個）
+    systematic_biases:
+      - kind: quantity_rounding
+        description: 数量がケース単位に丸められる
+        magnitude: 1.0
+      - kind: month_end_batch
+        description: 月末に棚卸差異を一括調整する
+        magnitude: 31.0
+    observations: 0

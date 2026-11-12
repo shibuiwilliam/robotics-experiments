@@ -1,0 +1,56 @@
+# 観測手段の割り当て（設計書 §8.7、ADR-0011）。
+#
+# フルーエントごとに「どうやって確かめるか」を宣言する。コストと信頼度は**拠点が持つ
+# 計測器の性質**なので、オントロジーではなくここに置く（拠点が計測器を更新するたびに
+# オントロジーの版が上がるのを避ける。ADR-0011）。
+#
+# kind は sbp.reasoning.scheduler.QueryKind の値:
+#   sampling_rate     … 既存センサのサンプリング率を上げる（最も安い。帯域だけを使う）
+#   camera_aim        … PTZ カメラの向きを変える（安全・監視義務の制約が付く）
+#   temporary_sensor  … 追加センサを一時投入する（高いが情報量が大きい）
+#   human_question    … 人に確認を頼む（**頻度上限の対象**）
+#   record_recheck    … 業務記録を再照合する（業務側の手間。頻度上限の対象）
+#   partial_stocktake … 部分棚卸（存在不一致に直接効く。頻度上限の対象）
+#
+# reliability は「その手段で測ったときに正しい値が得られる確率」（混同行列の要約）。
+# cost は効用と同じ尺度（スケジューラの Σ v(x)·EIG(x) − cost で引かれる）。
+#
+# フルーエントは CURIE（ent: / sbp-core:）で書く。読み込み時に vocab に実在することを
+# 検査する（不変条件 5: 存在しない概念の手段を宣言できない）。
+
+# 宣言の無いフルーエントに当てる手段。**人への質問を既定にしない**——頻度上限に当たって
+# 何も選ばれない周期が出るうえ、「自動で人に聞き続ける」挙動は望ましくない。
+default:
+  kind: sampling_rate
+  reliability: 0.95
+  cost: 0.1
+
+means:
+  # ---- 稼働 ----
+  # 既存の振動・電流センサで判定できる。サンプリング率を上げるのが最も安い。
+  - fluent: ent:Running
+    kind: sampling_rate
+    reliability: 0.97
+    cost: 0.1
+
+  # ---- 故障 ----
+  # 停止の原因（故障か指令停止か）は潜在だけでは分かれにくい。業務記録（CMMS の作業指示）を
+  # 再照合するのが決め手になる。業務側の手間を取るので頻度上限の対象である。
+  - fluent: ent:Faulted
+    kind: record_recheck
+    reliability: 0.92
+    cost: 0.8
+
+  # ---- 保全中 ----
+  # 現場に人がいるかどうかは記録に出ないことがある。人の確認が最も確実だが高い。
+  - fluent: ent:UnderMaintenance
+    kind: human_question
+    reliability: 0.99
+    cost: 3.0
+
+  # ---- 立入可否 ----
+  # 普段置いていない在室センサを一時投入して確かめる。
+  - fluent: ent:Accessible
+    kind: temporary_sensor
+    reliability: 0.90
+    cost: 1.5

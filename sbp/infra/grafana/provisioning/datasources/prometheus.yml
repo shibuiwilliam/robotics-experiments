@@ -1,0 +1,11 @@
+# Grafana のデータソース（observability profile、M8-06）。
+# プロビジョニングで入れるのは、UI で手作業で足すとコンテナを作り直すたびに消えるため。
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

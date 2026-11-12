@@ -1,0 +1,32 @@
+# Prometheus の取り込み設定（observability profile、M8-06）。
+#
+# 取り込み先は API の /metrics（`sbp.api.app` が `sbp.core.metrics.prometheus_exposition` を
+# 返す）。**ワーカーを直接取り込まない**——ワーカーは指標を `metrics` 表に書き、API がその
+# 最新値を出す。ワーカーごとに HTTP エンドポイントを持たせると、1 ワーカー 1 プロセスの
+# 配置でポートが増え続ける。
+#
+# スクレイプ間隔は 30 秒。**指標の更新周期より細かくしない**——信念更新は既定 60 秒周期、
+# 照合は 120 秒周期なので、それより速く取り込んでも同じ値が並ぶだけである。
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  external_labels:
+    # 拠点を外部ラベルに出す。1 プロセス 1 拠点なので、Prometheus も拠点ごとに立てる想定。
+    #
+    # **環境変数の展開には `--enable-feature=expand-external-labels` が要る**（compose で
+    # 付けている）。付けないと Prometheus は健全に起動したまま、ラベルの値が文字列
+    # `${SBP_SITE_ID}` になる——起動成功は設定が正しいことを意味しない。
+    # Prometheus の展開は `${VAR}` のみで、`:-default` は解釈しない（既定値は compose 側で
+    # 与える）。
+    site: "${SBP_SITE_ID}"
+
+scrape_configs:
+  - job_name: sbp-api
+    metrics_path: /metrics
+    static_configs:
+      # compose のネットワーク内から見た API。ホストで `make dev` している場合は
+      # host.docker.internal:8000 に変える（docs/runbooks/local-setup.md）。
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          component: api
